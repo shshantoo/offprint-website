@@ -79,9 +79,8 @@ To link your remote Supabase database:
 
 ## 📦 GitHub Deployment
 
-To publish this repository to your GitHub account (`sh-shanto`):
-1. Create a new repository named `offprint-website` on GitHub: [https://github.com/new](https://github.com/new)
-2. Run the push command in your terminal:
+This repository is published on GitHub at:
+[https://github.com/shshantoo/offprint-website](https://github.com/shshantoo/offprint-website)
    ```bash
    git push -u origin main
    ```
