@@ -12,10 +12,7 @@ import {
   Trash2,
   Edit2,
   Sparkles,
-  Layers,
   X,
-  Printer,
-  Check,
 } from "lucide-react";
 
 export default function ProductsCMSClient() {
@@ -24,7 +21,6 @@ export default function ProductsCMSClient() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<PrintProduct | null>(null);
 
-  // Form State
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<PrintCategory>("cards");
   const [materialSpecs, setMaterialSpecs] = useState("");
@@ -50,7 +46,9 @@ export default function ProductsCMSClient() {
     setTitle("");
     setCategory("cards");
     setMaterialSpecs("");
-    setImageUrl("https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1000&q=80");
+    setImageUrl(
+      "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1000&q=80"
+    );
     setGalleryUrls("");
     setMinOrderQty(50);
     setIsTrending(false);
@@ -74,9 +72,7 @@ export default function ProductsCMSClient() {
   const handleToggleTrending = async (prod: PrintProduct) => {
     const updated = { ...prod, is_trending: !prod.is_trending };
     await savePrintProduct(updated);
-    setProducts((prev) =>
-      prev.map((p) => (p.id === prod.id ? updated : p))
-    );
+    setProducts((prev) => prev.map((p) => (p.id === prod.id ? updated : p)));
   };
 
   const handleDelete = async (id: string) => {
@@ -111,9 +107,7 @@ export default function ProductsCMSClient() {
 
     const saved = await savePrintProduct(productPayload);
     if (editingProduct) {
-      setProducts((prev) =>
-        prev.map((p) => (p.id === saved.id ? saved : p))
-      );
+      setProducts((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
     } else {
       setProducts((prev) => [saved, ...prev]);
     }
@@ -121,41 +115,35 @@ export default function ProductsCMSClient() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-[#f5f0eb] tracking-tight">
+          <h2 className="text-2xl font-extrabold text-[#141210] tracking-tight">
             Merchandise & Print Products CMS
-          </h1>
-          <p className="text-xs text-[#a89f91] mt-1">
-            Manage luxury card stocks, acrylic award frames, corporate swag gift suites, and laser engraved merchandise.
+          </h2>
+          <p className="text-xs text-[#5C5449] mt-0.5">
+            Manage luxury card stocks, optical acrylic frames, corporate swag boxes, and engraved pens.
           </p>
         </div>
 
         <button
           onClick={handleOpenAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#c98a4b] hover:bg-[#e5a96b] text-black font-semibold text-xs uppercase tracking-wider transition-all self-start sm:self-auto"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold text-xs uppercase tracking-wider transition-all self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Add New Merchandise</span>
         </button>
       </div>
 
-      {/* Table */}
       {isLoading ? (
-        <div className="text-center py-16 text-xs text-[#a89f91]">
+        <div className="text-center py-12 text-xs text-[#5C5449]">
           Loading print products catalog...
         </div>
-      ) : products.length === 0 ? (
-        <div className="text-center py-16 text-xs text-[#a89f91]">
-          No products found. Click "Add New Merchandise" to populate.
-        </div>
       ) : (
-        <div className="rounded-2xl bg-[#141210] border border-[#26201b] overflow-hidden">
+        <div className="rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9] overflow-hidden shadow-2xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#0a0a0a] border-b border-[#26201b] text-[#a89f91] uppercase font-mono tracking-wider">
+              <thead className="bg-[#FAF7F2] border-b border-[#E5DEC9] text-[#5C5449] uppercase font-mono tracking-wider">
                 <tr>
                   <th className="py-3.5 px-4">Image</th>
                   <th className="py-3.5 px-4">Product Title</th>
@@ -166,11 +154,11 @@ export default function ProductsCMSClient() {
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#26201b]">
+              <tbody className="divide-y divide-[#E5DEC9]">
                 {products.map((prod) => (
-                  <tr key={prod.id} className="hover:bg-[#1a1714] transition-colors">
+                  <tr key={prod.id} className="hover:bg-[#FAF7F2]/60 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="w-14 h-12 rounded-lg overflow-hidden bg-black border border-[#26201b]">
+                      <div className="w-14 h-12 rounded-lg overflow-hidden bg-[#F4EFE6] border border-[#E5DEC9]">
                         <img
                           src={prod.image_url}
                           alt={prod.title}
@@ -179,26 +167,26 @@ export default function ProductsCMSClient() {
                       </div>
                     </td>
 
-                    <td className="py-3 px-4 max-w-xs font-bold text-[#f5f0eb]">
+                    <td className="py-3 px-4 max-w-xs font-bold text-[#141210]">
                       <div>{prod.title}</div>
                       {prod.sample_finish && (
-                        <div className="text-[11px] text-[#c98a4b] font-mono mt-0.5 font-normal">
+                        <div className="text-[11px] text-[#A66D35] font-mono mt-0.5 font-normal">
                           {prod.sample_finish}
                         </div>
                       )}
                     </td>
 
                     <td className="py-3 px-4">
-                      <span className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#0a0a0a] text-[#c98a4b] border border-[#26201b] capitalize">
+                      <span className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#FAF7F2] text-[#3A2008] border border-[#E5DEC9] capitalize">
                         {prod.category.replace("_", " ")}
                       </span>
                     </td>
 
-                    <td className="py-3 px-4 max-w-sm text-xs text-[#a89f91] truncate">
+                    <td className="py-3 px-4 max-w-sm text-xs text-[#5C5449] truncate">
                       {prod.material_specs}
                     </td>
 
-                    <td className="py-3 px-4 font-mono text-[#f5f0eb]">
+                    <td className="py-3 px-4 font-mono text-[#141210]">
                       {prod.min_order_qty}
                     </td>
 
@@ -207,10 +195,9 @@ export default function ProductsCMSClient() {
                         onClick={() => handleToggleTrending(prod)}
                         className={`p-1.5 rounded-lg border transition-all ${
                           prod.is_trending
-                            ? "bg-[#4a2805] text-[#c98a4b] border-[#c98a4b]"
-                            : "bg-[#0a0a0a] text-[#696257] border-[#26201b] hover:text-[#a89f91]"
+                            ? "bg-[#3A2008] text-[#D9A673] border-[#3A2008]"
+                            : "bg-[#FAF7F2] text-[#877D70] border-[#E5DEC9]"
                         }`}
-                        title="Toggle Trending Status"
                       >
                         <Sparkles className="w-4 h-4" />
                       </button>
@@ -219,15 +206,13 @@ export default function ProductsCMSClient() {
                     <td className="py-3 px-4 text-right space-x-2">
                       <button
                         onClick={() => handleOpenEditModal(prod)}
-                        className="p-1.5 rounded-lg bg-[#0a0a0a] border border-[#26201b] hover:border-[#c98a4b] text-[#a89f91] hover:text-[#f5f0eb]"
-                        title="Edit Product"
+                        className="p-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] text-[#5C5449] hover:text-[#141210]"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDelete(prod.id)}
-                        className="p-1.5 rounded-lg bg-[#0a0a0a] border border-[#26201b] hover:border-red-900 text-[#a89f91] hover:text-red-400"
-                        title="Delete Product"
+                        className="p-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] text-[#5C5449] hover:text-red-700"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -240,56 +225,54 @@ export default function ProductsCMSClient() {
         </div>
       )}
 
-      {/* Add / Edit Modal */}
       {isModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#141210]/70 backdrop-blur-xs"
           onClick={() => setIsModalOpen(false)}
         >
           <div
-            className="bg-[#141210] border border-[#3d3126] rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto"
+            className="bg-[#FFFFFF] border border-[#E5DEC9] rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 p-2 rounded-full bg-[#0a0a0a] text-[#a89f91] hover:text-white border border-[#26201b]"
+              className="absolute top-4 right-4 p-2 rounded-full bg-[#FAF7F2] text-[#141210] border border-[#E5DEC9]"
             >
               <X className="w-4 h-4" />
             </button>
 
             <div className="space-y-1">
-              <span className="text-xs font-mono uppercase tracking-widest text-[#c98a4b]">
+              <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
                 Merchandise CMS
               </span>
-              <h3 className="text-2xl font-bold text-[#f5f0eb]">
+              <h3 className="text-2xl font-bold text-[#141210]">
                 {editingProduct ? "Edit Product Specs" : "Add Physical Merchandise"}
               </h3>
             </div>
 
             <form onSubmit={handleSave} className="space-y-4 text-xs">
               <div>
-                <label className="text-xs font-medium text-[#f5f0eb] block mb-1">
+                <label className="text-xs font-semibold text-[#141210] block mb-1">
                   Product Title *
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Luxury Blind Debossed Matte Cards"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b]"
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210]"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-[#f5f0eb] block mb-1">
+                  <label className="text-xs font-semibold text-[#141210] block mb-1">
                     Category *
                   </label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value as PrintCategory)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b]"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210]"
                   >
                     <option value="cards">Luxury Cards</option>
                     <option value="frames">Executive Frames</option>
@@ -300,7 +283,7 @@ export default function ProductsCMSClient() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-[#f5f0eb] block mb-1">
+                  <label className="text-xs font-semibold text-[#141210] block mb-1">
                     Minimum Order Qty (MOQ) *
                   </label>
                   <input
@@ -308,50 +291,47 @@ export default function ProductsCMSClient() {
                     min="1"
                     value={minOrderQty}
                     onChange={(e) => setMinOrderQty(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] font-mono"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono"
                     required
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-[#f5f0eb] block mb-1">
+                <label className="text-xs font-semibold text-[#141210] block mb-1">
                   Material & Print Specifications *
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="e.g. 650 GSM Cotton Uncoated Stock • Deep Espresso Blind Deboss • Warm Bronze Foil Edge Gilding"
                   value={materialSpecs}
                   onChange={(e) => setMaterialSpecs(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] leading-relaxed"
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210]"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-[#f5f0eb] block mb-1">
+                <label className="text-xs font-semibold text-[#141210] block mb-1">
                   Primary Image URL *
                 </label>
                 <input
                   type="url"
-                  placeholder="https://images.unsplash.com/..."
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] font-mono text-xs"
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs font-mono text-[#141210]"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-[#f5f0eb] block mb-1">
-                  Sample Finish / Technique Highlight (Optional)
+                <label className="text-xs font-semibold text-[#141210] block mb-1">
+                  Sample Finish / Technique Highlight
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Velvet Soft-Touch + Deep Tactile Deboss"
                   value={sampleFinish}
                   onChange={(e) => setSampleFinish(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b]"
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210]"
                 />
               </div>
 
@@ -361,24 +341,23 @@ export default function ProductsCMSClient() {
                   id="trending-check"
                   checked={isTrending}
                   onChange={(e) => setIsTrending(e.target.checked)}
-                  className="rounded bg-[#0a0a0a] border-[#26201b] text-[#c98a4b] focus:ring-[#c98a4b]"
                 />
-                <label htmlFor="trending-check" className="text-xs text-[#f5f0eb]">
+                <label htmlFor="trending-check" className="text-xs font-medium text-[#141210]">
                   Mark as Trending / Featured Selection
                 </label>
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#26201b]">
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#E5DEC9]">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-[#0a0a0a] text-[#a89f91] hover:text-[#f5f0eb]"
+                  className="px-4 py-2.5 rounded-xl bg-[#FAF7F2] text-[#5C5449]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-[#c98a4b] text-black font-semibold uppercase tracking-wider text-xs hover:bg-[#e5a96b]"
+                  className="px-6 py-2.5 rounded-xl bg-[#3A2008] text-[#FAF7F2] font-semibold uppercase tracking-wider text-xs"
                 >
                   {editingProduct ? "Save Changes" : "Create Product"}
                 </button>

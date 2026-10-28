@@ -19,7 +19,6 @@ import {
   Layers,
   Send,
   CheckCircle,
-  HelpCircle,
   Clock,
   ShieldCheck,
 } from "lucide-react";
@@ -74,12 +73,11 @@ export default function InteractiveQuoteBuilder({
         event_date: data.event_date || null,
       });
 
-      // Fire celebratory confetti
       confetti({
-        particleCount: 80,
-        spread: 70,
+        particleCount: 70,
+        spread: 65,
         origin: { y: 0.6 },
-        colors: ["#c98a4b", "#4a2805", "#e5a96b", "#f5f0eb"],
+        colors: ["#3A2008", "#A66D35", "#D9A673", "#5C4028"],
       });
 
       setSubmittedLeadId(newLead.id);
@@ -105,57 +103,58 @@ export default function InteractiveQuoteBuilder({
   };
 
   return (
-    <section className="py-24 bg-[#0a0a0a] relative border-t border-[#26201b]" id="quote">
-      {/* Background Ambience */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#4a2805]/20 blur-[150px] pointer-events-none -z-10" />
-
+    <section className="py-24 bg-[#F4EFE6]/50 relative border-t border-[#E5DEC9]" id="quote">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-12 space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#141210] border border-[#3d3126] text-xs font-mono text-[#c98a4b]">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono text-[#A66D35]">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Direct Project Desk</span>
+            <span>Direct Project & Merch Desk</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-[#f5f0eb] tracking-tight">
-            Draft Your Project Inquiry
+          <h2 className="text-3xl sm:text-5xl font-extrabold text-[#141210] tracking-tight">
+            Draft Your Custom Project Inquiry
           </h2>
-          <p className="text-sm text-[#a89f91]">
-            We operate on a strictly bespoke, offline quotation model. Submit your specifications below—our Dhaka corporate team will inspect the scope and reach out via direct call.
+          <p className="text-sm text-[#5C5449]">
+            Need a multi-day production proposal or bulk corporate print collateral? Submit your specifications below and our Dhaka production team will respond within 2 to 4 business hours.
           </p>
         </div>
 
         {/* Success Modal / State */}
         {submittedLeadId ? (
-          <div className="rounded-3xl bg-[#141210] border border-[#c98a4b]/60 p-8 sm:p-12 text-center space-y-6 shadow-2xl shadow-[#4a2805]/30 animate-in zoom-in-95">
-            <div className="w-16 h-16 rounded-full bg-[#4a2805]/40 border border-[#c98a4b] text-[#c98a4b] flex items-center justify-center mx-auto">
-              <CheckCircle className="w-8 h-8" />
+          <div className="rounded-3xl bg-[#FFFFFF] border border-[#D5CCB4] p-8 sm:p-12 text-center space-y-6 shadow-md animate-in zoom-in-95">
+            <div className="w-16 h-16 rounded-full bg-[#FAF7F2] border border-[#A66D35] text-[#3A2008] flex items-center justify-center mx-auto">
+              <CheckCircle className="w-8 h-8 text-[#A66D35]" />
             </div>
 
             <div className="space-y-2 max-w-md mx-auto">
-              <span className="text-xs font-mono uppercase tracking-widest text-[#c98a4b]">
+              <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
                 Inquiry Logged Successfully
               </span>
-              <h3 className="text-2xl font-bold text-[#f5f0eb]">
-                Your Draft is with Our Senior Producer
+              <h3 className="text-2xl font-bold text-[#141210]">
+                Your Brief is with Our Senior Producer
               </h3>
-              <p className="text-xs sm:text-sm text-[#a89f91] leading-relaxed">
-                Reference ID: <span className="font-mono text-[#f5f0eb] bg-[#0a0a0a] px-2 py-0.5 rounded border border-[#26201b]">{submittedLeadId}</span>
+              <p className="text-xs sm:text-sm text-[#5C5449] leading-relaxed">
+                Reference ID:{" "}
+                <span className="font-mono text-[#141210] bg-[#FAF7F2] px-2 py-0.5 rounded border border-[#E5DEC9]">
+                  {submittedLeadId}
+                </span>
               </p>
-              <p className="text-xs text-[#a89f91] pt-2">
-                Our representative will verify availability and contact your provided telephone number within <strong className="text-[#f5f0eb]">2 to 4 business hours</strong> with a detailed proposal.
+              <p className="text-xs text-[#5C5449] pt-2">
+                Our representative will verify availability and contact your provided telephone number within{" "}
+                <strong className="text-[#141210]">2 to 4 business hours</strong> with a detailed proposal.
               </p>
             </div>
 
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4">
               <button
                 onClick={handleReset}
-                className="px-6 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#1c1815] hover:bg-[#26201b] text-[#f5f0eb] border border-[#26201b] transition-all"
+                className="px-6 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#FAF7F2] hover:bg-[#F4EFE6] text-[#141210] border border-[#D5CCB4] transition-all"
               >
                 Submit Another Inquiry
               </button>
               <a
                 href="tel:+8801700000000"
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#c98a4b] text-black hover:bg-[#e5a96b] transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#3A2008] text-[#FAF7F2] hover:bg-[#5C4028] transition-colors"
               >
                 <Phone className="w-3.5 h-3.5" />
                 <span>Urgent? Call Desk Directly</span>
@@ -164,8 +163,7 @@ export default function InteractiveQuoteBuilder({
           </div>
         ) : (
           /* Main Interactive Form Card */
-          <div className="rounded-3xl bg-[#141210] border border-[#26201b] shadow-2xl p-6 sm:p-10 relative overflow-hidden">
-            
+          <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] shadow-sm p-6 sm:p-10 relative overflow-hidden">
             {/* Top Dual Wing Toggle */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8">
               <button
@@ -173,11 +171,11 @@ export default function InteractiveQuoteBuilder({
                 onClick={() => setInquiryType("event_coverage")}
                 className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
                   inquiryType === "event_coverage"
-                    ? "bg-[#4a2805] text-[#f5f0eb] border border-[#c98a4b] shadow-lg shadow-[#4a2805]/40"
-                    : "bg-[#0a0a0a] text-[#a89f91] hover:text-[#f5f0eb] border border-[#26201b]"
+                    ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
+                    : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9]"
                 }`}
               >
-                <Video className="w-4 h-4 text-[#c98a4b]" />
+                <Video className="w-4 h-4 text-[#D9A673]" />
                 <span>Media & Event Coverage Wing</span>
               </button>
 
@@ -186,11 +184,11 @@ export default function InteractiveQuoteBuilder({
                 onClick={() => setInquiryType("physical_merch")}
                 className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
                   inquiryType === "physical_merch"
-                    ? "bg-[#4a2805] text-[#f5f0eb] border border-[#c98a4b] shadow-lg shadow-[#4a2805]/40"
-                    : "bg-[#0a0a0a] text-[#a89f91] hover:text-[#f5f0eb] border border-[#26201b]"
+                    ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
+                    : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9]"
                 }`}
               >
-                <Printer className="w-4 h-4 text-[#c98a4b]" />
+                <Printer className="w-4 h-4 text-[#D9A673]" />
                 <span>Physical Print & Merch Wing</span>
               </button>
             </div>
@@ -199,10 +197,10 @@ export default function InteractiveQuoteBuilder({
               <input type="hidden" {...register("inquiry_type")} value={inquiryType} />
 
               {/* Dynamic Context Notice */}
-              <div className="p-4 rounded-xl bg-[#0a0a0a]/80 border border-[#26201b] flex items-start gap-3">
-                <ShieldCheck className="w-4 h-4 text-[#c98a4b] shrink-0 mt-0.5" />
-                <div className="text-xs text-[#a89f91] space-y-1">
-                  <span className="font-semibold text-[#f5f0eb]">
+              <div className="p-4 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] flex items-start gap-3">
+                <ShieldCheck className="w-4 h-4 text-[#A66D35] shrink-0 mt-0.5" />
+                <div className="text-xs text-[#5C5449] space-y-1">
+                  <span className="font-semibold text-[#141210]">
                     {inquiryType === "event_coverage"
                       ? "Media Production Specification Protocol"
                       : "Physical Merchandise Material Specification"}
@@ -217,105 +215,99 @@ export default function InteractiveQuoteBuilder({
 
               {/* Client Info Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Client Name */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#f5f0eb] flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-[#c98a4b]" />
+                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>Your Full Name *</span>
                   </label>
                   <input
                     type="text"
                     placeholder="e.g. Tanvir Ahmed"
                     {...register("client_name")}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors"
                   />
                   {errors.client_name && (
-                    <span className="text-[11px] text-red-400">{errors.client_name.message}</span>
+                    <span className="text-[11px] text-red-600">{errors.client_name.message}</span>
                   )}
                 </div>
 
-                {/* Company Name */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#f5f0eb] flex items-center gap-1.5">
-                    <Building className="w-3.5 h-3.5 text-[#c98a4b]" />
+                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
+                    <Building className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>Company / Organization</span>
                   </label>
                   <input
                     type="text"
                     placeholder="e.g. Beximco Innovations Ltd."
                     {...register("company_name")}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors"
                   />
                 </div>
 
-                {/* Phone */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#f5f0eb] flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-[#c98a4b]" />
+                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>Direct Phone Number *</span>
                   </label>
                   <input
                     type="tel"
                     placeholder="+880 1711-223344"
                     {...register("phone")}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors font-mono"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors font-mono"
                   />
                   {errors.phone && (
-                    <span className="text-[11px] text-red-400">{errors.phone.message}</span>
+                    <span className="text-[11px] text-red-600">{errors.phone.message}</span>
                   )}
                 </div>
 
-                {/* Email */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#f5f0eb] flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-[#c98a4b]" />
+                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>Official Email *</span>
                   </label>
                   <input
                     type="email"
                     placeholder="tanvir@company.com"
                     {...register("email")}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors"
                   />
                   {errors.email && (
-                    <span className="text-[11px] text-red-400">{errors.email.message}</span>
+                    <span className="text-[11px] text-red-600">{errors.email.message}</span>
                   )}
                 </div>
               </div>
 
               {/* Dynamic Scope Inputs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Event Date or Milestone */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#f5f0eb] flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-[#c98a4b]" />
+                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>{inquiryType === "event_coverage" ? "Event Date (if fixed)" : "Required Delivery Date"}</span>
                   </label>
                   <input
                     type="date"
                     {...register("event_date")}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors"
                   />
                 </div>
 
-                {/* Estimated Scale / Quantity */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#f5f0eb] flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-[#c98a4b]" />
+                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>{inquiryType === "event_coverage" ? "Estimated Scale (Attendees / Days)" : "Estimated Quantity / Sets"}</span>
                   </label>
                   <input
                     type="text"
                     placeholder={inquiryType === "event_coverage" ? "e.g. 2 Days, 500 Attendees" : "e.g. 250 Swag kits, 500 Cards"}
                     {...register("estimated_qty")}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors"
                   />
                 </div>
               </div>
 
               {/* Project Details */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[#f5f0eb]">
+                <label className="text-xs font-semibold text-[#141210]">
                   Project Requirements & Detailed Notes *
                 </label>
                 <textarea
@@ -323,37 +315,35 @@ export default function InteractiveQuoteBuilder({
                   placeholder={
                     inquiryType === "event_coverage"
                       ? "Tell us about the venue, filming deliverables (e.g. 4K full keynote, 90-sec highlight reel, drone permits), and special instructions..."
-                      : "Describe your paper preferences, debossing depth, foam cutouts, laser engraving texts, or brand branding guidelines..."
+                      : "Describe your paper preferences, debossing depth, foam cutouts, laser engraving texts, or brand guidelines..."
                   }
                   {...register("details")}
-                  className="w-full px-4 py-3 rounded-xl bg-[#0a0a0a] border border-[#26201b] text-sm text-[#f5f0eb] focus:outline-none focus:border-[#c98a4b] transition-colors resize-none leading-relaxed"
+                  className="w-full px-4 py-3 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] transition-colors resize-none leading-relaxed"
                 />
                 {errors.details && (
-                  <span className="text-[11px] text-red-400">{errors.details.message}</span>
+                  <span className="text-[11px] text-red-600">{errors.details.message}</span>
                 )}
               </div>
 
               {/* Submit CTA & Offline Assurance */}
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[#26201b]">
-                <div className="flex items-center gap-2 text-xs text-[#696257]">
-                  <Clock className="w-3.5 h-3.5 text-[#c98a4b]" />
+              <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[#E5DEC9]">
+                <div className="flex items-center gap-2 text-xs text-[#5C5449]">
+                  <Clock className="w-3.5 h-3.5 text-[#A66D35]" />
                   <span>Prompt response within 2-4 business hours</span>
                 </div>
 
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-xs font-semibold uppercase tracking-wider bg-gradient-to-r from-[#4a2805] to-[#6e3c08] hover:from-[#6e3c08] hover:to-[#c98a4b] text-[#f5f0eb] hover:text-black border border-[#c98a4b]/50 shadow-xl shadow-[#4a2805]/40 transition-all duration-300 disabled:opacity-50"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] shadow-sm transition-all duration-200 disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{isSubmitting ? "Transmitting Scope..." : "Submit Project Draft"}</span>
+                  <span>{isSubmitting ? "Transmitting Scope..." : "Submit Project Brief"}</span>
                 </button>
               </div>
-
             </form>
           </div>
         )}
-
       </div>
     </section>
   );

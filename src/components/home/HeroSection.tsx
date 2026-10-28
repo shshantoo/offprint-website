@@ -2,90 +2,177 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowUpRight, ShieldCheck, Film, Printer, Sparkles, Building2, Award } from "lucide-react";
+import {
+  ArrowUpRight,
+  Calendar,
+  GraduationCap,
+  Camera,
+  Film,
+  ShieldCheck,
+} from "lucide-react";
 
 export default function HeroSection() {
   return (
-    <section className="relative overflow-hidden pt-12 pb-24 md:pt-20 md:pb-32">
-      {/* Background Ambient Glow Circles */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[550px] bg-gradient-to-b from-[#4a2805]/50 via-[#c98a4b]/15 to-transparent blur-3xl pointer-events-none -z-10 rounded-full" />
-      <div className="absolute top-10 right-10 w-96 h-96 bg-[#6e3c08]/15 blur-[120px] pointer-events-none -z-10" />
-      <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#4a2805]/20 blur-[130px] pointer-events-none -z-10" />
-
+    <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28 bg-[#FAF7F2]">
+      {/* Subtle architectural editorial frame lines */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center text-center max-w-4xl mx-auto space-y-6">
-          
-          {/* Trust Tag */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#141210] border border-[#3d3126] text-xs font-medium text-[#f5f0eb] shadow-xl hover:border-[#c98a4b] transition-all">
-            <span className="flex h-2 w-2 rounded-full bg-[#c98a4b] animate-pulse" />
-            <span className="text-[#a89f91]">Govt. Registered Agency</span>
-            <span className="text-[#696257]">•</span>
-            <span className="text-[#c98a4b] font-mono">অফপ্রিন্ট (Est. Sep 2025)</span>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          {/* Left Column: Editorial Headline & Booking CTAs */}
+          <div className="lg:col-span-7 space-y-7">
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-medium text-[#141210] shadow-xs">
+              <span className="flex h-2 w-2 rounded-full bg-[#A66D35]" />
+              <span className="text-[#5C5449]">Govt. Registered Studio & Agency</span>
+              <span className="text-[#D5CCB4]">•</span>
+              <span className="text-[#3A2008] font-mono font-semibold">অফপ্রিন্ট (Est. Sep 2025)</span>
+            </div>
 
-          {/* Main Headline */}
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-[#f5f0eb] leading-[1.1]">
-            Enduring Visual Legacies. <br />
-            <span className="bg-gradient-to-r from-[#c98a4b] via-[#e5a96b] to-[#a89f91] bg-clip-text text-transparent">
-              Bespoke Physical Solutions.
-            </span>
-          </h1>
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-[#141210] leading-[1.06]">
+              Enduring Visual Legacies.{" "}
+              <span className="text-[#3A2008] block sm:inline">
+                Timeless Portraiture.
+              </span>
+            </h1>
 
-          {/* Subtitle */}
-          <p className="text-base sm:text-lg text-[#a89f91] max-w-2xl leading-relaxed">
-            The premier corporate media production and tactile print merchandise agency in Bangladesh. 
-            Delivering cinematic summits, brand documentaries, and luxury branded collateral for visionary institutions.
-          </p>
+            <p className="text-base sm:text-lg text-[#5C5449] max-w-2xl leading-relaxed">
+              Dhaka’s premier photography studio, corporate media production house, and bespoke print agency. Reserve your session for{" "}
+              <strong className="text-[#141210] font-semibold">
+                IUB 27th Convocation Photography
+              </strong>
+              , executive portraits, brand documentaries, or private celebrations.
+            </p>
 
-          {/* CTAs */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 pt-4 w-full sm:w-auto">
-            <Link
-              href="#quote"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-semibold uppercase tracking-wider bg-gradient-to-r from-[#4a2805] to-[#6e3c08] hover:from-[#6e3c08] hover:to-[#c98a4b] text-[#f5f0eb] hover:text-black border border-[#c98a4b]/50 shadow-2xl shadow-[#4a2805]/40 hover:shadow-[#c98a4b]/30 transition-all duration-300 transform hover:-translate-y-0.5"
-            >
-              <span>Request Bespoke Quote</span>
-              <ArrowUpRight className="w-4 h-4" />
-            </Link>
+            {/* Primary & Secondary CTAs — Single Prominent IUB 27th Convocation Booking Button */}
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3.5 pt-2">
+              <Link
+                href="/book/convocation"
+                className="inline-flex items-center justify-center gap-2.5 px-7 py-4 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] shadow-md transition-all"
+              >
+                <GraduationCap className="w-4 h-4 text-[#D9A673]" />
+                <span>IUB 27th Convocation Booking</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </Link>
 
-            <Link
-              href="/works"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-medium text-[#f5f0eb] bg-[#141210] hover:bg-[#1c1815] border border-[#26201b] hover:border-[#3d3126] transition-all"
-            >
-              <Film className="w-4 h-4 text-[#c98a4b]" />
-              <span>Explore 50+ Projects</span>
-            </Link>
+              <Link
+                href="/book"
+                className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#FFFFFF] hover:bg-[#F4EFE6] text-[#3A2008] border border-[#D5CCB4] shadow-xs transition-all"
+              >
+                <Calendar className="w-4 h-4 text-[#A66D35]" />
+                <span>Book a Session</span>
+              </Link>
 
-            <Link
-              href="/print-solutions"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-medium text-[#f5f0eb] bg-[#141210] hover:bg-[#1c1815] border border-[#26201b] hover:border-[#3d3126] transition-all"
-            >
-              <Printer className="w-4 h-4 text-[#c98a4b]" />
-              <span>Print Catalog</span>
-            </Link>
-          </div>
+              <Link
+                href="/works"
+                className="inline-flex items-center justify-center gap-2 px-5 py-4 rounded-xl text-xs font-medium text-[#5C5449] hover:text-[#141210] bg-transparent hover:bg-[#F4EFE6] border border-transparent hover:border-[#E5DEC9] transition-all"
+              >
+                <Film className="w-4 h-4 text-[#A66D35]" />
+                <span>Explore 50+ Works</span>
+              </Link>
+            </div>
 
-          {/* Value Propositions / Key Metrics */}
-          <div className="pt-12 w-full">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-2xl bg-[#141210]/60 border border-[#26201b] backdrop-blur-md">
-              <div className="flex flex-col items-center justify-center p-3 text-center">
-                <span className="text-2xl sm:text-3xl font-extrabold text-[#f5f0eb] font-mono">50+</span>
-                <span className="text-xs text-[#a89f91] mt-1">Delivered Projects</span>
+            {/* Studio Assurance Strip */}
+            <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-[#E5DEC9]">
+              <div className="space-y-0.5">
+                <div className="text-2xl font-extrabold text-[#141210] font-mono">50+</div>
+                <div className="text-xs text-[#5C5449]">Delivered Productions</div>
               </div>
-              <div className="flex flex-col items-center justify-center p-3 text-center border-l border-[#26201b]">
-                <span className="text-2xl sm:text-3xl font-extrabold text-[#c98a4b] font-mono">2 Wings</span>
-                <span className="text-xs text-[#a89f91] mt-1">Media & Physical Merch</span>
+              <div className="space-y-0.5">
+                <div className="text-2xl font-extrabold text-[#3A2008] font-mono">Live</div>
+                <div className="text-xs text-[#5C5449]">Real-Time Slot Booking</div>
               </div>
-              <div className="flex flex-col items-center justify-center p-3 text-center border-l border-[#26201b]">
-                <span className="text-2xl sm:text-3xl font-extrabold text-[#f5f0eb] font-mono">Govt. Reg.</span>
-                <span className="text-xs text-[#a89f91] mt-1">Verified Entity in BD</span>
+              <div className="space-y-0.5">
+                <div className="text-2xl font-extrabold text-[#141210] font-mono">2 Wings</div>
+                <div className="text-xs text-[#5C5449]">Media & Print Collateral</div>
               </div>
-              <div className="flex flex-col items-center justify-center p-3 text-center border-l border-[#26201b]">
-                <span className="text-2xl sm:text-3xl font-extrabold text-[#c98a4b] font-mono">100%</span>
-                <span className="text-xs text-[#a89f91] mt-1">Bespoke Offline Deals</span>
+              <div className="space-y-0.5">
+                <div className="text-2xl font-extrabold text-[#A66D35] font-mono">Est. 2025</div>
+                <div className="text-xs text-[#5C5449]">Dhaka Studio & Agency</div>
               </div>
             </div>
           </div>
 
+          {/* Right Column: Dual Booking Pathway Showcase Card */}
+          <div className="lg:col-span-5">
+            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-4">
+                <div>
+                  <span className="text-[11px] font-mono uppercase tracking-widest text-[#A66D35] block">
+                    Direct Studio Reservations
+                  </span>
+                  <h2 className="text-xl font-bold text-[#141210] mt-0.5">
+                    Select Your Booking Pathway
+                  </h2>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-[#F4EFE6] border border-[#E5DEC9] text-[11px] font-mono text-[#3A2008]">
+                  Asia/Dhaka (BST)
+                </span>
+              </div>
+
+              {/* Pathway 1: Special Event & Milestone Campaigns */}
+              <Link
+                href="/book"
+                className="group block p-5 rounded-2xl bg-[#FAF7F2] hover:bg-[#F4EFE6] border border-[#E5DEC9] hover:border-[#A66D35] transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-[#3A2008] text-[#FAF7F2] flex items-center justify-center shrink-0">
+                      <GraduationCap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-[#A66D35] font-semibold">
+                        Special Event Booking
+                      </span>
+                      <h3 className="text-base font-bold text-[#141210] group-hover:text-[#3A2008]">
+                        Convocation &amp; Special Event Sessions
+                      </h3>
+                    </div>
+                  </div>
+                  <ArrowUpRight className="w-4 h-4 text-[#877D70] group-hover:text-[#3A2008] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0 mt-1" />
+                </div>
+                <p className="text-xs text-[#5C5449] mt-3 leading-relaxed">
+                  Dedicated graduate &amp; family portrait sessions, seasonal mini-sessions, and curated campaign time-slot reservations.
+                </p>
+              </Link>
+
+              {/* Pathway 2: Traditional Photography Booking */}
+              <Link
+                href="/book/traditional"
+                className="group block p-5 rounded-2xl bg-[#FAF7F2] hover:bg-[#F4EFE6] border border-[#E5DEC9] hover:border-[#A66D35] transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-[#F4EFE6] border border-[#D5CCB4] text-[#3A2008] flex items-center justify-center shrink-0">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-[#5C4028] font-semibold">
+                        Studio & On-Location
+                      </span>
+                      <h3 className="text-base font-bold text-[#141210] group-hover:text-[#3A2008]">
+                        Traditional Photography Sessions
+                      </h3>
+                    </div>
+                  </div>
+                  <ArrowUpRight className="w-4 h-4 text-[#877D70] group-hover:text-[#3A2008] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0 mt-1" />
+                </div>
+                <p className="text-xs text-[#5C5449] mt-3 leading-relaxed">
+                  Executive headshots, corporate summits, brand documentaries, portrait sessions, and seasonal bespoke weddings.
+                </p>
+              </Link>
+
+              <div className="pt-2 flex items-center justify-between text-xs text-[#5C5449]">
+                <span className="inline-flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#A66D35]" />
+                  <span>Instant Confirmation Reference</span>
+                </span>
+                <Link
+                  href="/client-portal"
+                  className="font-semibold text-[#3A2008] hover:text-[#A66D35] underline underline-offset-4"
+                >
+                  Manage Existing Booking →
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

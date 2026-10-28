@@ -15,24 +15,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OFFPRINT (অফপ্রিন্ট) • Corporate Media & Bespoke Print Agency",
+  title: "OFFPRINT (অফপ্রিন্ট) • Photography Studio, Convocation Portraits & Print Agency",
   description:
-    "Govt. Registered corporate agency in Bangladesh (Est. Sep 2025). Specializing in corporate summits, brand documentaries, executive headshots, and luxury bespoke merchandise & physical print solutions.",
+    "Govt. Registered photography studio and corporate agency in Bangladesh (Est. Sep 2025). Book IUB 27th Convocation photography, executive portraits, corporate summits, documentaries, and bespoke print collateral.",
   keywords: [
     "OFFPRINT",
     "অফপ্রিন্ট",
+    "IUB 27th Convocation Photography",
+    "Photography Booking Dhaka",
     "Corporate Summit Coverage Dhaka",
-    "Documentary Production Bangladesh",
     "Executive Headshots Dhaka",
-    "Corporate Swag Merchandise Bangladesh",
+    "Documentary Production Bangladesh",
     "Bespoke Business Cards Dhaka",
-    "Media Production Agency",
   ],
   authors: [{ name: "OFFPRINT Agency" }],
   openGraph: {
-    title: "OFFPRINT (অফপ্রিন্ট) • Media & Physical Print Solutions",
+    title: "OFFPRINT (অফপ্রিন্ট) • Photography Studio & Bespoke Print Solutions",
     description:
-      "Govt. Registered corporate production & luxury print merchandise agency in Bangladesh.",
+      "Govt. Registered photography studio & luxury print merchandise agency in Bangladesh.",
     url: "https://offprint.agency",
     siteName: "OFFPRINT",
     locale: "en_BD",
@@ -50,7 +50,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#0a0a0a] text-[#f5f0eb] selection:bg-[#c98a4b] selection:text-black">
+      <body className="min-h-full flex flex-col bg-[#FAF7F2] text-[#141210] selection:bg-[#3A2008] selection:text-[#FAF7F2]">
         <Header />
         <main className="flex-1 w-full">{children}</main>
         <Footer />

@@ -2,83 +2,102 @@
 
 import React from "react";
 import Link from "next/link";
-import { Video, Award, Users, Heart, ArrowUpRight, CheckCircle2, Mic, Film } from "lucide-react";
+import {
+  Video,
+  Users,
+  Heart,
+  ArrowUpRight,
+  CheckCircle2,
+  GraduationCap,
+  Calendar,
+} from "lucide-react";
 
 const SERVICES = [
   {
-    id: "summits",
-    title: "Corporate Summits & International Seminars",
-    tagline: "Multicam 4K Broadcast & Same-Day PR Delivery",
-    description: "Designed for embassies, financial institutions, and tech consortia. We orchestrate redundant multi-camera setups, clean audio board sync, live stream switcher outputs, and rapid same-day photo suites for press releases.",
+    id: "convocation",
+    title: "Academic & Milestone Event Portraiture",
+    tagline: "Dedicated Event Sessions & Family Portraits",
+    description:
+      "Celebrate your academic milestone or special campaign with editorial studio and outdoor portraiture. Real-time time-slot reservations, curated solo & family packages, and archival print options.",
     features: [
-      "Multi-angle 4K Cinema cameras (Sony FX series)",
-      "Wireless sound engineering with backup line recordings",
-      "Instant on-site photo editor with expedited press gallery",
-      "Executive keynote highlight teasers within 24 hours"
+      "Real-time time-slot reservations with guaranteed capacity",
+      "Individual graduate, family & peer group portrait coverage",
+      "High-resolution color-graded gallery & archival print options",
+      "Instant email confirmation & Google Calendar synchronization",
     ],
-    accent: "from-[#4a2805] to-[#141210]",
-    icon: Video,
+    bookingHref: "/book",
+    bookingLabel: "Explore Special Event Sessions",
+    icon: GraduationCap,
     span: "col-span-1 lg:col-span-2",
-  },
-  {
-    id: "documentaries",
-    title: "Brand Documentaries & Heritage Films",
-    tagline: "Narrative-Driven Cinema for Discerning Brands",
-    description: "We uncover the craftsmanship, industrial scale, and human ambition behind Bangladeshi institutions. Ideal for anniversary retrospectives, factory tours, and brand legacy marketing.",
-    features: [
-      "In-depth stakeholder interviews with teleprompter option",
-      "Industrial gimbal & aerial drone cinematography",
-      "Bespoke score mixing & subtle color grading"
-    ],
-    accent: "from-[#6e3c08]/40 to-[#141210]",
-    icon: Film,
-    span: "col-span-1",
+    featured: true,
   },
   {
     id: "headshots",
-    title: "Executive Headshots & C-Suite Portraits",
-    tagline: "Studio-Grade Portability for Boardrooms",
-    description: "Mobile studio lighting rigs deployed directly inside your Gulshan, Banani, or Motijheel headquarters. Minimal boardroom disruption, maximum executive polish.",
+    title: "Executive Headshots & Portraits",
+    tagline: "Studio & Corporate On-Location",
+    description:
+      "Mobile lighting rigs deployed at your Gulshan, Banani, or Motijheel office, or booked at our studio. Tethered live review and natural retouching.",
     features: [
-      "Tethered live review on iPads for instant selection",
-      "High-end frequency separation skin retouching",
-      "Uniform color-calibrated backdrops for team consistency"
+      "Tethered live review on iPad for instant selection",
+      "High-end natural skin retouching",
+      "Uniform color-calibrated backdrops for leadership teams",
     ],
-    accent: "from-[#141210] to-[#1c1815]",
+    bookingHref: "/book/traditional",
+    bookingLabel: "Book Portrait Session",
     icon: Users,
     span: "col-span-1",
+    featured: false,
   },
   {
-    id: "weddings",
-    title: "Seasonal Bespoke Weddings & Private Affairs",
-    tagline: "Exclusive Cinematic Chronicles for Esteemed Families",
-    description: "Strictly limited to a selective quota per calendar season. We bring editorial fashion aesthetics and respectful unobtrusive documentary coverage to multi-day grand celebrations.",
+    id: "summits",
+    title: "Corporate Summits & Seminars",
+    tagline: "Multicam 4K Broadcast & Same-Day PR Stills",
+    description:
+      "Designed for embassies, banks, and international forums. Redundant multi-camera coverage, clean board audio sync, and rapid press release photo suites.",
     features: [
-      "Fine-art photography team with medium format detail capture",
-      "Cinematic slow-motion 120fps drone sweeps",
-      "Handcrafted archival leather photo books available"
+      "Multi-angle 4K cinema cameras & dedicated photo team",
+      "Instant on-site editor for same-day press release photos",
+      "Executive keynote highlight teasers within 24 hours",
     ],
-    accent: "from-[#4a2805]/60 to-[#141210]",
+    bookingHref: "/book/traditional",
+    bookingLabel: "Book Event Coverage",
+    icon: Video,
+    span: "col-span-1",
+    featured: false,
+  },
+  {
+    id: "documentaries",
+    title: "Brand Documentaries & Weddings",
+    tagline: "Editorial Storytelling & Heritage Chronicles",
+    description:
+      "From industrial heritage documentaries to bespoke multi-day family wedding chronicles, we bring refined editorial aesthetics and unobtrusive storytelling.",
+    features: [
+      "Fine-art photography & cinema-grade documentary teams",
+      "Aerial drone cinematography & custom color grading",
+      "Handcrafted archival photo albums & framing options",
+    ],
+    bookingHref: "/book/traditional",
+    bookingLabel: "Schedule Consultation / Session",
     icon: Heart,
     span: "col-span-1 lg:col-span-2",
+    featured: false,
   },
 ];
 
 export default function ServicesBento() {
   return (
-    <section className="py-24 bg-[#0a0a0a] relative border-t border-[#26201b]" id="services">
+    <section className="py-24 bg-[#FAF7F2] relative border-t border-[#E5DEC9]" id="services">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#141210] border border-[#3d3126] text-xs font-mono text-[#c98a4b]">
-            <span>Media & Production Wing</span>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono text-[#A66D35]">
+            <span>Photography & Production Wing</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-[#f5f0eb] tracking-tight">
-            Specialized Production Capabilities
+          <h2 className="text-3xl sm:text-5xl font-extrabold text-[#141210] tracking-tight">
+            Specialized Photography & Media Services
           </h2>
-          <p className="text-sm sm:text-base text-[#a89f91]">
-            Engineered around strict reliability standards. We do not treat corporate coverage as generic videography—we treat it as brand architecture.
+          <p className="text-sm sm:text-base text-[#5C5449]">
+            Book your appointment directly online through our live scheduling calendar or request a bespoke multi-day production scope.
           </p>
         </div>
 
@@ -89,43 +108,68 @@ export default function ServicesBento() {
             return (
               <div
                 key={srv.id}
-                className={`group relative rounded-2xl bg-gradient-to-br ${srv.accent} border border-[#26201b] hover:border-[#c98a4b]/50 p-8 flex flex-col justify-between transition-all duration-300 hover:shadow-2xl hover:shadow-[#4a2805]/20 ${srv.span}`}
+                className={`group relative rounded-3xl p-8 flex flex-col justify-between transition-all duration-300 border ${
+                  srv.featured
+                    ? "bg-[#F4EFE6] border-[#D5CCB4] hover:border-[#3A2008]"
+                    : "bg-[#FFFFFF] border-[#E5DEC9] hover:border-[#A66D35]"
+                } hover:shadow-lg ${srv.span}`}
               >
                 <div className="space-y-4">
-                  <div className="w-12 h-12 rounded-xl bg-[#141210] border border-[#3d3126] flex items-center justify-center text-[#c98a4b] group-hover:bg-[#4a2805] group-hover:text-[#f5f0eb] transition-colors">
-                    <Icon className="w-6 h-6" />
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${
+                        srv.featured
+                          ? "bg-[#3A2008] text-[#FAF7F2]"
+                          : "bg-[#FAF7F2] border border-[#E5DEC9] text-[#3A2008] group-hover:bg-[#3A2008] group-hover:text-[#FAF7F2]"
+                      }`}
+                    >
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    {srv.featured && (
+                      <span className="px-3 py-1 rounded-full bg-[#3A2008] text-[#FAF7F2] text-[11px] font-mono uppercase tracking-wider">
+                        Featured Event
+                      </span>
+                    )}
                   </div>
 
                   <div>
-                    <span className="text-xs font-mono uppercase tracking-widest text-[#c98a4b]">
+                    <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
                       {srv.tagline}
                     </span>
-                    <h3 className="text-2xl font-bold text-[#f5f0eb] mt-1 group-hover:text-white transition-colors">
+                    <h3 className="text-2xl font-bold text-[#141210] mt-1">
                       {srv.title}
                     </h3>
                   </div>
 
-                  <p className="text-xs sm:text-sm text-[#a89f91] leading-relaxed">
+                  <p className="text-xs sm:text-sm text-[#5C5449] leading-relaxed">
                     {srv.description}
                   </p>
 
                   <ul className="space-y-2 pt-2">
                     {srv.features.map((feat, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-[#d4cbbf]">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#c98a4b] shrink-0 mt-0.5" />
+                      <li key={i} className="flex items-start gap-2 text-xs text-[#141210]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#A66D35] shrink-0 mt-0.5" />
                         <span>{feat}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="pt-6 mt-6 border-t border-[#26201b] flex items-center justify-between">
-                  <span className="text-xs font-mono text-[#696257]">Bespoke Quote Protocol</span>
+                <div className="pt-6 mt-6 border-t border-[#E5DEC9] flex flex-wrap items-center justify-between gap-3">
+                  <Link
+                    href={srv.bookingHref}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider transition-colors"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>{srv.bookingLabel}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </Link>
+
                   <Link
                     href={`#quote?service=${srv.id}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#c98a4b] hover:text-[#f5f0eb] group-hover:translate-x-1 transition-all"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#5C4028] hover:text-[#141210] transition-colors"
                   >
-                    <span>Request Details</span>
+                    <span>Custom Inquiry</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </Link>
                 </div>
@@ -133,7 +177,6 @@ export default function ServicesBento() {
             );
           })}
         </div>
-
       </div>
     </section>
   );
