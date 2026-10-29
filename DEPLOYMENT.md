@@ -1,4 +1,4 @@
-# OFFPRINT (অফপ্রিন্ট) — Vercel Production Deployment Guide
+# OFFPRINT (অফপ্রিন্ট) — Vercel Production Deployment & Environment Guide
 
 This document provides a comprehensive, step-by-step operational guide for configuring, deploying, and maintaining the **OFFPRINT** photography portfolio, booking platform, and administration system on **Vercel** with **Supabase** (database, storage, auth) and **Google Cloud** (Calendar & Gmail integrations).
 
@@ -23,7 +23,7 @@ Before deploying, ensure you have active administrative access to:
 1. **Vercel Account:** With permissions to create or connect projects ([vercel.com](https://vercel.com)).
 2. **Supabase Project:** Connected project reference `qqklsbbysybzivifnykd` ([supabase.com](https://supabase.com)).
 3. **Google Cloud Platform Console:** With an active project for OAuth 2.0 client credentials ([console.cloud.google.com](https://console.cloud.google.com)).
-4. **Git Repository:** GitHub, GitLab, or Bitbucket repository containing this codebase.
+4. **Git Repository:** GitHub repository at [https://github.com/shshantoo/offprint-website](https://github.com/shshantoo/offprint-website).
 
 ---
 
@@ -42,37 +42,39 @@ When importing this repository into Vercel, use the following build & project se
 
 ---
 
-## 4. Environment Variables Specification
+## 4. Environment Variables Specification & `.env.vercel`
 
-Configure the following environment variables in the Vercel Dashboard under **Project Settings → Environment Variables**.
+The root configuration file `.env.vercel` contains the complete specification for production deployment. It is strictly excluded from Git via `.gitignore`.
 
-> **Important:** Client-safe variables prefixed with `NEXT_PUBLIC_` are exposed in browser JavaScript bundles. All non-prefixed variables (`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`) are server-only secrets.
+> **Important:** Client-safe variables prefixed with `NEXT_PUBLIC_` are exposed in browser JavaScript bundles. All non-prefixed variables (`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`) are server-only secrets and must NEVER be exposed client-side.
 
-### Complete Environment Variables Matrix
+### 4.1 Variables Status & Audit Matrix
 
-| Variable Name | Environments | Secret? | Description & Value Format |
-| :--- | :--- | :--- | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Production, Preview, Development | No | Supabase project REST URL, e.g. `https://qqklsbbysybzivifnykd.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Production, Preview, Development | No | Supabase public client API key (new publishable key or legacy anon key) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Production, Preview, Development | No | Supabase public anon key (backward-compatible alias) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Production, Preview, Development | **YES** | Supabase service role key. Required for privileged atomic operations, admin auth checks, and server-side RPCs. **Never expose to client.** |
-| `NEXT_PUBLIC_SITE_URL` | Production (and Preview if custom domain) | No | Canonical public domain, e.g. `https://offprint.agency`. If omitted in Preview, the app automatically falls back to `VERCEL_URL`. |
-| `NEXT_PUBLIC_APP_URL` | Production, Preview | No | Alias for canonical URL, e.g. `https://offprint.agency`. |
-| `NEXT_PUBLIC_DEFAULT_TIMEZONE` | Production, Preview, Development | No | Studio operational timezone: `Asia/Dhaka` (+06:00). Used for appointment calculations and calendar sync. |
-| `ADMIN_EMAILS` | Production, Preview, Development | No | Comma-separated admin email addresses for fallback server-side checks, e.g. `admin@offprint.agency`. Primary check uses `public.profiles.role = 'admin'`. |
-| `GOOGLE_CLIENT_ID` | Production, Preview, Development | No | Google Cloud Console OAuth 2.0 Client ID, e.g. `xxxxxx.apps.googleusercontent.com`. |
-| `GOOGLE_CLIENT_SECRET` | Production, Preview, Development | **YES** | Google Cloud Console OAuth 2.0 Client Secret. |
-| `GOOGLE_OAUTH_REDIRECT_URI` | Production, Preview | No | Canonical OAuth callback URI: `https://offprint.agency/api/admin/integrations/google/callback`. If omitted, dynamically resolved via `getSiteBaseUrl()`. |
-| `GOOGLE_REDIRECT_URI` | Production, Preview | No | Alias for `GOOGLE_OAUTH_REDIRECT_URI`. |
-| `GOOGLE_TOKEN_ENCRYPTION_KEY` | Production, Preview, Development | **YES** | 32-byte hex string (64 characters) for AES-256-GCM encryption of stored OAuth refresh tokens. |
-| `GOOGLE_CALENDAR_ID` | Production, Preview, Development | No | Target calendar identifier (e.g. `primary` or a dedicated studio calendar address). |
-| `GOOGLE_SENDER_EMAIL` | Production, Preview, Development | No | Sender email address for booking notification emails (e.g. `inquiry@offprint.agency`). |
-| `NEXT_PUBLIC_AGENCY_NAME` | Production, Preview, Development | No | Brand name: `"OFFPRINT (অফপ্রিন্ট)"` |
-| `NEXT_PUBLIC_AGENCY_PHONE` | Production, Preview, Development | No | Studio contact telephone number: `"+880 1700-000000"` |
-| `NEXT_PUBLIC_AGENCY_EMAIL` | Production, Preview, Development | No | Studio public inquiry email: `"inquiry@offprint.agency"` |
-| `NEXT_PUBLIC_AGENCY_LOCATION` | Production, Preview, Development | No | Studio physical location: `"Dhaka, Bangladesh"` |
+| Variable Name | Environment Scope | Secret? | Status in `.env.vercel` | Where to Obtain / Notes |
+| :--- | :--- | :---: | :---: | :--- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Prod, Preview, Dev | No | **Configured** | Verified live URL: `https://qqklsbbysybzivifnykd.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Prod, Preview, Dev | No | **Configured** | Verified publishable key: `sb_publishable_FSDszrBIjIbZFyeTsgCLrQ_t6Q7hDWp` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Prod, Preview, Dev | No | **Configured** | Backward-compatible alias for publishable key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Prod, Preview, Dev | **YES** | **REQUIRED (Missing)** | Supabase Dashboard → **Project Settings → API → `service_role` (secret)** |
+| `NEXT_PUBLIC_SITE_URL` | Production | No | **Pending Domain** | Set to canonical domain (e.g. `https://offprint.agency`). If omitted, auto-resolves to `VERCEL_PROJECT_PRODUCTION_URL` or `VERCEL_URL`. |
+| `NEXT_PUBLIC_APP_URL` | Production, Preview | No | **Pending Domain** | Alias for canonical URL. |
+| `NEXT_PUBLIC_DEFAULT_TIMEZONE` | Prod, Preview, Dev | No | **Configured** | Studio operational timezone: `Asia/Dhaka` (+06:00). |
+| `ADMIN_EMAILS` | Prod, Preview, Dev | No | **Configured** | `admin@offprint.agency` (Verified in database `public.profiles`). |
+| `GOOGLE_CLIENT_ID` | Prod, Preview, Dev | No | **Pending Google** | Google Cloud Console → **APIs & Services → Credentials → OAuth 2.0 Client IDs**. |
+| `GOOGLE_CLIENT_SECRET` | Prod, Preview, Dev | **YES** | **REQUIRED SECRET** | Google Cloud Console → **OAuth 2.0 Client Secret**. |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Production, Preview | No | **Pending Domain** | Canonical OAuth callback: `https://offprint.agency/api/admin/integrations/google/callback`. If omitted, dynamically derived. |
+| `GOOGLE_REDIRECT_URI` | Production, Preview | No | **Pending Domain** | Alias for `GOOGLE_OAUTH_REDIRECT_URI`. |
+| `GOOGLE_TOKEN_ENCRYPTION_KEY` | Prod, Preview, Dev | **YES** | **REQUIRED SECRET** | 32-byte hex key (64 characters) for AES-256-GCM token encryption. Generate via Node.js crypto (see below). |
+| `GOOGLE_CALENDAR_ID` | Prod, Preview, Dev | No | **Configured** | `primary` (or dedicated studio calendar email). |
+| `GOOGLE_SENDER_EMAIL` | Prod, Preview, Dev | No | **Configured** | `inquiry@offprint.agency` (Gmail sender for booking confirmations). |
+| `NEXT_PUBLIC_AGENCY_NAME` | Prod, Preview, Dev | No | **Configured** | `"OFFPRINT (অফপ্রিন্ট)"` |
+| `NEXT_PUBLIC_AGENCY_PHONE` | Prod, Preview, Dev | No | **Configured** | Verified studio phone or empty string |
+| `NEXT_PUBLIC_AGENCY_EMAIL` | Prod, Preview, Dev | No | **Configured** | `"inquiry@offprint.agency"` |
+| `NEXT_PUBLIC_AGENCY_LOCATION` | Prod, Preview, Dev | No | **Configured** | `"Dhaka, Bangladesh"` |
 
-### Generating the Token Encryption Key
+---
+
+### 4.2 Generating the Token Encryption Key
 
 Generate a cryptographically secure 64-hex-character AES-256 key using Node.js:
 
@@ -80,15 +82,80 @@ Generate a cryptographically secure 64-hex-character AES-256 key using Node.js:
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Paste the resulting output as the value for `GOOGLE_TOKEN_ENCRYPTION_KEY` in Vercel.
+Copy the 64-character output into `.env.vercel` as `GOOGLE_TOKEN_ENCRYPTION_KEY`.
 
 ---
 
-## 5. Supabase Production Checklist
+## 5. Transferring Environment Variables to Vercel
+
+### Method A: Automated Secure CLI Import (Recommended)
+
+A dedicated security-hardened import script is provided at `scripts/import-env-to-vercel.mjs`.
+
+#### Security Guarantees:
+1. **Zero Secret Exposure:** Values are piped directly to the Vercel CLI via standard input (`stdin`). Secrets are **never** passed as CLI arguments, visible in process tables (`ps`), or printed in logs.
+2. **Pre-flight Validation:** Rejects missing required variables (`SUPABASE_SERVICE_ROLE_KEY`) and unresolved placeholder text before any external API calls.
+3. **Overwrite Protection:** Detects existing Vercel environment variables and prompts before replacing.
+4. **Environment Isolation Warning:** Displays a prominent warning if live production Supabase credentials are being imported into Preview or Development.
+5. **No Auto-Deploy:** Does NOT trigger a build or deployment.
+
+#### Prerequisites for CLI Import:
+```bash
+# 1. Install Vercel CLI globally
+npm install -g vercel
+
+# 2. Authenticate
+vercel login
+
+# 3. Link this local directory to your Vercel project
+vercel link
+```
+
+#### Running the Importer:
+```bash
+# Test with a dry run (validates .env.vercel without making changes)
+node scripts/import-env-to-vercel.mjs --dry-run --env=production
+
+# Import verified variables into Production
+node scripts/import-env-to-vercel.mjs --env=production
+
+# Import into Preview (with interactive safety confirmation)
+node scripts/import-env-to-vercel.mjs --env=preview
+```
+
+---
+
+### Method B: Manual Configuration via Vercel Dashboard
+
+If you prefer using the web interface:
+
+1. Open your project on [vercel.com](https://vercel.com).
+2. Navigate to **Settings → Environment Variables**.
+3. For each variable in `.env.vercel`:
+   - Enter the **Key**.
+   - Enter the **Value**.
+   - Check the target environments: **Production**, **Preview**, and/or **Development**.
+   - For secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`), ensure they are marked as **Sensitive**.
+4. Click **Save**.
+
+---
+
+## 6. Environment-Specific Configuration (Production vs Preview)
+
+| Setting | Production Environment | Preview / Branch Environment |
+| :--- | :--- | :--- |
+| **Domain Resolution** | Explicit custom domain, e.g. `https://offprint.agency` | Automatically derived from Vercel system variable `VERCEL_URL` (e.g. `https://project-git-branch.vercel.app`) |
+| **Supabase Database** | Live production instance (`qqklsbbysybzivifnykd`) | Recommended: Dedicated staging project (or exercise caution if sharing production instance) |
+| **Google Integrations** | Enabled with production OAuth redirect URI registered in Google Cloud Console | Keep Google credentials unset or use dedicated staging credentials to prevent test PRs from sending real emails or calendar invites |
+| **Site URL Variable** | Set `NEXT_PUBLIC_SITE_URL=https://offprint.agency` | Leave `NEXT_PUBLIC_SITE_URL` unset (the app automatically falls back to `https://${process.env.VERCEL_URL}`) |
+
+---
+
+## 7. Supabase Production Configuration Checklist
 
 Verify that the following configurations are active on the connected Supabase project (`qqklsbbysybzivifnykd`):
 
-### 5.1 Applied Migrations
+### 7.1 Applied Migrations
 All 6 core migrations located in `supabase/migrations/` must be applied in order:
 1. `20261028000001_initial_core_schema.sql` (Profiles, Leads, Products, Portfolio, Settings)
 2. `20261028000002_booking_and_portal_schema.sql` (Services, Special Booking Types, Packages, Slots, Bookings, Google Integrations)
@@ -97,7 +164,7 @@ All 6 core migrations located in `supabase/migrations/` must be applied in order
 5. `20261028000005_admin_credential_rpcs.sql` (Admin credential change RPCs, first login security flags)
 6. `20261028000006_package_management_and_frame_printing.sql` (Package CRUD RPCs, frame printing pricing schemas, historical snapshots)
 
-### 5.2 Storage Bucket Configuration
+### 7.2 Storage Bucket Configuration
 The application uses two Supabase Storage buckets:
 - `portfolio-media`: Standard bucket, **Public: Enabled**, File Size Limit: **15 MB**, Allowed MIME Types: `image/jpeg`, `image/png`, `image/webp`, `image/avif`, `image/gif`.
 - `product-media`: Standard bucket, **Public: Enabled**, File Size Limit: **15 MB**, Allowed MIME Types: `image/jpeg`, `image/png`, `image/webp`, `image/avif`, `image/gif`.
@@ -106,13 +173,13 @@ The application uses two Supabase Storage buckets:
 - **Public Read:** Enabled for all users on `portfolio-media` and `product-media`.
 - **Authenticated Admin Write:** Permitted exclusively for users with `role = 'admin'` in `public.profiles`.
 
-### 5.3 Direct-to-Browser Upload Architecture
+### 7.3 Direct-to-Browser Upload Architecture
 Vercel enforces a strict **4.5 MB request payload limit** (`413 FUNCTION_PAYLOAD_TOO_LARGE`) on serverless function requests. To support high-resolution photography uploads:
 - Both `PortfolioCMSClient.tsx` and `AdminPortalClient.tsx` upload files directly from the administrator's browser to Supabase Storage using authenticated browser client sessions.
 - Files up to the full 15 MB bucket limit upload seamlessly without routing image bytes through Vercel serverless routes.
 - If a browser upload encounters a network issue, the system automatically falls back to the server route `/api/admin/storage/portfolio`.
 
-### 5.4 Supabase Authentication URL Settings
+### 7.4 Supabase Authentication URL Settings
 In the Supabase Dashboard under **Authentication → URL Configuration**:
 - **Site URL:** Set to `https://offprint.agency` (or your primary production URL).
 - **Redirect URLs:** Add the following patterns:
@@ -120,23 +187,23 @@ In the Supabase Dashboard under **Authentication → URL Configuration**:
   - `https://*.vercel.app/**` (allows preview deployments to handle auth callbacks)
   - `http://localhost:3000/**` (for local development)
 
-### 5.5 Administrator Account
+### 7.5 Administrator Account
 - Ensure at least one profile in `public.profiles` has `role = 'admin'`.
 - The default administrator username is `shanto` with email `admin@offprint.agency`.
 - When an administrator signs in for the first time, the system prompts them to configure their personal password and profile details via the secure `admin_change_credentials` RPC.
 
 ---
 
-## 6. Google Cloud Platform Configuration Checklist
+## 8. Google Cloud Platform Configuration Checklist
 
 To enable Google Calendar synchronisation and automated Gmail booking notifications:
 
-### 6.1 Enable Google APIs
+### 8.1 Enable Google APIs
 In Google Cloud Console (**APIs & Services → Library**), enable:
 1. **Google Calendar API**
 2. **Gmail API**
 
-### 6.2 Configure OAuth Consent Screen
+### 8.2 Configure OAuth Consent Screen
 In Google Cloud Console (**APIs & Services → OAuth consent screen**):
 1. **User Type:** Select **External** (or **Internal** for Google Workspace).
 2. **App Information:** App Name: `OFFPRINT`, User Support Email: `inquiry@offprint.agency`.
@@ -147,7 +214,7 @@ In Google Cloud Console (**APIs & Services → OAuth consent screen**):
    - `https://www.googleapis.com/auth/userinfo.email` (Identify connected account)
 5. **Publishing Status:** Set to **Production** (or add admin Google accounts as Test Users if in Testing status).
 
-### 6.3 OAuth 2.0 Client Credentials
+### 8.3 OAuth 2.0 Client Credentials
 In Google Cloud Console (**APIs & Services → Credentials → OAuth 2.0 Client IDs**):
 1. **Application Type:** Web application.
 2. **Name:** `OFFPRINT Production Web Client`.
@@ -158,52 +225,6 @@ In Google Cloud Console (**APIs & Services → Credentials → OAuth 2.0 Client 
    - `https://offprint.agency/api/admin/integrations/google/callback`
    - `http://localhost:3000/api/admin/integrations/google/callback`
    - *(Optional for Vercel preview)*: `https://<your-preview-domain>.vercel.app/api/admin/integrations/google/callback`
-
----
-
-## 7. Security Hardening & Edge Headers
-
-The production build includes pre-configured security headers in `next.config.ts`:
-
-- `X-Content-Type-Options: nosniff` (Prevents MIME-sniffing exploits)
-- `X-Frame-Options: SAMEORIGIN` (Protects against clickjacking attacks)
-- `X-XSS-Protection: 1; mode=block` (Legacy browser XSS filter)
-- `Referrer-Policy: strict-origin-when-cross-origin` (Safeguards referrer privacy)
-- `Permissions-Policy: camera=(), microphone=(), geolocation=()` (Restricts browser sensor access)
-
-Database transactions are strictly guarded by PostgreSQL Row-Level Security (RLS) on all 19 public tables. Client booking writes and package modifications use concurrency-safe stored procedures (`create_booking_atomic`, `delete_or_archive_package`) with explicit table-level advisory locks to prevent race conditions and overbooking.
-
----
-
-## 8. Deployment Procedures
-
-### Method A: Deploy via Vercel Dashboard (Recommended)
-
-1. Push all code changes to your Git repository (`main` or production branch).
-2. Go to [vercel.com/new](https://vercel.com/new) and select your Git repository.
-3. In the project creation wizard:
-   - Select **Next.js** framework preset.
-   - Expand the **Environment Variables** section.
-   - Copy and paste all required environment variables from [Section 4](#4-environment-variables-specification).
-4. Click **Deploy**. Vercel will build and deploy the application across its global edge network.
-
-### Method B: Deploy via Vercel CLI
-
-Ensure the Vercel CLI is installed and authenticated:
-
-```bash
-# 1. Install Vercel CLI globally (if not already installed)
-npm install -g vercel
-
-# 2. Authenticate
-vercel login
-
-# 3. Deploy to preview for testing
-vercel
-
-# 4. Deploy to production
-vercel --prod
-```
 
 ---
 
@@ -272,5 +293,4 @@ Once the production deployment is complete, execute the following verification s
 ---
 
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.0.0 (Production Ready)*
-
+*Document Version: 1.1.0 (Production & Environment Ready)*

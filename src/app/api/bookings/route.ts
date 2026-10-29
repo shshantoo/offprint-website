@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("bookings")
-      .select("*")
+      .select("*, workflow_stage:workflow_stages(id, name, slug, sort_order, is_final_delivery, is_visible_to_client, client_facing_description)")
       .eq("user_id", auth.context.user.id)
       .order("start_at", { ascending: false });
 
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
             success: false,
             code: "SCHEMA_NOT_INSTALLED",
             error:
-              "Booking schema is not yet installed in Supabase. Run supabase/schema.sql in the Supabase SQL Editor.",
+              "Booking service is temporarily updating. Please try again shortly.",
           },
           { status: 503 }
         );

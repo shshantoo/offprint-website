@@ -22,6 +22,8 @@ import {
   RefreshCw,
   KeyRound,
   ShieldCheck,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 
 type AuthMode = "signin" | "signup" | "forgot_password" | "update_password";
@@ -136,7 +138,7 @@ export default function ClientPortalClient() {
     setAuthMessage(null);
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      setAuthError("Supabase client is not configured.");
+      setAuthError("Authentication service is temporarily unavailable. Please try again shortly.");
       return;
     }
 
@@ -163,7 +165,7 @@ export default function ClientPortalClient() {
     setAuthMessage(null);
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      setAuthError("Supabase client is not configured.");
+      setAuthError("Authentication service is temporarily unavailable. Please try again shortly.");
       return;
     }
 
@@ -661,8 +663,7 @@ export default function ClientPortalClient() {
         <div className="rounded-3xl bg-[#FFFBEB] border border-[#F59E0B]/40 p-6 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-[#B86B19] shrink-0 mt-0.5" />
           <p className="text-xs sm:text-sm text-[#5C5449]">
-            The Supabase booking tables have not been migrated yet. Run{" "}
-            <code className="font-mono text-[#141210]">supabase/schema.sql</code> in the Supabase SQL Editor to store and manage reservations.
+            Reservation management is currently updating. If you need immediate assistance with an existing booking, please contact our studio at inquiry@offprint.agency.
           </p>
         </div>
       )}
@@ -885,6 +886,107 @@ export default function ClientPortalClient() {
                       </div>
                     )}
                   </div>
+
+                  {/* Production Workflow Stage Tracker */}
+                  {b.status !== "cancelled" && (
+                    <div className="pt-2 border-t border-[#E5DEC9] space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-mono text-[#877D70] uppercase">
+                          Workflow Stage
+                        </span>
+                        <span className="font-semibold text-[#3A2008]">
+                          {b.workflow_stage?.name || (b.status === "completed" ? "Shoot Completed" : "Booking Confirmed")}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {[1, 2, 3, 4, 5].map((step) => {
+                          const currentOrder = b.workflow_stage?.sort_order ?? (b.status === "completed" ? 2 : 1);
+                          const isReached = step <= currentOrder;
+                          const isCurrent = step === currentOrder;
+                          return (
+                            <div
+                              key={step}
+                              className={`h-1.5 rounded-full transition-all ${
+                                isCurrent
+                                  ? "bg-[#3A2008]"
+                                  : isReached
+                                  ? "bg-[#A66D35]"
+                                  : "bg-[#E5DEC9]"
+                              }`}
+                              title={`Workflow Stage ${step}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Photo-Bank Gallery Card */}
+                  {b.delivery_url && (() => {
+                    const isExpired = Boolean(
+                      b.delivery_expires_at &&
+                        new Date(b.delivery_expires_at) <= new Date()
+                    );
+                    if (isExpired) {
+                      return (
+                        <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-[#92400E]">
+                              Photo-Bank Gallery Expired
+                            </span>
+                            <span className="text-[10px] font-mono text-[#92400E]">
+                              {formatDhakaDateTime(b.delivery_expires_at!)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#78350F]">
+                            The validity period for this gallery has elapsed. To request re-activation, please{" "}
+                            <Link
+                              href="/contact"
+                              className="underline font-semibold hover:text-[#141210]"
+                            >
+                              contact the studio
+                            </Link>.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="p-3.5 rounded-2xl bg-[#EEF7F2] border border-[#2E6B4E]/25 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-[#2E6B4E] text-[#FFFFFF] flex items-center justify-center shrink-0">
+                              <Download className="w-3.5 h-3.5" />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-[#2E6B4E]">
+                                Photo-Bank Ready
+                              </div>
+                              {b.delivery_expires_at && (
+                                <div className="text-[10px] text-[#2E6B4E]/80 font-mono">
+                                  Valid until {formatDhakaDateTime(b.delivery_expires_at)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <a
+                            href={b.delivery_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#2E6B4E] hover:bg-[#23533c] text-white text-xs font-semibold shadow-2xs transition-colors shrink-0"
+                          >
+                            <span>Access Gallery</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        {b.delivery_message && (
+                          <p className="text-[11px] text-[#2E6B4E]/90 italic bg-white/70 p-2 rounded-xl border border-[#2E6B4E]/10">
+                            &ldquo;{b.delivery_message}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="pt-4 border-t border-[#E5DEC9] flex items-center justify-between gap-3">

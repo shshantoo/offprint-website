@@ -1,180 +1,260 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import {
-  ArrowUpRight,
-  Calendar,
-  GraduationCap,
-  Camera,
-  Film,
-  ShieldCheck,
-} from "lucide-react";
+import Image from "next/image";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { ChevronLeft, ChevronRight, ArrowUpRight } from "lucide-react";
+import type { HeroSlide, HomepageConfig } from "@/types/database";
 
-export default function HeroSection() {
-  return (
-    <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28 bg-[#FAF7F2]">
-      {/* Subtle architectural editorial frame lines */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          {/* Left Column: Editorial Headline & Booking CTAs */}
-          <div className="lg:col-span-7 space-y-7">
-            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-medium text-[#141210] shadow-xs">
-              <span className="flex h-2 w-2 rounded-full bg-[#A66D35]" />
-              <span className="text-[#5C5449]">Govt. Registered Studio & Agency</span>
-              <span className="text-[#D5CCB4]">•</span>
-              <span className="text-[#3A2008] font-mono font-semibold">অফপ্রিন্ট (Est. Sep 2025)</span>
-            </div>
+interface HeroSectionProps {
+  slides?: HeroSlide[];
+  config?: Partial<HomepageConfig>;
+}
 
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-[#141210] leading-[1.06]">
-              Enduring Visual Legacies.{" "}
-              <span className="text-[#3A2008] block sm:inline">
-                Timeless Portraiture.
-              </span>
-            </h1>
+export default function HeroSection({ slides = [], config }: HeroSectionProps) {
+  const shouldReduceMotion = useReducedMotion();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
 
-            <p className="text-base sm:text-lg text-[#5C5449] max-w-2xl leading-relaxed">
-              Dhaka’s premier photography studio, corporate media production house, and bespoke print agency. Reserve your session for{" "}
-              <strong className="text-[#141210] font-semibold">
-                IUB 27th Convocation Photography
-              </strong>
-              , executive portraits, brand documentaries, or private celebrations.
-            </p>
+  // Active published slides
+  const activeSlides = Array.isArray(slides)
+    ? slides.filter((s) => s && s.is_published !== false)
+    : [];
 
-            {/* Primary & Secondary CTAs — Single Prominent IUB 27th Convocation Booking Button */}
-            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3.5 pt-2">
-              <Link
-                href="/book/convocation"
-                className="inline-flex items-center justify-center gap-2.5 px-7 py-4 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] shadow-md transition-all"
-              >
-                <GraduationCap className="w-4 h-4 text-[#D9A673]" />
-                <span>IUB 27th Convocation Booking</span>
-                <ArrowUpRight className="w-4 h-4" />
-              </Link>
+  const totalSlides = activeSlides.length;
+  const currentSlide = activeSlides[currentIndex] || activeSlides[0];
 
-              <Link
-                href="/book"
-                className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-xs font-semibold uppercase tracking-wider bg-[#FFFFFF] hover:bg-[#F4EFE6] text-[#3A2008] border border-[#D5CCB4] shadow-xs transition-all"
-              >
-                <Calendar className="w-4 h-4 text-[#A66D35]" />
-                <span>Book a Session</span>
-              </Link>
+  const autoplay = config?.hero_autoplay !== false && totalSlides > 1;
+  const intervalSeconds = Math.max(3, Number(config?.hero_interval_sec) || 6);
 
-              <Link
-                href="/works"
-                className="inline-flex items-center justify-center gap-2 px-5 py-4 rounded-xl text-xs font-medium text-[#5C5449] hover:text-[#141210] bg-transparent hover:bg-[#F4EFE6] border border-transparent hover:border-[#E5DEC9] transition-all"
-              >
-                <Film className="w-4 h-4 text-[#A66D35]" />
-                <span>Explore 50+ Works</span>
-              </Link>
-            </div>
+  const nextSlide = useCallback(() => {
+    if (totalSlides <= 1) return;
+    setCurrentIndex((prev) => (prev + 1) % totalSlides);
+  }, [totalSlides]);
 
-            {/* Studio Assurance Strip */}
-            <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-[#E5DEC9]">
-              <div className="space-y-0.5">
-                <div className="text-2xl font-extrabold text-[#141210] font-mono">50+</div>
-                <div className="text-xs text-[#5C5449]">Delivered Productions</div>
-              </div>
-              <div className="space-y-0.5">
-                <div className="text-2xl font-extrabold text-[#3A2008] font-mono">Live</div>
-                <div className="text-xs text-[#5C5449]">Real-Time Slot Booking</div>
-              </div>
-              <div className="space-y-0.5">
-                <div className="text-2xl font-extrabold text-[#141210] font-mono">2 Wings</div>
-                <div className="text-xs text-[#5C5449]">Media & Print Collateral</div>
-              </div>
-              <div className="space-y-0.5">
-                <div className="text-2xl font-extrabold text-[#A66D35] font-mono">Est. 2025</div>
-                <div className="text-xs text-[#5C5449]">Dhaka Studio & Agency</div>
-              </div>
-            </div>
-          </div>
+  const prevSlide = useCallback(() => {
+    if (totalSlides <= 1) return;
+    setCurrentIndex((prev) => (prev - 1 + totalSlides) % totalSlides);
+  }, [totalSlides]);
 
-          {/* Right Column: Dual Booking Pathway Showcase Card */}
-          <div className="lg:col-span-5">
-            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 sm:p-8 shadow-sm space-y-6">
-              <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-4">
-                <div>
-                  <span className="text-[11px] font-mono uppercase tracking-widest text-[#A66D35] block">
-                    Direct Studio Reservations
-                  </span>
-                  <h2 className="text-xl font-bold text-[#141210] mt-0.5">
-                    Select Your Booking Pathway
-                  </h2>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-[#F4EFE6] border border-[#E5DEC9] text-[11px] font-mono text-[#3A2008]">
-                  Asia/Dhaka (BST)
-                </span>
-              </div>
+  // Autoplay timer
+  useEffect(() => {
+    if (!autoplay || isPaused || totalSlides <= 1) return;
 
-              {/* Pathway 1: Special Event & Milestone Campaigns */}
-              <Link
-                href="/book"
-                className="group block p-5 rounded-2xl bg-[#FAF7F2] hover:bg-[#F4EFE6] border border-[#E5DEC9] hover:border-[#A66D35] transition-all"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-xl bg-[#3A2008] text-[#FAF7F2] flex items-center justify-center shrink-0">
-                      <GraduationCap className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-[#A66D35] font-semibold">
-                        Special Event Booking
-                      </span>
-                      <h3 className="text-base font-bold text-[#141210] group-hover:text-[#3A2008]">
-                        Convocation &amp; Special Event Sessions
-                      </h3>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#877D70] group-hover:text-[#3A2008] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0 mt-1" />
-                </div>
-                <p className="text-xs text-[#5C5449] mt-3 leading-relaxed">
-                  Dedicated graduate &amp; family portrait sessions, seasonal mini-sessions, and curated campaign time-slot reservations.
-                </p>
-              </Link>
+    const timer = setInterval(() => {
+      nextSlide();
+    }, intervalSeconds * 1000);
 
-              {/* Pathway 2: Traditional Photography Booking */}
-              <Link
-                href="/book/traditional"
-                className="group block p-5 rounded-2xl bg-[#FAF7F2] hover:bg-[#F4EFE6] border border-[#E5DEC9] hover:border-[#A66D35] transition-all"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-xl bg-[#F4EFE6] border border-[#D5CCB4] text-[#3A2008] flex items-center justify-center shrink-0">
-                      <Camera className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-[#5C4028] font-semibold">
-                        Studio & On-Location
-                      </span>
-                      <h3 className="text-base font-bold text-[#141210] group-hover:text-[#3A2008]">
-                        Traditional Photography Sessions
-                      </h3>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#877D70] group-hover:text-[#3A2008] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0 mt-1" />
-                </div>
-                <p className="text-xs text-[#5C5449] mt-3 leading-relaxed">
-                  Executive headshots, corporate summits, brand documentaries, portrait sessions, and seasonal bespoke weddings.
-                </p>
-              </Link>
+    return () => clearInterval(timer);
+  }, [autoplay, isPaused, intervalSeconds, totalSlides, nextSlide]);
 
-              <div className="pt-2 flex items-center justify-between text-xs text-[#5C5449]">
-                <span className="inline-flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Instant Confirmation Reference</span>
-                </span>
-                <Link
-                  href="/client-portal"
-                  className="font-semibold text-[#3A2008] hover:text-[#A66D35] underline underline-offset-4"
-                >
-                  Manage Existing Booking →
-                </Link>
-              </div>
-            </div>
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        nextSlide();
+      } else if (e.key === "ArrowLeft") {
+        prevSlide();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [nextSlide, prevSlide]);
+
+  // Touch swipe handling
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current === null || touchEndX.current === null) return;
+    const distance = touchStartX.current - touchEndX.current;
+    if (distance > 50) {
+      nextSlide();
+    } else if (distance < -50) {
+      prevSlide();
+    }
+    touchStartX.current = null;
+    touchEndX.current = null;
+  };
+
+  // If no published hero slides exist, render a clean, quiet neutral fallback (no dummy images)
+  if (totalSlides === 0) {
+    return (
+      <section className="relative w-full h-screen min-h-[100dvh] bg-[#141210] text-[#FAF7F2] flex items-center justify-center px-4 overflow-hidden">
+        <div className="absolute inset-0 bg-radial from-[#2C2621]/40 via-transparent to-transparent pointer-events-none" />
+        <div className="relative z-10 max-w-2xl text-center space-y-6">
+          <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#A66D35]">
+            OFFPRINT STUDIO • DHAKA
+          </span>
+          <h1 className="font-editorial text-4xl sm:text-6xl text-[#FAF7F2] font-light">
+            Enduring Visual Legacies.
+          </h1>
+          <p className="text-sm sm:text-base text-[#D5CCB4] font-light max-w-md mx-auto leading-relaxed">
+            Curated milestone portraiture, institutional coverage, and archival print editions.
+          </p>
+          <div className="pt-4">
+            <Link
+              href="/book"
+              className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-[#FAF7F2] text-[#141210] hover:bg-white text-xs font-semibold uppercase tracking-widest transition-all"
+            >
+              <span>Explore Studio Services</span>
+              <ArrowUpRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
+      </section>
+    );
+  }
+
+  // Focal point mapping
+  const focalPointClass =
+    currentSlide?.focal_point === "top"
+      ? "object-top"
+      : currentSlide?.focal_point === "bottom"
+      ? "object-bottom"
+      : currentSlide?.focal_point === "left"
+      ? "object-left"
+      : currentSlide?.focal_point === "right"
+      ? "object-right"
+      : "object-center";
+
+  // Text alignment mapping
+  const alignClass =
+    currentSlide?.text_align === "center"
+      ? "text-center items-center mx-auto"
+      : currentSlide?.text_align === "right"
+      ? "text-right items-end ml-auto"
+      : "text-left items-start mr-auto";
+
+  return (
+    <section
+      aria-label="Hero Photography Slider"
+      className="relative w-full h-screen min-h-[100dvh] overflow-hidden bg-[#141210] select-none"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Slide Image Layer with Smooth Crossfade Transition */}
+      <AnimatePresence initial={false} mode="sync">
+        <motion.div
+          key={currentSlide.id || currentIndex}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{
+            duration: shouldReduceMotion ? 0.3 : 0.9,
+            ease: [0.25, 0.1, 0.25, 1],
+          }}
+          className="absolute inset-0 w-full h-full"
+        >
+          <Image
+            src={currentSlide.image_url}
+            alt={currentSlide.alt_text || currentSlide.title || "OFFPRINT Photography"}
+            fill
+            priority
+            sizes="100vw"
+            className={`object-cover ${focalPointClass}`}
+          />
+          {/* Restrained tonal gradient for text legibility without obscuring photography */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/30 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-black/20 pointer-events-none" />
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Slide Editorial Content Overlay */}
+      <div className="relative z-20 w-full h-full flex flex-col justify-end pb-24 sm:pb-28 lg:pb-32 px-6 sm:px-12 lg:px-20 max-w-7xl mx-auto">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentSlide.id || currentIndex}
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: shouldReduceMotion ? 0 : -10 }}
+            transition={{
+              duration: shouldReduceMotion ? 0.2 : 0.6,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className={`flex flex-col ${alignClass} max-w-3xl space-y-4 sm:space-y-6`}
+          >
+            {/* Optional Eyebrow Text (only rendered if non-empty) */}
+            {currentSlide.eyebrow?.trim() && (
+              <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#D5CCB4] inline-block font-medium drop-shadow-xs">
+                {currentSlide.eyebrow.trim()}
+              </span>
+            )}
+
+            {/* Clear, Elegant Editorial Headline */}
+            <h1 className="font-editorial text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-normal tracking-tight text-[#FAF7F2] leading-[1.05] drop-shadow-sm">
+              {currentSlide.title}
+            </h1>
+
+            {/* Optional Short Supporting Sentence */}
+            {currentSlide.subtitle?.trim() && (
+              <p className="text-sm sm:text-base md:text-lg text-[#D5CCB4] font-light leading-relaxed max-w-xl drop-shadow-xs">
+                {currentSlide.subtitle.trim()}
+              </p>
+            )}
+
+            {/* Primary Call-to-Action */}
+            {currentSlide.cta_label?.trim() && (
+              <div className="pt-2 sm:pt-4">
+                <Link
+                  href={currentSlide.cta_href?.trim() || "/book"}
+                  className="inline-flex items-center gap-2.5 px-7 sm:px-8 py-3.5 sm:py-4 rounded-full bg-[#FAF7F2] text-[#141210] hover:bg-white text-xs font-semibold uppercase tracking-widest transition-all duration-300 shadow-xl hover:scale-[1.02] active:scale-[0.99] cursor-pointer"
+                >
+                  <span>{currentSlide.cta_label.trim()}</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
+
+      {/* Minimalist Slider Navigation & Controls Strip */}
+      {totalSlides > 1 && (
+        <div className="absolute z-30 bottom-8 sm:bottom-10 left-6 sm:left-12 lg:left-20 right-6 sm:right-12 lg:right-20 flex items-center justify-between text-[#FAF7F2]/80">
+          {/* Subtle Slide Number Indicator */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono tracking-widest text-[#FAF7F2]">
+              {String(currentIndex + 1).padStart(2, "0")}
+            </span>
+            <span className="w-8 h-px bg-white/30" />
+            <span className="text-xs font-mono tracking-widest text-white/50">
+              {String(totalSlides).padStart(2, "0")}
+            </span>
+          </div>
+
+          {/* Discreet Slider Chevrons */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={prevSlide}
+              aria-label="Previous photograph"
+              className="w-10 h-10 rounded-full border border-white/20 bg-black/20 hover:bg-black/50 hover:border-white/40 backdrop-blur-xs flex items-center justify-center text-white transition-all cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={nextSlide}
+              aria-label="Next photograph"
+              className="w-10 h-10 rounded-full border border-white/20 bg-black/20 hover:bg-black/50 hover:border-white/40 backdrop-blur-xs flex items-center justify-center text-white transition-all cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

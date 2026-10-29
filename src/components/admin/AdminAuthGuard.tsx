@@ -54,6 +54,50 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
   const [setupSubmitting, setSetupSubmitting] = useState(false);
 
   const pathname = usePathname();
+  const [isExpiredNotice, setIsExpiredNotice] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("expired") === "true") {
+        setIsExpiredNotice(true);
+      }
+    }
+  }, []);
+
+  // 60-minute inactivity auto-logout
+  useEffect(() => {
+    if (!adminStatus?.authenticated) return;
+
+    let timeoutId: NodeJS.Timeout;
+    const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
+
+    const resetTimer = () => {
+      // Don't auto-logout if an upload is currently in progress
+      if (typeof window !== "undefined" && (window as any).__OFFPRINT_ACTIVE_UPLOADS__ > 0) return;
+
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => {
+        try {
+          await fetch("/api/admin/auth/logout", { method: "POST" });
+          const supabase = getSupabaseBrowserClient();
+          if (supabase) await supabase.auth.signOut();
+        } catch {
+          // ignore
+        }
+        window.location.href = "/admin-portal?expired=true";
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+  }, [adminStatus?.authenticated]);
 
   const verifyAdminSession = useCallback(async () => {
     try {
@@ -196,7 +240,7 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex flex-col items-center justify-center gap-3 text-xs text-[#5C5449]">
         <RefreshCw className="w-6 h-6 text-[#A66D35] animate-spin" />
-        <span>Verifying Supabase administrator credentials &amp; role...</span>
+        <span>Verifying administrator credentials...</span>
       </div>
     );
   }
@@ -226,6 +270,13 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
             <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {isExpiredNotice && !errorMsg && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>Your administrator session expired after 60 minutes of inactivity. Please sign in again to resume.</span>
             </div>
           )}
 

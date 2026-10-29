@@ -68,7 +68,7 @@ export default function PrivacyAndPolicyPage() {
             </div>
             <h2 className="text-lg font-bold text-[#141210]">Data & Gallery Privacy</h2>
             <p className="text-xs text-[#5C5449] leading-relaxed">
-              Your contact details, academic ID, and booking records are protected by row-level security (RLS) in our database. Public availability endpoints only expose anonymized time intervals and never disclose client identities.
+              Your contact details, academic ID, and booking records are protected by strict privacy and security controls. Public availability schedules only expose anonymized time intervals and never disclose client identities.
             </p>
           </div>
         </div>

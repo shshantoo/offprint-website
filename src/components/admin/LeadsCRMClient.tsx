@@ -259,7 +259,7 @@ export default function LeadsCRMClient() {
       {/* Leads List */}
       {isLoading ? (
         <div className="text-center py-12 text-xs text-[#5C5449]">
-          Loading CRM database records...
+          Loading inquiries...
         </div>
       ) : filteredLeads.length === 0 ? (
         <div className="text-center py-12 text-xs text-[#5C5449] rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9]">

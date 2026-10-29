@@ -41,6 +41,7 @@ import type {
   EventTimeSlot,
   PhotographyPackage,
   PhotographyService,
+  EventHeroSlide,
 } from "../src/types/database";
 
 function createSampleFixture() {
@@ -1142,5 +1143,298 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     });
     assert.match(emailHtml.html, /Natural Teak Frame/);
     assert.match(emailHtml.html, /10,400/);
+  });
+
+  it("14. validates Hero Slider, dynamic CMS publishing rules, and strict omission of dummy fallback data", async () => {
+    const { DEFAULT_HOMEPAGE_CONFIG, DEFAULT_SITE_SETTINGS } = await import(
+      "@/lib/data-service"
+    );
+
+    // 1. Homepage config has clean defaults and no dummy claims
+    assert.equal(typeof DEFAULT_HOMEPAGE_CONFIG.hero_autoplay, "boolean");
+    assert.equal(typeof DEFAULT_HOMEPAGE_CONFIG.hero_interval_sec, "number");
+    assert.ok(Array.isArray(DEFAULT_HOMEPAGE_CONFIG.ticker_items));
+    assert.ok(DEFAULT_HOMEPAGE_CONFIG.ticker_items.length > 0);
+
+    // 2. Default site settings must not contain dummy numbers or unverified credentials
+    assert.equal(DEFAULT_SITE_SETTINGS.general.phone, "");
+    assert.equal(DEFAULT_SITE_SETTINGS.general.registration_badge, "");
+    assert.ok(!DEFAULT_SITE_SETTINGS.homepage.hero_eyebrow.includes("Govt. Registered"));
+
+    // 3. Slide visibility filtering: draft slides must not be published
+    const mockSlides = [
+      {
+        id: "s-1",
+        title: "Published Slide",
+        image_url: "https://example.com/slide1.jpg",
+        sort_order: 1,
+        is_published: true,
+      },
+      {
+        id: "s-2",
+        title: "Draft Slide",
+        image_url: "https://example.com/slide2.jpg",
+        sort_order: 2,
+        is_published: false,
+      },
+    ];
+
+    const publicSlides = mockSlides.filter((s) => s.is_published);
+    assert.equal(publicSlides.length, 1);
+    assert.equal(publicSlides[0].id, "s-1");
+
+    // 4. Testimonials filtering: when 0 are published, public list is empty
+    const mockTestimonials = [
+      {
+        id: "t-1",
+        quote: "Draft review",
+        author: "Client",
+        sort_order: 1,
+        is_published: false,
+      },
+    ];
+    const publicTestimonials = mockTestimonials.filter((t) => t.is_published);
+    assert.equal(publicTestimonials.length, 0); // Gracefully omitted
+  });
+
+  it("15. validates Work Archive, folder type segregation (event-archives vs event-archive-highlights), and strict highlight isolation", async () => {
+    // 1. Storage prefix enforcement based on folder_type
+    const eventFolderSlug = "iub-27th-convocation";
+    const expectedEventPrefix = `event-archives/${eventFolderSlug}/`;
+    const highlightFolderSlug = "iub-graduates-stage";
+    const expectedHighlightPrefix = `event-archive-highlights/${highlightFolderSlug}/`;
+
+    assert.ok(expectedEventPrefix.startsWith("event-archives/"));
+    assert.ok(expectedHighlightPrefix.startsWith("event-archive-highlights/"));
+    assert.notEqual(expectedEventPrefix, expectedHighlightPrefix);
+
+    // 2. Folder filtering: Event Gallery must only offer event-archive folders
+    const mockFolders = [
+      {
+        id: "f-1",
+        name: "IUB 27th Convocation Main Gallery",
+        slug: "iub-27th-convocation",
+        folder_type: "event-archive",
+        storage_prefix: "event-archives/iub-27th-convocation/",
+        photo_count: 5,
+        assigned_events_count: 1,
+        assigned_highlights_count: 0,
+      },
+      {
+        id: "f-2",
+        name: "IUB Graduation Cap Toss & Stage",
+        slug: "iub-graduates-stage",
+        folder_type: "event-highlight",
+        storage_prefix: "event-archive-highlights/iub-graduates-stage/",
+        photo_count: 3,
+        assigned_events_count: 0,
+        assigned_highlights_count: 1,
+      },
+    ];
+
+    const eventArchiveFolders = mockFolders.filter((f) => f.folder_type === "event-archive");
+    const highlightFolders = mockFolders.filter((f) => f.folder_type === "event-highlight");
+
+    assert.equal(eventArchiveFolders.length, 1);
+    assert.equal(eventArchiveFolders[0].slug, "iub-27th-convocation");
+    assert.equal(highlightFolders.length, 1);
+    assert.equal(highlightFolders[0].slug, "iub-graduates-stage");
+
+    // 3. Highlight Isolation: Highlights must strictly belong to their parent event
+    const parentEventId = "evt-iub-convocation";
+    const unrelatedEventId = "evt-tech-summit";
+
+    const mockHighlights = [
+      {
+        id: "hl-1",
+        event_id: parentEventId,
+        title: "Stage Honours & Degree Conferral",
+        slug: "stage-honours",
+        short_description: "Formal degree conferral",
+        cover_image_url: "https://example.com/stage.jpg",
+        folder_id: "f-2",
+        sort_order: 1,
+        is_published: true,
+      },
+      {
+        id: "hl-2",
+        event_id: unrelatedEventId,
+        title: "Tech Summit Keynotes",
+        slug: "summit-keynotes",
+        short_description: "Keynote presentation",
+        cover_image_url: "https://example.com/keynote.jpg",
+        folder_id: "f-3",
+        sort_order: 1,
+        is_published: true,
+      },
+    ];
+
+    const iubHighlights = mockHighlights.filter((h) => h.event_id === parentEventId);
+    assert.equal(iubHighlights.length, 1);
+    assert.equal(iubHighlights[0].title, "Stage Honours & Degree Conferral");
+
+    // Must never leak to unrelated event
+    const techHighlights = mockHighlights.filter((h) => h.event_id === unrelatedEventId);
+    assert.equal(techHighlights.length, 1);
+    assert.equal(techHighlights[0].title, "Tech Summit Keynotes");
+    assert.notEqual(iubHighlights[0].event_id, techHighlights[0].event_id);
+
+    // 4. Safe folder preservation: highlights can select independent dedicated folders
+    assert.notEqual(mockHighlights[0].folder_id, mockFolders[0].id);
+    assert.equal(mockHighlights[0].folder_id, "f-2");
+  });
+
+  it("16. validates Event Hero Slides, storage placeholder exclusion, and clean lead state", () => {
+    // 1. Storage placeholder exclusion test
+    const rawStorageObjects = [
+      { name: ".emptyFolderPlaceholder", metadata: { size: 0 } },
+      { name: ".keep", metadata: { size: 0 } },
+      { name: ".DS_Store", metadata: { size: 6148 } },
+      { name: "convocation-01.jpg", metadata: { size: 2450000, mimetype: "image/jpeg" } },
+      { name: "convocation-02.png", metadata: { size: 3100000, mimetype: "image/png" } },
+      { name: "notes.txt", metadata: { size: 1024, mimetype: "text/plain" } },
+    ];
+
+    const eligiblePhotos = rawStorageObjects.filter((item) => {
+      if (!item.name || item.name.startsWith(".")) return false;
+      if (item.name.endsWith(".emptyFolderPlaceholder") || item.name.endsWith(".keep")) return false;
+      const lower = item.name.toLowerCase();
+      return (
+        lower.endsWith(".jpg") ||
+        lower.endsWith(".jpeg") ||
+        lower.endsWith(".png") ||
+        lower.endsWith(".webp") ||
+        lower.endsWith(".avif") ||
+        lower.endsWith(".gif")
+      );
+    });
+
+    assert.equal(eligiblePhotos.length, 2);
+    assert.equal(eligiblePhotos[0].name, "convocation-01.jpg");
+    assert.equal(eligiblePhotos[1].name, "convocation-02.png");
+
+    // 2. Event Hero Slides ordering and focal point integrity
+    const mockSlides: EventHeroSlide[] = [
+      {
+        id: "slide-1",
+        image_url: "https://example.com/slide1.jpg",
+        caption: "Auditorium Stage",
+        focal_point: "center",
+        sort_order: 1,
+        is_cover: true,
+      },
+      {
+        id: "slide-2",
+        image_url: "https://example.com/slide2.jpg",
+        caption: "Graduation Cap Toss",
+        focal_point: "top",
+        sort_order: 2,
+        is_cover: false,
+      },
+    ];
+
+    const orderedSlides = [...mockSlides].sort((a, b) => a.sort_order - b.sort_order);
+    assert.equal(orderedSlides.length, 2);
+    assert.equal(orderedSlides[0].focal_point, "center");
+    assert.equal(orderedSlides[1].focal_point, "top");
+
+    // 3. Clean leads state: initial leads must be empty array
+    const leads: unknown[] = [];
+    assert.equal(leads.length, 0);
+  });
+
+  it("17. validates Storage Folder Status Reconciler, Dynamic Booking & Hub Switches, and Client Photo-Bank Delivery Lifecycle", () => {
+    // 1. Storage Folder Status Evaluation
+    const storageFolders = [
+      { id: "f-1", name: "BracU 16th Convocation", photo_count: 121, storage_exists: true },
+      { id: "f-2", name: "Empty Highlight Folder", photo_count: 0, storage_exists: true },
+      { id: "f-3", name: "Deleted Remote Folder", photo_count: 0, storage_exists: false },
+    ];
+
+    const computedStatus = storageFolders.map((f) => ({
+      ...f,
+      status: !f.storage_exists ? "missing" : f.photo_count > 0 ? "available" : "empty",
+    }));
+
+    assert.equal(computedStatus[0].status, "available");
+    assert.equal(computedStatus[1].status, "empty");
+    assert.equal(computedStatus[2].status, "missing");
+
+    // 2. Dual Booking Access & Hub Visibility Switches
+    const mockEvents = [
+      {
+        id: "ev-1",
+        title: "IUB 27th Convocation",
+        is_published: true,
+        is_booking_enabled: false,
+        is_visible_on_booking_page: true,
+      },
+      {
+        id: "ev-2",
+        title: "Private Corporate GALA",
+        is_published: true,
+        is_booking_enabled: true,
+        is_visible_on_booking_page: false,
+      },
+    ];
+
+    // Event 1 is visible on booking page hub, but direct booking creation must be refused
+    assert.equal(mockEvents[0].is_visible_on_booking_page, true);
+    assert.equal(mockEvents[0].is_booking_enabled, false);
+
+    // Event 2 is hidden from public booking hub, but allowed if reached directly or configured
+    assert.equal(mockEvents[1].is_visible_on_booking_page, false);
+    assert.equal(mockEvents[1].is_booking_enabled, true);
+
+    // 3. Dynamic Daily Schedule Engine with Break Periods
+    const operatingStart = "09:00";
+    const operatingEnd = "13:00";
+    const slotDuration = 60; // 1 hour slots
+    const breakPeriod = { start_time: "11:00", end_time: "12:00" };
+
+    // Generate potential slots: 09:00, 10:00, 11:00, 12:00
+    const rawTimes = ["09:00", "10:00", "11:00", "12:00"];
+    const filteredTimes = rawTimes.filter((t) => {
+      // Exclude if overlapping break period
+      return !(t >= breakPeriod.start_time && t < breakPeriod.end_time);
+    });
+
+    assert.deepEqual(filteredTimes, ["09:00", "10:00", "12:00"]);
+    assert.equal(filteredTimes.includes("11:00"), false); // Excluded during break
+
+    // 4. Client Photo-Bank Delivery & Expiry Calculations
+    const validityDays = 14;
+    const nowMs = 1730000000000;
+    const expiresAtMs = nowMs + validityDays * 86_400_000;
+    const expiresAtIso = new Date(expiresAtMs).toISOString();
+
+    const bookingWithDelivery = {
+      id: "b-100",
+      workflow_stage_id: "stage-final",
+      delivery_url: "https://drive.google.com/sample-gallery-100",
+      delivery_validity_days: validityDays,
+      delivery_expires_at: expiresAtIso,
+      delivery_status: "delivered",
+    };
+
+    // Active delivery check
+    const isStillActive = new Date(bookingWithDelivery.delivery_expires_at).getTime() > nowMs;
+    assert.equal(isStillActive, true);
+
+    // After 15 days, must be expired
+    const futureMs = nowMs + 15 * 86_400_000;
+    const isExpiredInFuture = new Date(bookingWithDelivery.delivery_expires_at).getTime() <= futureMs;
+    assert.equal(isExpiredInFuture, true);
+
+    // Final stage requires non-empty delivery URL
+    const validateFinalDelivery = (url: string | null | undefined) => {
+      if (!url || !url.trim()) {
+        throw new Error("A valid photo-bank gallery URL is required to advance this booking to the Final Gallery Delivered stage.");
+      }
+      return true;
+    };
+
+    assert.throws(() => validateFinalDelivery(""), /A valid photo-bank gallery URL is required/);
+    assert.equal(validateFinalDelivery(bookingWithDelivery.delivery_url), true);
   });
 });

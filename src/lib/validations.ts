@@ -411,6 +411,18 @@ export const bookingEventSchema = z.object({
   custom_questions: z.array(customQuestionSchema).optional().default([]),
   frame_printing_config: framePrintingConfigSchema.optional(),
   is_featured_on_home: z.boolean().optional().default(false),
+  is_booking_enabled: z.boolean().optional().default(true),
+  is_visible_on_booking_page: z.boolean().optional().default(true),
+  operating_days: z.array(z.number().int().min(0).max(6)).optional().default([0, 1, 2, 3, 4, 5, 6]),
+  operating_start_time: z.string().trim().optional().default("09:00"),
+  operating_end_time: z.string().trim().optional().default("18:00"),
+  slot_interval_mins: z.coerce.number().int().min(10).max(480).optional().default(30),
+  break_periods: z.array(z.object({
+    name: z.string().trim(),
+    start_time: z.string().trim(),
+    end_time: z.string().trim(),
+  })).optional().default([]),
+  schedule_overrides: z.array(z.any()).optional().default([]),
   resource_pool: z.string().trim().min(1).default("primary_studio"),
 });
 

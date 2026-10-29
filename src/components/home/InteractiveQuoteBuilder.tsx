@@ -26,11 +26,13 @@ import {
 interface InteractiveQuoteBuilderProps {
   defaultType?: InquiryType;
   defaultScope?: string;
+  show?: boolean;
 }
 
 export default function InteractiveQuoteBuilder({
   defaultType = "event_coverage",
   defaultScope = "",
+  show = true,
 }: InteractiveQuoteBuilderProps) {
   const [inquiryType, setInquiryType] = useState<InquiryType>(defaultType);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,6 +60,8 @@ export default function InteractiveQuoteBuilder({
   useEffect(() => {
     setValue("inquiry_type", inquiryType);
   }, [inquiryType, setValue]);
+
+  if (show === false) return null;
 
   const onSubmit = async (data: LeadFormData) => {
     try {
@@ -111,7 +115,7 @@ export default function InteractiveQuoteBuilder({
             <Sparkles className="w-3.5 h-3.5" />
             <span>Direct Project & Merch Desk</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-[#141210] tracking-tight">
+          <h2 className="font-editorial text-3xl sm:text-5xl font-normal text-[#141210] tracking-tight">
             Draft Your Custom Project Inquiry
           </h2>
           <p className="text-sm text-[#5C5449]">

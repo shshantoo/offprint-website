@@ -7,6 +7,15 @@ import type {
   LeadStatus,
   PortfolioCategory,
   PrintCategory,
+  HeroSlide,
+  Testimonial,
+  HomepageConfig,
+  MediaFolder,
+  MediaFolderType,
+  MediaFolderWithMeta,
+  MediaFolderPhoto,
+  EventArchive,
+  EventHighlight,
 } from "@/types/database";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -285,55 +294,7 @@ export const INITIAL_PRODUCTS: PrintProduct[] = [
   },
 ];
 
-export const INITIAL_LEADS: Lead[] = [
-  {
-    id: "lead-1",
-    client_name: "Tanvir Ahmed",
-    company_name: "Beximco Innovations",
-    email: "tanvir.a@bexinnovations.com",
-    phone: "+8801711223344",
-    inquiry_type: "event_coverage",
-    details:
-      "Annual Global Partner Summit at Radisson Blu Dhaka. Need 3 multicam videographers, 4K executive keynote highlights, and same-day PR photo delivery.",
-    estimated_qty: "2 Days (Approx 400 attendees)",
-    event_date: "2026-11-20",
-    status: "new",
-    admin_notes: "Initial inquiry received via web portal. High priority corporate client.",
-    created_at: "2026-10-12T16:00:00Z",
-  },
-  {
-    id: "lead-2",
-    client_name: "Sabrina Khan",
-    company_name: "Loom & Weave Bangladesh",
-    email: "sabrina@loomandweave.com.bd",
-    phone: "+8801819556677",
-    inquiry_type: "physical_merch",
-    details:
-      "Looking for 250 bespoke executive swag kits including custom embossed leather planners and laser engraved pens for European apparel buyers.",
-    estimated_qty: "250 kits",
-    event_date: null,
-    status: "quote_sent",
-    admin_notes:
-      "Quotation draft #OFP-2026-88 sent to Sabrina. Follow up scheduled on Thursday.",
-    created_at: "2026-10-11T10:00:00Z",
-  },
-  {
-    id: "lead-3",
-    client_name: "Farhan Chowdhury",
-    company_name: "Chowdhury Holdings",
-    email: "farhan@chowdhury.com",
-    phone: "+8801912345678",
-    inquiry_type: "event_coverage",
-    details:
-      "Executive wedding media coverage in Dhaka Army Golf Club. 3-day festivities requiring high frame rate cinematic crew.",
-    estimated_qty: "3 Days",
-    event_date: "2026-12-15",
-    status: "contacted",
-    admin_notes:
-      "Called Farhan. Requested formal quotation breakdown for cinematic crew + drone license.",
-    created_at: "2026-10-10T12:00:00Z",
-  },
-];
+export const INITIAL_LEADS: Lead[] = [];
 
 // In-browser local storage keys
 const STORAGE_KEYS = {
@@ -381,22 +342,19 @@ export async function fetchPortfolioProjects(
         query = query.eq("category", category);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         return (data as PortfolioProject[]).map(normalizePortfolioProject);
       }
+      if (error) {
+        console.warn("Supabase portfolio fetch error:", error.message);
+      }
     } catch (err) {
-      console.warn("Supabase fetch failed, falling back to local cache:", err);
+      console.warn("Supabase fetch failed:", err);
     }
   }
 
-  const items = getLocalData<PortfolioProject>(
-    STORAGE_KEYS.PORTFOLIO,
-    INITIAL_PORTFOLIO
-  ).map(normalizePortfolioProject);
-  if (category && category !== "all") {
-    return items.filter((item) => item.category === category);
-  }
-  return items;
+  // Never invent dummy data when database is empty
+  return [];
 }
 
 export async function fetchFlagshipProjects(): Promise<PortfolioProject[]> {
@@ -405,7 +363,8 @@ export async function fetchFlagshipProjects(): Promise<PortfolioProject[]> {
 }
 
 export async function savePortfolioProject(
-  project: Omit<PortfolioProject, "id" | "created_at"> & { id?: string }
+  project: Omit<PortfolioProject, "id" | "created_at"> & { id?: string },
+  customClient?: any
 ): Promise<PortfolioProject> {
   const normalized = normalizePortfolioProject({
     ...project,
@@ -414,7 +373,8 @@ export async function savePortfolioProject(
     updated_at: new Date().toISOString(),
   });
 
-  if (isSupabaseConfigured() && supabase) {
+  const client = customClient || supabase;
+  if (isSupabaseConfigured() && client) {
     try {
       const dbPayload = {
         id: normalized.id,
@@ -434,19 +394,24 @@ export async function savePortfolioProject(
         description: normalized.description || null,
         updated_at: new Date().toISOString(),
       };
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from("portfolio_projects")
         .upsert(dbPayload)
         .select()
         .single();
-      if (!error && data) {
+      if (error) {
+        console.error("Supabase portfolio upsert error:", error);
+        throw new Error(`Failed to save portfolio project to database: ${error.message}`);
+      }
+      if (data) {
         return normalizePortfolioProject(data as PortfolioProject);
       }
-      if (error) {
-        console.warn("Supabase portfolio upsert warning:", error.message);
+    } catch (err: any) {
+      if (err.message && err.message.includes("Failed to save")) {
+        throw err;
       }
-    } catch (err) {
-      console.warn("Supabase upsert failed:", err);
+      console.warn("Supabase upsert warning:", err);
+      throw err;
     }
   }
 
@@ -466,29 +431,32 @@ export async function savePortfolioProject(
   return normalized;
 }
 
-export async function deletePortfolioProject(id: string): Promise<boolean> {
+export async function deletePortfolioProject(id: string, customClient?: any): Promise<boolean> {
   const allProjects = await fetchPortfolioProjects("all");
   const target = allProjects.find((p) => p.id === id);
 
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      await supabase.from("portfolio_projects").delete().eq("id", id);
+  const client = customClient || supabase;
+  if (isSupabaseConfigured() && client) {
+    const { error } = await client.from("portfolio_projects").delete().eq("id", id);
+    if (error) {
+      console.error("Supabase delete failed:", error);
+      throw new Error(`Failed to delete portfolio project from database: ${error.message}`);
+    }
 
-      if (target) {
-        const candidatePaths = new Set<string>();
-        if (target.cover_storage_path) candidatePaths.add(target.cover_storage_path);
-        for (const item of target.gallery_items || []) {
-          if (item.storage_path) candidatePaths.add(item.storage_path);
-        }
-        const safeToRemove = Array.from(candidatePaths).filter(
-          (path) => !isPortfolioStoragePathReferenced(path, allProjects, id)
-        );
-        if (safeToRemove.length > 0) {
-          await supabase.storage.from("portfolio-media").remove(safeToRemove);
-        }
+    if (target) {
+      const candidatePaths = new Set<string>();
+      if (target.cover_storage_path) candidatePaths.add(target.cover_storage_path);
+      for (const item of target.gallery_items || []) {
+        if (item.storage_path) candidatePaths.add(item.storage_path);
       }
-    } catch (err) {
-      console.warn("Supabase delete failed:", err);
+      const safeToRemove = Array.from(candidatePaths).filter(
+        (path) => !isPortfolioStoragePathReferenced(path, allProjects, id)
+      );
+      if (safeToRemove.length > 0) {
+        try {
+          await client.storage.from("portfolio-media").remove(safeToRemove);
+        } catch {}
+      }
     }
   }
 
@@ -500,6 +468,467 @@ export async function deletePortfolioProject(id: string): Promise<boolean> {
   setLocalData(STORAGE_KEYS.PORTFOLIO, updated);
   return true;
 }
+
+// -----------------------------------------------------------------------------
+// WORK ARCHIVE, SUPABASE MEDIA FOLDERS & EVENT HIGHLIGHTS SERVICES
+// -----------------------------------------------------------------------------
+
+export async function fetchMediaFolders(
+  type?: MediaFolderType,
+  customClient?: any
+): Promise<MediaFolderWithMeta[]> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) return [];
+
+  try {
+    const { data, error } = await client.rpc("get_media_folders_with_meta", {
+      p_folder_type: type || null,
+    });
+    if (!error && Array.isArray(data)) {
+      return (data as any[]).map((f) => ({
+        ...f,
+        photo_count: Number(f.photo_count || 0),
+        assigned_events_count: Number(f.assigned_events_count || 0),
+        assigned_highlights_count: Number(f.assigned_highlights_count || 0),
+        storage_status:
+          f.storage_status ||
+          (Number(f.photo_count) > 0 ? "available" : "empty"),
+      })) as MediaFolderWithMeta[];
+    }
+  } catch (err) {
+    console.warn("Failed to fetch folders via RPC:", err);
+  }
+
+  // Fallback direct query
+  let query = client.from("media_folders").select("*").order("name", { ascending: true });
+  if (type) {
+    query = query.eq("folder_type", type);
+  }
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return (data as any[]).map((f) => ({
+    ...f,
+    photo_count: 0,
+    assigned_events_count: 0,
+    assigned_highlights_count: 0,
+    storage_status: "empty" as const,
+  }));
+}
+
+export async function saveMediaFolder(
+  folder: {
+    id?: string;
+    name: string;
+    slug: string;
+    folder_type: MediaFolderType;
+    description?: string | null;
+  },
+  customClient?: any
+): Promise<MediaFolder> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const cleanSlug = folder.slug.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-");
+  const prefix = folder.folder_type === "event-highlight"
+    ? `event-archive-highlights/${cleanSlug}/`
+    : `event-archives/${cleanSlug}/`;
+
+  const payload = {
+    id: ensureUuid(folder.id),
+    name: folder.name.trim(),
+    slug: cleanSlug,
+    folder_type: folder.folder_type,
+    storage_prefix: prefix,
+    description: folder.description?.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await client
+    .from("media_folders")
+    .upsert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Supabase saveMediaFolder error:", error);
+    throw new Error(`Database error saving folder: ${error.message}`);
+  }
+
+  return data as MediaFolder;
+}
+
+export async function deleteMediaFolder(id: string, customClient?: any): Promise<boolean> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await client.from("media_folders").delete().eq("id", id);
+  if (error) {
+    console.error("Supabase deleteMediaFolder error:", error);
+    throw new Error(`Database error deleting folder: ${error.message}`);
+  }
+
+  return true;
+}
+
+export async function fetchFolderPhotos(
+  folderId: string,
+  customClient?: any
+): Promise<MediaFolderPhoto[]> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) return [];
+
+  const { data, error } = await client
+    .from("media_folder_photos")
+    .select("*")
+    .eq("folder_id", folderId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Supabase fetchFolderPhotos error:", error);
+    return [];
+  }
+
+  return (data || []) as MediaFolderPhoto[];
+}
+
+export async function saveFolderPhoto(
+  photo: Partial<MediaFolderPhoto> & { folder_id: string; storage_path: string; public_url: string; file_name: string },
+  customClient?: any
+): Promise<MediaFolderPhoto> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const payload = {
+    id: ensureUuid(photo.id),
+    folder_id: photo.folder_id,
+    storage_path: photo.storage_path,
+    public_url: photo.public_url,
+    file_name: photo.file_name,
+    size_bytes: photo.size_bytes || 0,
+    mime_type: photo.mime_type || "image/jpeg",
+    width: photo.width || null,
+    height: photo.height || null,
+    aspect_ratio: photo.aspect_ratio || "portrait",
+    focal_point: photo.focal_point || "center",
+    caption: photo.caption?.trim() || null,
+    alt_text: photo.alt_text?.trim() || photo.file_name,
+    sort_order: typeof photo.sort_order === "number" ? photo.sort_order : 0,
+    is_cover: Boolean(photo.is_cover),
+  };
+
+  const { data, error } = await client
+    .from("media_folder_photos")
+    .upsert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Supabase saveFolderPhoto error:", error);
+    throw new Error(`Database error saving folder photo: ${error.message}`);
+  }
+
+  return data as MediaFolderPhoto;
+}
+
+export async function deleteFolderPhoto(id: string, customClient?: any): Promise<boolean> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await client.from("media_folder_photos").delete().eq("id", id);
+  if (error) {
+    console.error("Supabase deleteFolderPhoto error:", error);
+    throw new Error(`Database error deleting folder photo: ${error.message}`);
+  }
+
+  return true;
+}
+
+export async function fetchEventArchives(
+  options?: { includeUnpublished?: boolean; category?: string; client?: any }
+): Promise<EventArchive[]> {
+  const client = options?.client || supabase;
+  if (!isSupabaseConfigured() || !client) return [];
+
+  let query = client
+    .from("event_archives")
+    .select(`
+      *,
+      folder:media_folders(*)
+    `)
+    .order("sort_order", { ascending: true })
+    .order("event_date", { ascending: false });
+
+  if (!options?.includeUnpublished) {
+    query = query.eq("is_published", true);
+  }
+  if (options?.category && options.category !== "all") {
+    query = query.eq("category", options.category);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Supabase fetchEventArchives error:", error);
+    return [];
+  }
+
+  return (data || []) as EventArchive[];
+}
+
+export async function fetchEventArchiveBySlug(
+  slug: string,
+  options?: { includeUnpublished?: boolean; client?: any }
+): Promise<EventArchive | null> {
+  const client = options?.client || supabase;
+  if (!isSupabaseConfigured() || !client) return null;
+
+  let query = client
+    .from("event_archives")
+    .select(`
+      *,
+      folder:media_folders(*)
+    `)
+    .eq("slug", slug);
+
+  if (!options?.includeUnpublished) {
+    query = query.eq("is_published", true);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error || !data) return null;
+
+  const event = data as EventArchive;
+
+  // Resolve folder photos if folder_id is set
+  if (event.folder_id) {
+    event.photos = await fetchFolderPhotos(event.folder_id, client);
+  } else {
+    event.photos = [];
+  }
+
+  // Resolve highlights strictly belonging to this event
+  event.highlights = await fetchEventHighlights(event.id, {
+    includeUnpublished: options?.includeUnpublished,
+    client,
+  });
+
+  return event;
+}
+
+export async function saveEventArchive(
+  event: Partial<EventArchive> & { title: string; short_description: string },
+  customClient?: any
+): Promise<EventArchive> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const cleanSlug = (event.slug || event.title)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/-+/g, "-");
+
+  const payload = {
+    id: ensureUuid(event.id),
+    title: event.title.trim(),
+    slug: cleanSlug,
+    event_date: event.event_date || new Date().toISOString().split("T")[0],
+    short_description: event.short_description.trim(),
+    full_description: event.full_description?.trim() || null,
+    cover_image_url: event.cover_image_url || null,
+    cover_storage_path: event.cover_storage_path || null,
+    cover_alt_text: event.cover_alt_text?.trim() || `${event.title.trim()} — Cover`,
+    folder_id: event.folder_id || null,
+    category: event.category || "general",
+    location: event.location?.trim() || null,
+    client_or_institution: event.client_or_institution?.trim() || null,
+    sort_order: typeof event.sort_order === "number" ? event.sort_order : 0,
+    is_published: event.is_published !== undefined ? Boolean(event.is_published) : true,
+    is_featured: Boolean(event.is_featured),
+    hero_slides: Array.isArray(event.hero_slides) ? event.hero_slides : [],
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await client
+    .from("event_archives")
+    .upsert(payload)
+    .select(`
+      *,
+      folder:media_folders(*)
+    `)
+    .single();
+
+  if (error) {
+    console.error("Supabase saveEventArchive error:", error);
+    throw new Error(`Database error saving event archive: ${error.message}`);
+  }
+
+  return data as EventArchive;
+}
+
+export async function deleteEventArchive(id: string, customClient?: any): Promise<boolean> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await client.from("event_archives").delete().eq("id", id);
+  if (error) {
+    console.error("Supabase deleteEventArchive error:", error);
+    throw new Error(`Database error deleting event archive: ${error.message}`);
+  }
+
+  return true;
+}
+
+export async function fetchEventHighlights(
+  eventId: string,
+  options?: { includeUnpublished?: boolean; client?: any }
+): Promise<EventHighlight[]> {
+  const client = options?.client || supabase;
+  if (!isSupabaseConfigured() || !client) return [];
+
+  let query = client
+    .from("event_highlights")
+    .select(`
+      *,
+      folder:media_folders(*)
+    `)
+    .eq("event_id", eventId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (!options?.includeUnpublished) {
+    query = query.eq("is_published", true);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Supabase fetchEventHighlights error:", error);
+    return [];
+  }
+
+  const highlights = (data || []) as EventHighlight[];
+
+  // Resolve photos for each highlight from its dedicated folder
+  for (const h of highlights) {
+    if (h.folder_id) {
+      h.photos = await fetchFolderPhotos(h.folder_id, client);
+    } else {
+      h.photos = [];
+    }
+  }
+
+  return highlights;
+}
+
+export async function fetchEventHighlightBySlug(
+  eventSlug: string,
+  highlightSlug: string,
+  options?: { includeUnpublished?: boolean; client?: any }
+): Promise<{ event: EventArchive; highlight: EventHighlight } | null> {
+  const client = options?.client || supabase;
+  if (!isSupabaseConfigured() || !client) return null;
+
+  const event = await fetchEventArchiveBySlug(eventSlug, options);
+  if (!event) return null;
+
+  let query = client
+    .from("event_highlights")
+    .select(`
+      *,
+      folder:media_folders(*)
+    `)
+    .eq("event_id", event.id)
+    .eq("slug", highlightSlug);
+
+  if (!options?.includeUnpublished) {
+    query = query.eq("is_published", true);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error || !data) return null;
+
+  const highlight = data as EventHighlight;
+  if (highlight.folder_id) {
+    highlight.photos = await fetchFolderPhotos(highlight.folder_id, client);
+  } else {
+    highlight.photos = [];
+  }
+
+  return { event, highlight };
+}
+
+export async function saveEventHighlight(
+  highlight: Partial<EventHighlight> & { event_id: string; title: string; short_description: string; cover_image_url: string },
+  customClient?: any
+): Promise<EventHighlight> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const cleanSlug = (highlight.slug || highlight.title)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/-+/g, "-");
+
+  const payload = {
+    id: ensureUuid(highlight.id),
+    event_id: highlight.event_id,
+    title: highlight.title.trim(),
+    slug: cleanSlug,
+    short_description: highlight.short_description.trim(),
+    cover_image_url: highlight.cover_image_url.trim(),
+    cover_storage_path: highlight.cover_storage_path || null,
+    folder_id: highlight.folder_id || null,
+    sort_order: typeof highlight.sort_order === "number" ? highlight.sort_order : 0,
+    is_published: highlight.is_published !== undefined ? Boolean(highlight.is_published) : true,
+    hero_slides: Array.isArray(highlight.hero_slides) ? highlight.hero_slides : [],
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await client
+    .from("event_highlights")
+    .upsert(payload)
+    .select(`
+      *,
+      folder:media_folders(*)
+    `)
+    .single();
+
+  if (error) {
+    console.error("Supabase saveEventHighlight error:", error);
+    throw new Error(`Database error saving highlight: ${error.message}`);
+  }
+
+  return data as EventHighlight;
+}
+
+export async function deleteEventHighlight(id: string, customClient?: any): Promise<boolean> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await client.from("event_highlights").delete().eq("id", id);
+  if (error) {
+    console.error("Supabase deleteEventHighlight error:", error);
+    throw new Error(`Database error deleting highlight: ${error.message}`);
+  }
+
+  return true;
+}
+
 
 // -----------------------------------------------------------------------------
 // PRINT PRODUCTS SERVICE
@@ -594,7 +1023,7 @@ export async function fetchLeads(statusFilter?: LeadStatus | "all"): Promise<Lea
         query = query.eq("status", statusFilter);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) return data as Lead[];
+      if (!error && Array.isArray(data)) return data as Lead[];
     } catch (err) {
       console.warn("Supabase fetch leads failed:", err);
     }
@@ -722,17 +1151,51 @@ export interface SiteSettingsMap {
     mission_title: string;
     mission_body: string;
   };
+  homepage_config?: HomepageConfig;
 }
+
+export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
+  hero_autoplay: true,
+  hero_interval_sec: 6,
+  show_ticker: true,
+  show_flagship: true,
+  show_testimonials: true,
+  show_services: true,
+  show_print_bridge: true,
+  show_quote_builder: false,
+  show_closing_cta: true,
+  flagship_heading: "Selected Productions & Editorial Archives",
+  flagship_subheading:
+    "Photographic commissions across institutional summits, cultural documentaries, and executive portraiture.",
+  services_heading: "Studio Disciplines & Commissions",
+  services_subheading:
+    "Structured appointment bookings with dedicated capacity management and verified live calendar availability.",
+  closing_cta_heading: "Every Milestone Deserves Permanent Record.",
+  closing_cta_subheading:
+    "Commission our studio for university convocations, executive leadership portraits, or cultural documentation in Dhaka and beyond.",
+  closing_cta_button_label: "Book a Photography Session",
+  closing_cta_button_href: "/book",
+  closing_cta_image_url:
+    "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=2000&q=80",
+  ticker_items: [
+    "IUB 27TH CONVOCATION APPOINTMENTS",
+    "EXECUTIVE & C-SUITE PORTRAITURE",
+    "CULTURAL & BRAND DOCUMENTARIES",
+    "CORPORATE SUMMITS & PR STILLS",
+    "FINE-ART ARCHIVAL PRINTS & FRAMES",
+    "STUDIO & ON-LOCATION IN DHAKA",
+  ],
+};
 
 export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
   general: {
     agency_name: "OFFPRINT (অফপ্রিন্ট)",
-    tagline: "Editorial Photography, Convocation Portraits & Bespoke Print Craftsmanship",
+    tagline: "Editorial Photography & Fine-Art Print Studio",
     established: "September 2025",
-    registration_badge: "Govt. Registered Agency in Bangladesh",
-    phone: "+880 1700-000000",
+    registration_badge: "",
+    phone: "",
     email: "inquiry@offprint.agency",
-    address: "Gulshan & Banani Corporate Corridor, Dhaka, Bangladesh",
+    address: "Gulshan & Banani, Dhaka, Bangladesh",
     operating_hours_label:
       "Sunday – Thursday (9:00 AM – 7:00 PM BST) • Saturday (10:00 AM – 6:00 PM BST)",
     instagram_url: "https://instagram.com/offprint.agency",
@@ -740,13 +1203,14 @@ export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
     linkedin_url: "https://linkedin.com/company/offprint-agency",
   },
   homepage: {
-    hero_eyebrow: "Govt. Registered Studio & Agency • Est. Sep 2025",
-    hero_title: "Enduring Visual Legacies & Bespoke Portrait Commissions.",
+    hero_eyebrow: "",
+    hero_title: "Enduring Visual Legacies.",
     hero_subtitle:
-      "From IUB 27th Convocation portrait sessions and executive headshots to multi-camera corporate summits and tactile 650 GSM print collateral.",
+      "Curated milestone portraiture, institutional summit coverage, and bespoke archival print editions in Dhaka.",
     primary_cta_label: "Book a Session",
     secondary_cta_label: "Explore Works Archive",
   },
+  homepage_config: DEFAULT_HOMEPAGE_CONFIG,
   booking_page: {
     heading: "Reserve Your Photography Session",
     subheading:
@@ -760,9 +1224,199 @@ export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
       "Bridging editorial photography and tactile physical print craftsmanship for Bangladesh’s leading institutions, graduates, and executives.",
     mission_title: "Founded on Precision & Permanence",
     mission_body:
-      "Established in September 2025 in Dhaka, Bangladesh, OFFPRINT (অফপ্রিন্ট) was founded with a singular conviction: institutions and individuals deserve photography and tangible print editions that match the stature of their milestones.",
+      "Established in Dhaka, Bangladesh, OFFPRINT (অফপ্রিন্ট) was founded with a singular conviction: institutions and individuals deserve photography and tangible print editions that match the stature of their milestones.",
   },
 };
+
+export async function fetchHomepageConfig(): Promise<HomepageConfig> {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("site_settings")
+        .select("value")
+        .eq("key", "homepage_config")
+        .maybeSingle();
+      if (!error && data?.value) {
+        return { ...DEFAULT_HOMEPAGE_CONFIG, ...data.value };
+      }
+    } catch (err) {
+      console.warn("Failed to fetch homepage config:", err);
+    }
+  }
+  return DEFAULT_HOMEPAGE_CONFIG;
+}
+
+export async function saveHomepageConfig(
+  config: Partial<HomepageConfig>
+): Promise<HomepageConfig> {
+  const current = await fetchHomepageConfig();
+  const updated: HomepageConfig = { ...current, ...config };
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from("site_settings").upsert({
+      key: "homepage_config",
+      value: updated,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      throw new Error(`Failed to save homepage config: ${error.message}`);
+    }
+  }
+  return updated;
+}
+
+export async function fetchHeroSlides(
+  includeUnpublished = false
+): Promise<HeroSlide[]> {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      let query = supabase
+        .from("hero_slides")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (!includeUnpublished) {
+        query = query.eq("is_published", true);
+      }
+      const { data, error } = await query;
+      if (!error && Array.isArray(data)) {
+        return data as HeroSlide[];
+      }
+      if (error) {
+        console.warn("Error fetching hero slides:", error.message);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch hero slides:", err);
+    }
+  }
+  return [];
+}
+
+export async function saveHeroSlide(
+  slide: Partial<HeroSlide> & { title: string; image_url: string }
+): Promise<HeroSlide> {
+  const payload = {
+    ...slide,
+    id: ensureUuid(slide.id),
+    sort_order: typeof slide.sort_order === "number" ? slide.sort_order : 1,
+    is_published: slide.is_published !== false,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured() && supabase) {
+    const { data, error } = await supabase
+      .from("hero_slides")
+      .upsert(payload)
+      .select()
+      .single();
+    if (error) {
+      throw new Error(`Failed to save hero slide: ${error.message}`);
+    }
+    return data as HeroSlide;
+  }
+  throw new Error("Supabase is not configured to save hero slides.");
+}
+
+export async function deleteHeroSlide(id: string): Promise<boolean> {
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from("hero_slides").delete().eq("id", id);
+    if (error) {
+      throw new Error(`Failed to delete hero slide: ${error.message}`);
+    }
+    return true;
+  }
+  return false;
+}
+
+export async function reorderHeroSlides(orderedIds: string[]): Promise<boolean> {
+  if (isSupabaseConfigured() && supabase) {
+    const client = supabase;
+    const promises = orderedIds.map((id, index) =>
+      client
+        .from("hero_slides")
+        .update({ sort_order: index + 1, updated_at: new Date().toISOString() })
+        .eq("id", id)
+    );
+    await Promise.all(promises);
+    return true;
+  }
+  return false;
+}
+
+export async function fetchTestimonials(
+  includeUnpublished = false
+): Promise<Testimonial[]> {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      let query = supabase
+        .from("testimonials")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (!includeUnpublished) {
+        query = query.eq("is_published", true);
+      }
+      const { data, error } = await query;
+      if (!error && Array.isArray(data)) {
+        return data as Testimonial[];
+      }
+      if (error) {
+        console.warn("Error fetching testimonials:", error.message);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch testimonials:", err);
+    }
+  }
+  return [];
+}
+
+export async function saveTestimonial(
+  testimonial: Partial<Testimonial> & { quote: string; author: string }
+): Promise<Testimonial> {
+  const payload = {
+    ...testimonial,
+    id: ensureUuid(testimonial.id),
+    sort_order: typeof testimonial.sort_order === "number" ? testimonial.sort_order : 1,
+    is_published: testimonial.is_published !== false,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured() && supabase) {
+    const { data, error } = await supabase
+      .from("testimonials")
+      .upsert(payload)
+      .select()
+      .single();
+    if (error) {
+      throw new Error(`Failed to save testimonial: ${error.message}`);
+    }
+    return data as Testimonial;
+  }
+  throw new Error("Supabase is not configured to save testimonials.");
+}
+
+export async function deleteTestimonial(id: string): Promise<boolean> {
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from("testimonials").delete().eq("id", id);
+    if (error) {
+      throw new Error(`Failed to delete testimonial: ${error.message}`);
+    }
+    return true;
+  }
+  return false;
+}
+
+export async function reorderTestimonials(orderedIds: string[]): Promise<boolean> {
+  if (isSupabaseConfigured() && supabase) {
+    const client = supabase;
+    const promises = orderedIds.map((id, index) =>
+      client
+        .from("testimonials")
+        .update({ sort_order: index + 1, updated_at: new Date().toISOString() })
+        .eq("id", id)
+    );
+    await Promise.all(promises);
+    return true;
+  }
+  return false;
+}
 
 export async function fetchSiteSettings(): Promise<SiteSettingsMap> {
   if (isSupabaseConfigured() && supabase) {

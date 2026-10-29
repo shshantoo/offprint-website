@@ -22,7 +22,7 @@ export default async function PrintSolutionsPage() {
             <Printer className="w-3.5 h-3.5" />
             <span>Tactile Merchandise & Print Solutions</span>
           </div>
-          <h1 className="text-4xl sm:text-6xl font-extrabold text-[#141210] tracking-tight">
+          <h1 className="font-editorial text-4xl sm:text-6xl font-normal text-[#141210] tracking-tight">
             Curated Physical Collateral
           </h1>
           <p className="text-sm sm:text-base text-[#5C5449] leading-relaxed">

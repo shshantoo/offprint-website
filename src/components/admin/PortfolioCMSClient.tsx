@@ -8,8 +8,6 @@ import type {
 } from "@/types/database";
 import {
   fetchPortfolioProjects,
-  savePortfolioProject,
-  deletePortfolioProject,
   normalizePortfolioProject,
 } from "@/lib/data-service";
 import { formatDate } from "@/lib/utils";
@@ -285,7 +283,7 @@ export default function PortfolioCMSClient() {
         }
         setFeedback({
           type: "success",
-          text: `Uploaded cover photograph "${file.name}" to Supabase Storage (portfolio-media).`,
+          text: `Uploaded cover photograph "${file.name}".`,
         });
       }
     } catch (err: any) {
@@ -343,7 +341,7 @@ export default function PortfolioCMSClient() {
 
       setFeedback({
         type: "success",
-        text: `Uploaded ${uploaded.length} photograph(s) to Supabase Storage. Review previews & metadata below before saving.`,
+        text: `Uploaded ${uploaded.length} photograph(s). Review previews & metadata below before saving.`,
       });
     } catch (err: any) {
       setFeedback({
@@ -495,19 +493,44 @@ export default function PortfolioCMSClient() {
   };
 
   const handleToggleFlagship = async (proj: PortfolioProject) => {
-    const updated = { ...proj, is_flagship: !proj.is_flagship };
-    const saved = await savePortfolioProject(updated);
-    setProjects((prev) => prev.map((p) => (p.id === proj.id ? saved : p)));
+    try {
+      const updated = { ...proj, is_flagship: !proj.is_flagship };
+      const res = await fetch("/api/portfolio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        alert(json.error || "Failed to update project status in Supabase.");
+        return;
+      }
+      const saved = normalizePortfolioProject(json.data);
+      setProjects((prev) => prev.map((p) => (p.id === proj.id ? saved : p)));
+    } catch (err: any) {
+      alert(err.message || "Network error updating project.");
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (
       confirm(
-        "Permanently delete this project from the portfolio? Unreferenced Supabase Storage images for this entry will also be cleaned up."
+        "Permanently delete this project from the portfolio? Unreferenced media images for this entry will also be cleaned up."
       )
     ) {
-      await deletePortfolioProject(id);
-      setProjects((prev) => prev.filter((p) => p.id !== id));
+      try {
+        const res = await fetch(`/api/portfolio?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          alert(json.error || "Failed to delete project from Supabase.");
+          return;
+        }
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+      } catch (err: any) {
+        alert(err.message || "Network error deleting project.");
+      }
     }
   };
 
@@ -551,20 +574,19 @@ export default function PortfolioCMSClient() {
         description: description.trim(),
       };
 
-      // Also persist via server API so server-side Supabase session writes directly
+      // Persist strictly to Supabase via server API
       const res = await fetch("/api/portfolio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(projectPayload),
       });
 
-      let saved: PortfolioProject;
-      if (res.ok) {
-        const json = await res.json();
-        saved = normalizePortfolioProject(json.data);
-      } else {
-        saved = await savePortfolioProject(projectPayload);
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Failed to save portfolio project to Supabase.");
       }
+
+      const saved: PortfolioProject = normalizePortfolioProject(json.data);
 
       if (editingProject) {
         setProjects((prev) =>
@@ -589,12 +611,10 @@ export default function PortfolioCMSClient() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-extrabold text-[#141210] tracking-tight">
-            Portfolio &amp; Supabase Image Storage CMS
+            Portfolio &amp; Media Storage CMS
           </h2>
           <p className="text-xs text-[#5C5449] mt-0.5">
-            Upload high-resolution photographs to Supabase Storage (
-            <code className="font-mono text-[#3A2008]">portfolio-media</code>), manage
-            cover images, reorder galleries, and edit alt text &amp; captions.
+            Upload high-resolution photographs, manage cover images, reorder galleries, and edit alt text &amp; captions.
           </p>
         </div>
 
@@ -609,7 +629,7 @@ export default function PortfolioCMSClient() {
 
       {isLoading ? (
         <div className="text-center py-12 text-xs text-[#5C5449]">
-          Loading portfolio works from Supabase...
+          Loading portfolio works...
         </div>
       ) : (
         <div className="rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9] overflow-hidden shadow-2xs">
@@ -730,7 +750,7 @@ export default function PortfolioCMSClient() {
 
             <div className="space-y-1">
               <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
-                Portfolio CMS • Supabase Storage (portfolio-media)
+                Portfolio CMS • Media Gallery Manager
               </span>
               <h3 className="text-2xl font-bold text-[#141210]">
                 {editingProject
@@ -840,8 +860,7 @@ export default function PortfolioCMSClient() {
                       1. Cover / Thumbnail Photograph *
                     </div>
                     <p className="text-[11px] text-[#5C5449]">
-                      Upload directly from your computer to Supabase Storage or paste an
-                      image URL.
+                      Upload directly from your computer or paste an image URL.
                     </p>
                   </div>
 
@@ -1187,7 +1206,7 @@ export default function PortfolioCMSClient() {
                   className="px-6 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold uppercase tracking-wider text-xs disabled:opacity-50"
                 >
                   {saving
-                    ? "Saving to Supabase..."
+                    ? "Saving changes..."
                     : editingProject
                     ? "Save Project & Gallery"
                     : "Publish Project"}

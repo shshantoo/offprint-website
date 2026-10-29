@@ -66,7 +66,7 @@ export async function GET() {
         success: true,
         schemaReady: false,
         error:
-          "Database schema not yet migrated in Supabase. Please execute supabase/schema.sql in your Supabase SQL Editor.",
+          "Booking records are currently initializing. Review schema setup if this persists.",
         metrics: {
           totalBookings: 0,
           upcomingBookings: 0,

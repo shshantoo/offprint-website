@@ -23,9 +23,12 @@ import {
   formatDhakaTime,
 } from "@/lib/booking/timezone";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import PortfolioCMSClient from "./PortfolioCMSClient";
+import WorkArchiveAdminClient from "./WorkArchiveAdminClient";
 import ProductsCMSClient from "./ProductsCMSClient";
 import LeadsCRMClient from "./LeadsCRMClient";
+import WebsiteCMSManager from "./WebsiteCMSManager";
+import RegisteredUsersAdminClient from "./RegisteredUsersAdminClient";
+import SpecialEventsAdminClient from "./SpecialEventsAdminClient";
 import {
   LayoutDashboard,
   Calendar as CalendarIcon,
@@ -55,6 +58,13 @@ import {
   ArrowDown,
   CheckCircle2,
   Edit3,
+  Users,
+  ArrowLeft,
+  ToggleLeft,
+  ToggleRight,
+  Check,
+  Send,
+  Loader2,
 } from "lucide-react";
 
 type AdminMainTab =
@@ -63,6 +73,7 @@ type AdminMainTab =
   | "calendar"
   | "scheduling"
   | "portfolio"
+  | "users"
   | "integrations"
   | "cms"
   | "security";
@@ -133,6 +144,15 @@ export default function AdminPortalClient() {
   const [inspectorFeedback, setInspectorFeedback] = useState<string | null>(
     null
   );
+
+  // Delivery & Workflow states for inspected booking
+  const [workflowStages, setWorkflowStages] = useState<any[]>([]);
+  const [deliveryStageId, setDeliveryStageId] = useState<string>("");
+  const [deliveryUrlInput, setDeliveryUrlInput] = useState<string>("");
+  const [deliveryValidityDays, setDeliveryValidityDays] = useState<number>(14);
+  const [deliveryMessageInput, setDeliveryMessageInput] = useState<string>("");
+  const [deliverySendEmail, setDeliverySendEmail] = useState<boolean>(true);
+  const [deliverySaving, setDeliverySaving] = useState<boolean>(false);
 
   // Booking Inspector Session & Extras Modifier state
   const [modifierDuration, setModifierDuration] = useState<number>(30);
@@ -292,8 +312,8 @@ export default function AdminPortalClient() {
 
   // CMS Sub-tab state
   const [cmsSubTab, setCmsSubTab] = useState<
-    "site_settings" | "portfolio" | "products" | "leads"
-  >("site_settings");
+    "website_cms" | "site_settings" | "portfolio" | "products" | "leads"
+  >("website_cms");
   const [siteSettings, setSiteSettings] = useState<Record<string, any>>({});
 
   // Account & Security state
@@ -419,18 +439,32 @@ export default function AdminPortalClient() {
     }
   }, [selectedTemplateKey]);
 
+  const loadWorkflowStages = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/workflow-stages", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        setWorkflowStages(json.data || []);
+      }
+    } catch (e) {
+      console.error("Failed to load workflow stages:", e);
+    }
+  }, []);
+
   useEffect(() => {
     loadAdminProfile();
     loadOverview();
     loadBookings();
     loadEventsAndScheduling();
     loadIntegrationsAndCms();
+    loadWorkflowStages();
   }, [
     loadAdminProfile,
     loadOverview,
     loadBookings,
     loadEventsAndScheduling,
     loadIntegrationsAndCms,
+    loadWorkflowStages,
   ]);
 
   // Open Booking Inspector Modal
@@ -459,9 +493,49 @@ export default function AdminPortalClient() {
         setInspectedEmails(payload.emailNotifications || []);
         setInspectedCalLogs(payload.calendarSyncLogs || []);
         setInspectedClientHistory(payload.clientBookingHistory || []);
+        setDeliveryStageId(payload.booking?.workflow_stage_id || "");
+        setDeliveryUrlInput(payload.booking?.delivery_url || "");
+        setDeliveryValidityDays(payload.booking?.delivery_validity_days || 14);
+        setDeliveryMessageInput(payload.booking?.delivery_message || "");
+        setDeliverySendEmail(true);
       }
     } finally {
       setInspectorLoading(false);
+    }
+  };
+
+  const handleSaveDeliveryAndStage = async () => {
+    if (!inspectedBooking) return;
+    setDeliverySaving(true);
+    setInspectorFeedback(null);
+    try {
+      const res = await fetch(
+        `/api/admin/bookings/${encodeURIComponent(inspectedBooking.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_delivery_and_workflow",
+            workflow_stage_id: deliveryStageId || null,
+            delivery_url: deliveryUrlInput,
+            delivery_validity_days: Number(deliveryValidityDays),
+            delivery_message: deliveryMessageInput,
+            send_notification_email: deliverySendEmail,
+          }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        setInspectorFeedback(`Error: ${json.error || "Failed to update delivery workflow"}`);
+        return;
+      }
+      setInspectorFeedback("Workflow stage and photo-bank delivery updated successfully.");
+      await openBookingInspector(inspectedBooking.id);
+      await loadBookings();
+    } catch (err: any) {
+      setInspectorFeedback(`Error: ${err.message || "Failed to update delivery workflow"}`);
+    } finally {
+      setDeliverySaving(false);
     }
   };
 
@@ -810,7 +884,7 @@ export default function AdminPortalClient() {
         cover_storage_path: storagePath,
       }));
       setEventSuccessMsg(
-        "Cover image uploaded to Supabase Storage. Click Save Event Settings to publish."
+        "Cover image uploaded. Click Save Event Settings to publish."
       );
     } finally {
       setUploadingEventCover(false);
@@ -1357,7 +1431,7 @@ export default function AdminPortalClient() {
             icon: LayoutDashboard,
           },
           { id: "bookings", label: "Bookings CRM", icon: BookOpen },
-          { id: "calendar", label: "Studio Calendar", icon: CalendarIcon },
+          { id: "calendar", label: "Calendar", icon: CalendarIcon },
           {
             id: "scheduling",
             label: "Special Events & Services",
@@ -1367,6 +1441,11 @@ export default function AdminPortalClient() {
             id: "portfolio",
             label: "Portfolio & Storage",
             icon: ImageIcon,
+          },
+          {
+            id: "users",
+            label: "Registered Users",
+            icon: Users,
           },
           {
             id: "integrations",
@@ -1435,13 +1514,9 @@ export default function AdminPortalClient() {
               <AlertTriangle className="w-5 h-5 text-[#B86B19] shrink-0" />
               <div>
                 <strong className="text-[#141210] block">
-                  Database Migration Pending
+                  Booking Configuration Pending
                 </strong>
-                Run{" "}
-                <code className="font-mono text-[#3A2008]">
-                  supabase/schema.sql
-                </code>{" "}
-                in your Supabase SQL Editor to initialize the booking tables and RPCs.
+                Initial booking setup has not completed. Review schema migration instructions to activate reservations.
               </div>
             </div>
           )}
@@ -1798,7 +1873,7 @@ export default function AdminPortalClient() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#FFFFFF] p-6 rounded-3xl border border-[#E5DEC9]">
             <div className="space-y-1">
               <h1 className="text-2xl font-extrabold text-[#141210]">
-                Unified Studio & Convocation Calendar
+                Calendar
               </h1>
               <p className="text-xs text-[#5C5449]">
                 Click any booking card to open its full inspector modal without losing your current calendar view.
@@ -2042,1393 +2117,7 @@ export default function AdminPortalClient() {
             ))}
           </div>
 
-          {schedSubTab === "convocation" && (
-            <div className="space-y-6">
-              {/* Special Booking Types Switcher Bar */}
-              <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-[#A66D35]">
-                      Dynamic Special Booking Engine
-                    </span>
-                    <h2 className="text-xl font-extrabold text-[#141210]">
-                      Manage Special Booking Types ({eventsData.events.length})
-                    </h2>
-                    <p className="text-xs text-[#5C5449]">
-                      Create, duplicate, publish, pause, or archive any special event booking type with custom form questions and dedicated time-slot calendars.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleStartNewSpecialEvent}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Create Special Booking Type</span>
-                    </button>
-                    {editingEvent.id && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleDuplicateEvent}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F4EFE6] text-[#141210] border border-[#D5CCB4] text-xs font-semibold"
-                        >
-                          <Copy className="w-3.5 h-3.5 text-[#A66D35]" />
-                          <span>Duplicate</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDeleteEvent}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Event Selector Pills */}
-                <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                  {eventsData.events.map((ev) => {
-                    const isSelected = editingEvent.id === ev.id;
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onClick={() => {
-                          setEditingEvent(ev);
-                          setNewSessionEventId(ev.id);
-                          setEventConflictError(null);
-                          setEventSuccessMsg(null);
-                        }}
-                        className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs transition-all ${
-                          isSelected
-                            ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-xs"
-                            : "bg-[#FAF7F2] text-[#141210] border-[#E5DEC9] hover:border-[#A66D35]"
-                        }`}
-                      >
-                        <span className="font-bold">{ev.title}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono uppercase ${
-                            ev.status === "published"
-                              ? "bg-[#EEF7F2] text-[#2E6B4E]"
-                              : ev.status === "draft"
-                              ? "bg-[#FFFBEB] text-[#B86B19]"
-                              : "bg-[#F4EFE6] text-[#5C5449]"
-                          }`}
-                        >
-                          {ev.status}
-                        </span>
-                      </button>
-                    );
-                  })}
-                  {!editingEvent.id && (
-                    <span className="px-3.5 py-2 rounded-xl bg-[#FFFBEB] border border-[#F59E0B]/40 text-[#B86B19] text-xs font-bold">
-                      * Unsaved New Special Booking Type
-                    </span>
-                  )}
-                </div>
-
-                {editingEvent.slug && (
-                  <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-[#5C5449]">
-                    <span className="font-mono">
-                      Public Booking Route:{" "}
-                      <a
-                        href={`/book/special/${editingEvent.slug}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#3A2008] font-bold underline inline-flex items-center gap-1"
-                      >
-                        /book/special/{editingEvent.slug}
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </span>
-                    {editingEvent.slug === "iub-27th-convocation" && (
-                      <span className="font-mono">
-                        Legacy Alias:{" "}
-                        <a
-                          href="/book/convocation"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[#3A2008] font-bold underline inline-flex items-center gap-1"
-                        >
-                          /book/convocation
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {eventConflictError && (
-                  <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-700" />
-                    <div>
-                      <strong className="block font-bold">
-                        Schedule / Conflict Protection Alert
-                      </strong>
-                      <span>{eventConflictError}</span>
-                    </div>
-                  </div>
-                )}
-
-                {eventSuccessMsg && (
-                  <div className="p-3.5 rounded-2xl bg-[#EEF7F2] border border-[#2E6B4E]/30 text-xs text-[#2E6B4E] flex items-center gap-2 font-semibold">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>{eventSuccessMsg}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* Left 7 Cols: Special Booking Type Full Form + Custom Questions Builder */}
-                <form
-                  onSubmit={handleSaveEvent}
-                  className="lg:col-span-7 rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5"
-                >
-                  <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-3">
-                    <h3 className="text-lg font-bold text-[#141210]">
-                      {editingEvent.id
-                        ? `Configure: ${editingEvent.title}`
-                        : "Create New Special Booking Type"}
-                    </h3>
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#3A2008] cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(editingEvent.is_featured_on_home)}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            is_featured_on_home: e.target.checked,
-                          })
-                        }
-                      />
-                      <span>Feature on Booking Hub</span>
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Event Title *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingEvent.title || ""}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditingEvent((prev) => ({
-                            ...prev,
-                            title: val,
-                            slug:
-                              !prev.id && !prev.slug
-                                ? val
-                                    .toLowerCase()
-                                    .replace(/[^a-z0-9-]+/g, "-")
-                                    .replace(/(^-|-$)/g, "")
-                                : prev.slug,
-                          }));
-                        }}
-                        placeholder="e.g. IUB 27th Convocation Photography"
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        URL Slug (/book/special/[slug]) *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingEvent.slug || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            slug: e.target.value
-                              .toLowerCase()
-                              .replace(/[^a-z0-9-]+/g, "-"),
-                          })
-                        }
-                        placeholder="e.g. nsu-convocation-2026"
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Event Category *
-                      </label>
-                      <select
-                        value={editingEvent.category || "convocation"}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            category: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                      >
-                        {SPECIAL_EVENT_CATEGORIES.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Publication Status *
-                      </label>
-                      <select
-                        value={editingEvent.status || "draft"}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            status: e.target.value as any,
-                          })
-                        }
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-semibold"
-                      >
-                        <option value="draft">Draft (Pre-Release)</option>
-                        <option value="published">
-                          Published (Live Bookings Open)
-                        </option>
-                        <option value="paused">
-                          Paused (Temporarily Disabled)
-                        </option>
-                        <option value="closed">Closed</option>
-                        <option value="archived">Archived</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Subtitle / Tagline
-                      </label>
-                      <input
-                        type="text"
-                        value={editingEvent.subtitle || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            subtitle: e.target.value,
-                          })
-                        }
-                        placeholder="Exclusive Graduation Portrait & Family Sessions"
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Venue / Campus Setup
-                      </label>
-                      <input
-                        type="text"
-                        value={editingEvent.venue || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            venue: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Cover Image URL + Upload to Supabase Storage */}
-                  <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-2 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="font-semibold text-[#141210]">
-                        Cover / Banner Image (Supabase Storage or URL)
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#3A2008] text-[#FAF7F2] font-semibold cursor-pointer">
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>
-                          {uploadingEventCover
-                            ? "Uploading..."
-                            : "Upload Cover Image"}
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp,image/avif"
-                          onChange={handleUploadEventCover}
-                          disabled={uploadingEventCover}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-                    <input
-                      type="text"
-                      value={editingEvent.hero_image_url || ""}
-                      onChange={(e) =>
-                        setEditingEvent({
-                          ...editingEvent,
-                          hero_image_url: e.target.value,
-                        })
-                      }
-                      placeholder="https://... or upload directly to portfolio-media bucket"
-                      className="w-full px-3 py-2 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] font-mono text-[11px]"
-                    />
-                  </div>
-
-                  {/* Date Range & Time Window */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Start Date
-                      </label>
-                      <input
-                        type="date"
-                        value={editingEvent.event_start_date || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            event_start_date: e.target.value || null,
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        End Date
-                      </label>
-                      <input
-                        type="date"
-                        value={editingEvent.event_end_date || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            event_end_date: e.target.value || null,
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Default Slot (m)
-                      </label>
-                      <input
-                        type="number"
-                        min={5}
-                        value={editingEvent.default_slot_duration_mins ?? 30}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            default_slot_duration_mins: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Slot Capacity
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={editingEvent.default_slot_capacity ?? 2}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            default_slot_capacity: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Cutoff & Advance Rules */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Buffer After (m)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={editingEvent.buffer_after_mins ?? 10}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            buffer_after_mins: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Min Notice (h)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={editingEvent.min_notice_hours ?? 12}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            min_notice_hours: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Reschedule Cutoff (h)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={editingEvent.reschedule_cutoff_hours ?? 48}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            reschedule_cutoff_hours: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Cancel Cutoff (h)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={editingEvent.cancellation_cutoff_hours ?? 48}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            cancellation_cutoff_hours: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-2.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="text-xs">
-                    <label className="font-semibold block mb-1">
-                      Event Description & Instructions
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={editingEvent.description || ""}
-                      onChange={(e) =>
-                        setEditingEvent({
-                          ...editingEvent,
-                          description: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Cancellation & Reschedule Policy
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={editingEvent.cancellation_policy || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            cancellation_policy: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">
-                        Special Booking Restrictions (Optional)
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={editingEvent.booking_restrictions || ""}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            booking_restrictions: e.target.value || null,
-                          })
-                        }
-                        placeholder="e.g. Valid university convocation gown pass required for campus entry."
-                        className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Dynamic Custom Booking Form Questions Builder */}
-                  <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-3 text-xs">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-bold text-[#141210]">
-                          Custom Booking Form Questions (
-                          {(editingEvent.custom_questions || []).length})
-                        </h4>
-                        <p className="text-[11px] text-[#5C5449]">
-                          Configure event-specific intake fields (Short Text, Long Text, Dropdown, Single Choice, Multiple Choice).
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAddCustomQuestion}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#3A2008] text-[#FAF7F2] font-semibold"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add Question</span>
-                      </button>
-                    </div>
-
-                    {(editingEvent.custom_questions || []).length === 0 ? (
-                      <div className="py-4 text-center text-[#877D70] text-[11px]">
-                        No custom questions configured. Standard client contact fields will still be collected.
-                      </div>
-                    ) : (
-                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                        {(editingEvent.custom_questions || []).map(
-                          (q, qIdx) => (
-                            <div
-                              key={qIdx}
-                              className="p-3.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] space-y-2.5"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono text-[10px] uppercase font-bold text-[#A66D35]">
-                                  Question #{qIdx + 1} ({q.id})
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleMoveCustomQuestion(qIdx, -1)
-                                    }
-                                    className="p-1 rounded bg-[#FAF7F2] hover:bg-[#F4EFE6]"
-                                    title="Move Up"
-                                  >
-                                    <ArrowUp className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleMoveCustomQuestion(qIdx, 1)
-                                    }
-                                    className="p-1 rounded bg-[#FAF7F2] hover:bg-[#F4EFE6]"
-                                    title="Move Down"
-                                  >
-                                    <ArrowDown className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleRemoveCustomQuestion(qIdx)
-                                    }
-                                    className="p-1 rounded text-red-700 hover:bg-red-50"
-                                    title="Remove Question"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <div className="sm:col-span-2">
-                                  <label className="block text-[10px] font-semibold text-[#5C5449] mb-0.5">
-                                    Question Label *
-                                  </label>
-                                  <input
-                                    type="text"
-                                    required
-                                    value={q.label}
-                                    onChange={(e) => {
-                                      const lbl = e.target.value;
-                                      const autoId = lbl
-                                        .toLowerCase()
-                                        .replace(/[^a-z0-9_]+/g, "_")
-                                        .replace(/(^_|_$)/g, "");
-                                      handleUpdateCustomQuestion(qIdx, {
-                                        label: lbl,
-                                        id:
-                                          q.id.startsWith("question_") && autoId
-                                            ? autoId
-                                            : q.id,
-                                      });
-                                    }}
-                                    className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-semibold text-[#5C5449] mb-0.5">
-                                    Field Type *
-                                  </label>
-                                  <select
-                                    value={q.type || q.field_type || "short_text"}
-                                    onChange={(e) =>
-                                      handleUpdateCustomQuestion(qIdx, {
-                                        type: e.target.value as any,
-                                        field_type: e.target.value as any,
-                                      })
-                                    }
-                                    className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                                  >
-                                    <option value="short_text">
-                                      Short Text
-                                    </option>
-                                    <option value="long_text">Long Text</option>
-                                    <option value="dropdown">
-                                      Dropdown Select
-                                    </option>
-                                    <option value="single_choice">
-                                      Single Choice (Radio)
-                                    </option>
-                                    <option value="multiple_choice">
-                                      Multiple Choice (Checkboxes)
-                                    </option>
-                                  </select>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
-                                <div className="sm:col-span-2">
-                                  <input
-                                    type="text"
-                                    value={q.placeholder || ""}
-                                    onChange={(e) =>
-                                      handleUpdateCustomQuestion(qIdx, {
-                                        placeholder: e.target.value,
-                                      })
-                                    }
-                                    placeholder="Placeholder or helper hint..."
-                                    className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                                  />
-                                </div>
-                                <label className="inline-flex items-center gap-1.5 font-semibold text-[#141210] cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(q.required)}
-                                    onChange={(e) =>
-                                      handleUpdateCustomQuestion(qIdx, {
-                                        required: e.target.checked,
-                                      })
-                                    }
-                                  />
-                                  <span>Required Field</span>
-                                </label>
-                              </div>
-
-                              {((q.type || q.field_type) === "dropdown" ||
-                                (q.type || q.field_type) === "single_choice" ||
-                                (q.type || q.field_type) === "multiple_choice") && (
-                                <div>
-                                  <label className="block text-[10px] font-semibold text-[#5C5449] mb-0.5">
-                                    Options (comma-separated) *
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={(q.options || []).join(", ")}
-                                    onChange={(e) =>
-                                      handleUpdateCustomQuestion(qIdx, {
-                                        options: e.target.value
-                                          .split(",")
-                                          .map((s) => s.trim())
-                                          .filter(Boolean),
-                                      })
-                                    }
-                                    placeholder="Option 1, Option 2, Option 3"
-                                    className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Dynamic Archival Frame Printing Configuration */}
-                  <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-4 text-xs">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-[#141210] text-sm">
-                            Archival Frame Printing Add-on Option
-                          </h4>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-semibold ${
-                              editingEvent.frame_printing_config?.enabled
-                                ? "bg-[#EEF7F2] text-[#2E6B4E]"
-                                : "bg-[#F4EFE6] text-[#877D70]"
-                            }`}
-                          >
-                            {editingEvent.frame_printing_config?.enabled
-                              ? "Enabled"
-                              : "Disabled"}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-[#5C5449]">
-                          Offer optional museum-grade framed prints during booking checkout with custom frame sizes, prices, and limits.
-                        </p>
-                      </div>
-
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(
-                            editingEvent.frame_printing_config?.enabled
-                          )}
-                          onChange={(e) =>
-                            updateEventFrameConfig((prev) => ({
-                              ...prev,
-                              enabled: e.target.checked,
-                            }))
-                          }
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-[#D5CCB4] peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[#D5CCB4] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2E6B4E]"></div>
-                      </label>
-                    </div>
-
-                    {editingEvent.frame_printing_config?.enabled && (
-                      <div className="space-y-4 pt-2 border-t border-[#E5DEC9]">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div className="sm:col-span-2">
-                            <label className="block text-[10px] font-semibold text-[#5C5449] mb-1">
-                              Section Title in Booking Flow *
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                editingEvent.frame_printing_config?.title || ""
-                              }
-                              onChange={(e) =>
-                                updateEventFrameConfig((prev) => ({
-                                  ...prev,
-                                  title: e.target.value,
-                                }))
-                              }
-                              placeholder="e.g. Archival Gallery Frame Printing"
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-[#5C5449] mb-1">
-                              Max Quantity Per Session
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={20}
-                              value={
-                                editingEvent.frame_printing_config
-                                  ?.max_quantity ?? 5
-                              }
-                              onChange={(e) =>
-                                updateEventFrameConfig((prev) => ({
-                                  ...prev,
-                                  max_quantity: Number(e.target.value),
-                                }))
-                              }
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9] font-mono"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-semibold text-[#5C5449] mb-1">
-                              Description / Value Proposition
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={
-                                editingEvent.frame_printing_config
-                                  ?.description || ""
-                              }
-                              onChange={(e) =>
-                                updateEventFrameConfig((prev) => ({
-                                  ...prev,
-                                  description: e.target.value,
-                                }))
-                              }
-                              placeholder="e.g. Masterfully framed and delivered ready to hang..."
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-[#5C5449] mb-1">
-                              Production & Delivery Turnaround Instructions
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={
-                                editingEvent.frame_printing_config
-                                  ?.instructions || ""
-                              }
-                              onChange={(e) =>
-                                updateEventFrameConfig((prev) => ({
-                                  ...prev,
-                                  instructions: e.target.value,
-                                }))
-                              }
-                              placeholder="e.g. Handcrafted and delivered within 10–14 business days..."
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9]"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Frame Types List */}
-                        <div className="space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-[#141210]">
-                              Configured Frame Sizes & Pricing (
-                              {editingEvent.frame_printing_config?.frame_types
-                                ?.length || 0}
-                              )
-                            </span>
-                          </div>
-
-                          {!editingEvent.frame_printing_config?.frame_types ||
-                          editingEvent.frame_printing_config.frame_types
-                            .length === 0 ? (
-                            <div className="p-3 text-center text-[#877D70] bg-[#FFFFFF] rounded-xl border border-dashed border-[#D5CCB4]">
-                              No frame options configured yet. Add frame styles below.
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 gap-2.5">
-                              {editingEvent.frame_printing_config.frame_types.map(
-                                (ft) => (
-                                  <div
-                                    key={ft.id}
-                                    className="p-3 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                                  >
-                                    <div className="space-y-0.5">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-[#141210]">
-                                          {ft.name}
-                                        </span>
-                                        <span className="px-2 py-0.5 rounded-full bg-[#FAF7F2] border border-[#E5DEC9] text-[10px] font-mono">
-                                          {ft.dimensions}
-                                        </span>
-                                        <span className="font-mono font-bold text-[#A66D35]">
-                                          ৳{(ft.price || 0).toLocaleString()} BDT
-                                        </span>
-                                      </div>
-                                      {ft.description && (
-                                        <p className="text-[11px] text-[#5C5449]">
-                                          {ft.description}
-                                        </p>
-                                      )}
-                                    </div>
-
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={Boolean(ft.is_active)}
-                                          onChange={() =>
-                                            handleToggleFrameTypeActive(ft.id)
-                                          }
-                                        />
-                                        <span>Active</span>
-                                      </label>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleRemoveFrameType(ft.id)
-                                        }
-                                        className="p-1.5 text-red-700 hover:bg-red-50 rounded-lg"
-                                        title="Remove Frame Option"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          )}
-
-                          {/* Add New Frame Option Form */}
-                          <div className="p-3.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] space-y-3 mt-2">
-                            <span className="font-bold text-[#3A2008] text-[11px] block">
-                              + Add New Frame Option
-                            </span>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-[#5C5449] mb-0.5">
-                                  Frame Style / Name *
-                                </label>
-                                <input
-                                  type="text"
-                                  value={newFrameName}
-                                  onChange={(e) =>
-                                    setNewFrameName(e.target.value)
-                                  }
-                                  placeholder="e.g. Archival Wood Frame"
-                                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-[#5C5449] mb-0.5">
-                                  Dimensions / Size *
-                                </label>
-                                <input
-                                  type="text"
-                                  value={newFrameDim}
-                                  onChange={(e) =>
-                                    setNewFrameDim(e.target.value)
-                                  }
-                                  placeholder="e.g. 12x18 inches"
-                                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-[#5C5449] mb-0.5">
-                                  Price (BDT) *
-                                </label>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={newFramePrice}
-                                  onChange={(e) =>
-                                    setNewFramePrice(Number(e.target.value))
-                                  }
-                                  placeholder="2200"
-                                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                                />
-                              </div>
-                            </div>
-                            <div className="flex flex-col sm:flex-row gap-2 items-center">
-                              <input
-                                type="text"
-                                value={newFrameDesc}
-                                onChange={(e) =>
-                                  setNewFrameDesc(e.target.value)
-                                }
-                                placeholder="Material & finish description (e.g. Teak wood moulding with acid-free matboard)"
-                                className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9]"
-                              />
-                              <button
-                                type="button"
-                                onClick={handleAddFrameType}
-                                className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-[#3A2008] text-[#FAF7F2] font-semibold text-[11px]"
-                              >
-                                Add Frame Style
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider"
-                  >
-                    {editingEvent.id
-                      ? "Save Special Booking Type Settings"
-                      : "Create & Save Special Booking Type"}
-                  </button>
-                </form>
-
-                {/* Right 5 Cols: Session & Automatic Time Slot Generator for Selected Event */}
-                <div className="lg:col-span-5 space-y-6">
-                  <form
-                    onSubmit={handleCreateSessionAndGenerateSlots}
-                    className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-4"
-                  >
-                    <div>
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
-                        Target Event: {editingEvent.title || "Unsaved Event"}
-                      </span>
-                      <h3 className="text-lg font-bold text-[#141210]">
-                        Add Session & Auto-Generate Time Slots
-                      </h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <div className="sm:col-span-2">
-                        <label className="font-semibold block mb-1">
-                          Session Title *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={newSessionTitle}
-                          onChange={(e) => setNewSessionTitle(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                        />
-                      </div>
-                      <div>
-                        <label className="font-semibold block mb-1">
-                          Session Date *
-                        </label>
-                        <input
-                          type="date"
-                          required
-                          value={newSessionDate}
-                          onChange={(e) => setNewSessionDate(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="font-semibold block mb-1">
-                          Slot Duration (mins)
-                        </label>
-                        <input
-                          type="number"
-                          min={10}
-                          value={newSessionDuration}
-                          onChange={(e) =>
-                            setNewSessionDuration(Number(e.target.value))
-                          }
-                          className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="font-semibold block mb-1">
-                          Start Time (BST)
-                        </label>
-                        <input
-                          type="time"
-                          required
-                          value={newSessionStart}
-                          onChange={(e) => setNewSessionStart(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="font-semibold block mb-1">
-                          End Time (BST)
-                        </label>
-                        <input
-                          type="time"
-                          required
-                          value={newSessionEnd}
-                          onChange={(e) => setNewSessionEnd(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="font-semibold block mb-1">
-                          Buffer After (mins) & Capacity Per Slot
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="number"
-                            min={0}
-                            value={newSessionBuffer}
-                            onChange={(e) =>
-                              setNewSessionBuffer(Number(e.target.value))
-                            }
-                            placeholder="Buffer (m)"
-                            className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            value={newSessionCapacity}
-                            onChange={(e) =>
-                              setNewSessionCapacity(Number(e.target.value))
-                            }
-                            placeholder="Cap"
-                            className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={!editingEvent.id}
-                      className="w-full py-2.5 rounded-xl bg-[#3A2008] disabled:opacity-50 text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider"
-                    >
-                      {editingEvent.id
-                        ? "Create Session & Generate Slots"
-                        : "Save Event First to Add Sessions"}
-                    </button>
-                  </form>
-
-                  {/* Existing Sessions List for Active Event */}
-                  <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-3">
-                    {(() => {
-                      const eventSessions = editingEvent.id
-                        ? eventsData.sessions.filter(
-                            (s) => s.event_id === editingEvent.id
-                          )
-                        : [];
-                      const eventSlots = editingEvent.id
-                        ? eventsData.slots.filter(
-                            (sl) => sl.event_id === editingEvent.id
-                          )
-                        : [];
-                      return (
-                        <>
-                          <h4 className="text-sm font-bold text-[#141210]">
-                            Sessions for This Event ({eventSessions.length}) &
-                            Time Slots ({eventSlots.length})
-                          </h4>
-                          {eventSessions.length === 0 ? (
-                            <p className="text-xs text-[#5C5449]">
-                              No sessions generated for this event yet.
-                            </p>
-                          ) : (
-                            <div className="space-y-2 max-h-80 overflow-y-auto">
-                              {eventSessions.map((s) => (
-                                <div
-                                  key={s.id}
-                                  className="p-3 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] flex items-center justify-between text-xs"
-                                >
-                                  <div>
-                                    <div className="font-bold text-[#141210]">
-                                      {s.title}
-                                    </div>
-                                    <div className="font-mono text-[#5C5449]">
-                                      {s.session_date} •{" "}
-                                      {s.start_time.slice(0, 5)}-
-                                      {s.end_time.slice(0, 5)} (
-                                      {s.slot_duration_mins}m +{" "}
-                                      {s.buffer_after_mins}m buffer, cap{" "}
-                                      {s.capacity_per_slot})
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      setEventConflictError(null);
-                                      const res = await fetch(
-                                        `/api/admin/events?entity=session&id=${s.id}`,
-                                        { method: "DELETE" }
-                                      );
-                                      const json = await res.json();
-                                      if (!res.ok) {
-                                        setEventConflictError(
-                                          json.error ||
-                                            "Cannot delete session with active bookings."
-                                        );
-                                        return;
-                                      }
-                                      await loadEventsAndScheduling(
-                                        editingEvent.id
-                                      );
-                                    }}
-                                    className="p-1.5 text-red-700 hover:bg-red-50 rounded-lg"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              {/* Dedicated Event Photography Packages Section for this Event */}
-              {editingEvent.id && (
-                <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-[#141210]">
-                          Event Photography Packages
-                        </h3>
-                        <span className="px-2.5 py-0.5 rounded-full bg-[#FAF7F2] border border-[#E5DEC9] text-xs font-mono font-bold text-[#A66D35]">
-                          {
-                            eventsData.packages.filter(
-                              (p) => p.event_id === editingEvent.id
-                            ).length
-                          }{" "}
-                          packages
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#5C5449]">
-                        Manage photography package options, session durations, deliverables, and prices specific to &ldquo;{editingEvent.title}&rdquo;.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleOpenCreatePackageForEvent(editingEvent.id!)
-                      }
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Create Package for this Event</span>
-                    </button>
-                  </div>
-
-                  {eventsData.packages.filter(
-                    (p) => p.event_id === editingEvent.id
-                  ).length === 0 ? (
-                    <div className="py-8 text-center text-xs text-[#877D70] bg-[#FAF7F2] rounded-2xl border border-dashed border-[#D5CCB4]">
-                      No packages configured for this event. Click &ldquo;Create Package for this Event&rdquo; to add options (e.g. Standard, Premium).
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {eventsData.packages
-                        .filter((p) => p.event_id === editingEvent.id)
-                        .sort(
-                          (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
-                        )
-                        .map((pkg, idx, arr) => (
-                          <div
-                            key={pkg.id}
-                            className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
-                              pkg.is_active
-                                ? "bg-[#FAF7F2] border-[#E5DEC9]"
-                                : "bg-[#F4EFE6]/50 border-dashed border-[#D5CCB4] opacity-75"
-                            }`}
-                          >
-                            <div className="space-y-3">
-                              <div className="flex items-start justify-between gap-2">
-                                <div>
-                                  <h4 className="font-bold text-base text-[#141210]">
-                                    {pkg.name}
-                                  </h4>
-                                  {pkg.subtitle && (
-                                    <p className="text-[11px] text-[#A66D35] font-medium">
-                                      {pkg.subtitle}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    disabled={idx === 0}
-                                    onClick={() =>
-                                      handleReorderPackage(pkg, -1)
-                                    }
-                                    className="p-1 rounded bg-[#FFFFFF] border border-[#E5DEC9] disabled:opacity-30 hover:bg-[#F4EFE6]"
-                                    title="Move Up"
-                                  >
-                                    <ArrowUp className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={idx === arr.length - 1}
-                                    onClick={() =>
-                                      handleReorderPackage(pkg, 1)
-                                    }
-                                    className="p-1 rounded bg-[#FFFFFF] border border-[#E5DEC9] disabled:opacity-30 hover:bg-[#F4EFE6]"
-                                    title="Move Down"
-                                  >
-                                    <ArrowDown className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-lg font-extrabold text-[#3A2008] font-mono">
-                                  ৳{(pkg.price_numeric ?? 0).toLocaleString()}{" "}
-                                  {pkg.currency || "BDT"}
-                                </span>
-                                <span className="px-2 py-0.5 rounded-full bg-[#FFFFFF] border border-[#E5DEC9] text-[10px] font-mono font-semibold text-[#5C5449]">
-                                  ⏱️ {pkg.duration_mins} mins
-                                </span>
-                                {pkg.frame_printing_enabled !== false ? (
-                                  <span className="px-2 py-0.5 rounded-full bg-[#EEF7F2] text-[#2E6B4E] text-[10px] font-semibold">
-                                    Frame Eligible
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#B86B19] text-[10px] font-semibold">
-                                    Digital Only
-                                  </span>
-                                )}
-                                {!pkg.is_active && (
-                                  <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-semibold">
-                                    Archived / Inactive
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="text-xs text-[#5C5449] line-clamp-2">
-                                {pkg.description}
-                              </p>
-
-                              {pkg.deliverables &&
-                                pkg.deliverables.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 pt-1">
-                                    {pkg.deliverables
-                                      .slice(0, 3)
-                                      .map((d, dIdx) => (
-                                        <span
-                                          key={dIdx}
-                                          className="px-2 py-0.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9] text-[10px] text-[#5C5449]"
-                                        >
-                                          ✓ {d}
-                                        </span>
-                                      ))}
-                                    {pkg.deliverables.length > 3 && (
-                                      <span className="px-2 py-0.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9] text-[10px] text-[#877D70]">
-                                        +{pkg.deliverables.length - 3} more
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-[#E5DEC9]">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditPackage(pkg)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#FFFFFF] hover:bg-[#F4EFE6] text-[#141210] border border-[#D5CCB4] text-xs font-semibold"
-                              >
-                                <Edit3 className="w-3.5 h-3.5 text-[#A66D35]" />
-                                <span>Edit</span>
-                              </button>
-
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleDuplicatePackage(pkg.id)
-                                  }
-                                  className="p-1.5 rounded-xl bg-[#FFFFFF] hover:bg-[#F4EFE6] text-[#5C5449] border border-[#E5DEC9]"
-                                  title="Duplicate Package"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeletePackage(pkg)}
-                                  className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700"
-                                  title="Delete or Archive Package"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {schedSubTab === "convocation" && <SpecialEventsAdminClient />}
 
           {schedSubTab === "services" && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -4158,7 +2847,8 @@ export default function AdminPortalClient() {
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2 border-b border-[#E5DEC9] pb-3">
             {[
-              { id: "site_settings", label: "Site & Booking Copy" },
+              { id: "website_cms", label: "Homepage & Hero CMS" },
+              { id: "site_settings", label: "Booking Copy & Policies" },
               { id: "portfolio", label: "Portfolio Works CMS" },
               { id: "products", label: "Print Merchandise CMS" },
               { id: "leads", label: "Custom Project Leads CRM" },
@@ -4167,16 +2857,18 @@ export default function AdminPortalClient() {
                 key={sub.id}
                 type="button"
                 onClick={() => setCmsSubTab(sub.id as any)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider cursor-pointer ${
                   cmsSubTab === sub.id
                     ? "bg-[#3A2008] text-[#FAF7F2]"
-                    : "bg-[#FFFFFF] text-[#5C5449] border border-[#E5DEC9]"
+                    : "bg-[#FFFFFF] text-[#5C5449] border border-[#E5DEC9] hover:bg-[#FAF7F2]"
                 }`}
               >
                 {sub.label}
               </button>
             ))}
           </div>
+
+          {cmsSubTab === "website_cms" && <WebsiteCMSManager />}
 
           {cmsSubTab === "site_settings" && (
             <div className="max-w-3xl rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-4 text-xs">
@@ -4220,7 +2912,11 @@ export default function AdminPortalClient() {
             </div>
           )}
 
-          {cmsSubTab === "portfolio" && <PortfolioCMSClient />}
+          {cmsSubTab === "portfolio" && (
+            <div className="space-y-6">
+              <WorkArchiveAdminClient />
+            </div>
+          )}
           {cmsSubTab === "products" && <ProductsCMSClient />}
           {cmsSubTab === "leads" && <LeadsCRMClient />}
         </div>
@@ -4229,18 +2925,14 @@ export default function AdminPortalClient() {
       {/* TAB 7: PORTFOLIO & SUPABASE STORAGE MEDIA MANAGER */}
       {activeTab === "portfolio" && (
         <div className="space-y-6">
-          <div>
-            <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
-              Supabase Storage Bucket: portfolio-media
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#141210]">
-              Portfolio Works & Image Storage Manager
-            </h1>
-            <p className="text-xs text-[#5C5449]">
-              Upload multi-image galleries directly from your computer to Supabase Storage, preview before saving, reorder frames, edit captions & alt text, and manage cover thumbnails.
-            </p>
-          </div>
-          <PortfolioCMSClient />
+          <WorkArchiveAdminClient />
+        </div>
+      )}
+
+      {/* REGISTERED USERS & IDENTITY DOSSIERS */}
+      {activeTab === "users" && (
+        <div className="space-y-6">
+          <RegisteredUsersAdminClient />
         </div>
       )}
 
@@ -4251,7 +2943,7 @@ export default function AdminPortalClient() {
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
-                  Verified Supabase Auth Identity
+                  Verified Administrator Identity
                 </span>
                 <h2 className="text-xl font-bold text-[#141210]">
                   Administrator Profile
@@ -4996,6 +3688,221 @@ export default function AdminPortalClient() {
                       className="px-4 py-2 rounded-xl bg-[#3A2008] text-[#FAF7F2] font-semibold"
                     >
                       Save Note
+                    </button>
+                  </div>
+                </div>
+
+                {/* Client Photo-Bank Delivery & Production Workflow */}
+                <div className="p-5 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5DEC9] pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-[#3A2008] text-[#FAF7F2] flex items-center justify-center shrink-0">
+                        <Send className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-[#141210] text-sm">
+                          Client Photo-Bank Delivery & Production Workflow
+                        </h4>
+                        <p className="text-[11px] text-[#5C5449]">
+                          Track studio stage, configure private photo-bank links, and manage client access validity.
+                        </p>
+                      </div>
+                    </div>
+                    {inspectedBooking.delivery_url && (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold uppercase ${
+                            !inspectedBooking.delivery_expires_at ||
+                            new Date(inspectedBooking.delivery_expires_at) >
+                              new Date()
+                              ? "bg-[#EEF7F2] text-[#2E6B4E]"
+                              : "bg-red-50 text-red-700"
+                          }`}
+                        >
+                          {!inspectedBooking.delivery_expires_at ||
+                          new Date(inspectedBooking.delivery_expires_at) >
+                            new Date()
+                            ? "Gallery Active"
+                            : "Gallery Expired"}
+                        </span>
+                        <a
+                          href={inspectedBooking.delivery_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9] text-[#3A2008] text-[11px] font-semibold hover:bg-[#3A2008] hover:text-[#FAF7F2] transition-colors"
+                        >
+                          <span>Open Gallery</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Workflow Stage */}
+                    <div className="space-y-1.5">
+                      <label className="font-semibold block text-[#141210]">
+                        Production Workflow Stage
+                      </label>
+                      <select
+                        value={deliveryStageId}
+                        onChange={(e) => setDeliveryStageId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-medium text-[#141210]"
+                      >
+                        <option value="">-- No Stage Assigned --</option>
+                        {workflowStages.map((stg) => (
+                          <option key={stg.id} value={stg.id}>
+                            Stage {stg.sort_order}: {stg.name}{" "}
+                            {stg.is_final_delivery ? "★ (Final Delivery)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {(() => {
+                        const sel = workflowStages.find(
+                          (s) => s.id === deliveryStageId
+                        );
+                        if (sel?.is_final_delivery) {
+                          return (
+                            <p className="text-[11px] text-[#A66D35] font-semibold">
+                              ★ Final Delivery Stage: A photo-bank URL is required and client access will be unlocked.
+                            </p>
+                          );
+                        }
+                        return sel?.description ? (
+                          <p className="text-[11px] text-[#5C5449]">
+                            {sel.description}
+                          </p>
+                        ) : null;
+                      })()}
+                    </div>
+
+                    {/* Validity Duration & Auto-calculated Expiry */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="font-semibold text-[#141210]">
+                          Gallery Validity Duration (Days)
+                        </label>
+                        <span className="text-[11px] font-mono font-medium text-[#5C5449]">
+                          {deliveryValidityDays > 0
+                            ? `Expires: ${new Date(
+                                Date.now() +
+                                  deliveryValidityDays * 86400000
+                              ).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}`
+                            : "No expiration"}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={deliveryValidityDays}
+                          onChange={(e) =>
+                            setDeliveryValidityDays(
+                              Number(e.target.value) || 14
+                            )
+                          }
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono"
+                          placeholder="e.g. 14"
+                        />
+                        <div className="flex gap-1 shrink-0">
+                          {[7, 14, 30].map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => setDeliveryValidityDays(d)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors ${
+                                deliveryValidityDays === d
+                                  ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008]"
+                                  : "bg-[#FFFFFF] border-[#E5DEC9] text-[#5C5449] hover:bg-[#FAF7F2]"
+                              }`}
+                            >
+                              {d}d
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {inspectedBooking.delivery_expires_at && (
+                        <p className="text-[10px] text-[#877D70]">
+                          Currently recorded expiry:{" "}
+                          {new Date(
+                            inspectedBooking.delivery_expires_at
+                          ).toLocaleString("en-US", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Photo-Bank Gallery URL */}
+                    <div className="sm:col-span-2 space-y-1.5">
+                      <label className="font-semibold block text-[#141210]">
+                        Photo-Bank Gallery URL (Google Drive, Supabase Storage, Pixieset, etc.)
+                      </label>
+                      <input
+                        type="url"
+                        value={deliveryUrlInput}
+                        onChange={(e) => setDeliveryUrlInput(e.target.value)}
+                        placeholder="https://drive.google.com/... or https://..."
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono"
+                      />
+                    </div>
+
+                    {/* Photographer Delivery Message */}
+                    <div className="sm:col-span-2 space-y-1.5">
+                      <label className="font-semibold block text-[#141210]">
+                        Photographer Delivery Note / Download Instructions (Visible to Client)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={deliveryMessageInput}
+                        onChange={(e) =>
+                          setDeliveryMessageInput(e.target.value)
+                        }
+                        placeholder="e.g. Your high-resolution edited photos and print files are ready for download. Please back them up before the link expires."
+                        className="w-full px-3.5 py-2 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#E5DEC9]">
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-[#141210] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={deliverySendEmail}
+                        onChange={(e) => setDeliverySendEmail(e.target.checked)}
+                        className="rounded border-[#D5CCB4]"
+                      />
+                      <span>
+                        Dispatch delivery notification email to{" "}
+                        <strong className="text-[#3A2008]">
+                          {inspectedBooking.client_email}
+                        </strong>
+                      </span>
+                    </label>
+
+                    <button
+                      type="button"
+                      disabled={deliverySaving}
+                      onClick={handleSaveDeliveryAndStage}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold text-xs transition-colors disabled:opacity-50"
+                    >
+                      {deliverySaving ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Saving Delivery...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Save Delivery & Stage</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

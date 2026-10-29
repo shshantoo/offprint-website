@@ -20,7 +20,7 @@ export default function ContactPage() {
             <Phone className="w-3.5 h-3.5" />
             <span>Direct Communications Desk</span>
           </div>
-          <h1 className="text-4xl sm:text-6xl font-extrabold text-[#141210] tracking-tight">
+          <h1 className="font-editorial text-4xl sm:text-6xl font-normal text-[#141210] tracking-tight">
             Connect With Our Studio
           </h1>
           <p className="text-sm sm:text-base text-[#5C5449]">

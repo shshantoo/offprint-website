@@ -241,11 +241,11 @@ export default function TraditionalBookingClient() {
           <AlertTriangle className="w-6 h-6 text-[#B86B19] shrink-0 mt-0.5" />
           <div className="space-y-2">
             <h3 className="text-base font-bold text-[#141210]">
-              Database Migration Required Before Accepting Live Reservations
+              Online Reservations Temporarily Unavailable
             </h3>
             <p className="text-xs sm:text-sm text-[#5C5449] leading-relaxed">
               {data.error ||
-                "Apply supabase/schema.sql in your Supabase SQL Editor to enable live traditional photography booking and atomic slot concurrency locks."}
+                "Online appointment scheduling is temporarily updating. Please contact our studio team directly at inquiry@offprint.agency or try again shortly."}
             </p>
           </div>
         </div>
@@ -296,7 +296,7 @@ export default function TraditionalBookingClient() {
             <div className="p-8 rounded-2xl bg-[#FAF7F2] border border-dashed border-[#D5CCB4] text-center text-xs text-[#5C5449]">
               {data?.schemaReady
                 ? "No active traditional photography services are currently published."
-                : "Run the Supabase database migration to load configured photography services."}
+                : "Photography services are currently being updated. Please check back shortly or contact our desk."}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

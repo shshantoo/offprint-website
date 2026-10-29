@@ -45,8 +45,8 @@ export class BookingSystemError extends Error {
 export function parseDatabaseBookingError(err: any): BookingSystemError {
   if (isMissingSchemaError(err)) {
     return new BookingSystemError(
-      "SCHEMA_NOT_INSTALLED",
-      "The booking database schema has not yet been installed in Supabase. Please execute supabase/schema.sql (or the files in supabase/migrations/) in your Supabase SQL Editor before creating reservations.",
+      "SERVICE_UPDATING",
+      "Booking service is temporarily updating. Please check back shortly or contact our studio at inquiry@offprint.agency.",
       503
     );
   }
@@ -153,7 +153,7 @@ export async function getConvocationAvailabilityFromDb(params: {
         return {
           schemaReady: false,
           error:
-            "Booking database schema is not installed in Supabase yet. Run supabase/schema.sql in your Supabase SQL Editor to activate live availability.",
+            "Booking service is temporarily updating. Please refresh or contact studio support.",
           event: null,
           packages: [],
           sessions: [],
@@ -307,7 +307,7 @@ export async function getTraditionalAvailabilityFromDb(params: {
         return {
           schemaReady: false,
           error:
-            "Booking database schema is not installed in Supabase yet. Run supabase/schema.sql in your Supabase SQL Editor to activate live availability.",
+            "Booking service is temporarily updating. Please refresh or contact studio support.",
           services: [],
           selectedService: null,
           packages: [],
@@ -435,8 +435,8 @@ export async function executeCreateBookingWorkflow(params: {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
     throw new BookingSystemError(
-      "SUPABASE_UNAVAILABLE",
-      "Database service is not configured. Bookings cannot be saved.",
+      "SERVICE_UNAVAILABLE",
+      "Booking service is temporarily unavailable. Please try again shortly.",
       503
     );
   }
@@ -452,9 +452,40 @@ export async function executeCreateBookingWorkflow(params: {
   ) {
     const { data: evRow } = await supabase
       .from("booking_events")
-      .select("custom_questions")
+      .select("custom_questions, is_booking_enabled, status, booking_opens_at, booking_closes_at")
       .eq("id", input.event_id)
       .maybeSingle();
+
+    if (evRow) {
+      if (evRow.is_booking_enabled === false) {
+        throw new BookingSystemError(
+          "BOOKING_DISABLED",
+          "Bookings are currently disabled for this special event.",
+          403
+        );
+      }
+      if (evRow.status !== "published" && actorRole !== "admin") {
+        throw new BookingSystemError(
+          "EVENT_NOT_PUBLISHED",
+          "This special event is not currently accepting public bookings.",
+          403
+        );
+      }
+      if (evRow.booking_opens_at && new Date(evRow.booking_opens_at) > new Date() && actorRole !== "admin") {
+        throw new BookingSystemError(
+          "BOOKING_NOT_OPEN",
+          "The booking window for this event has not opened yet.",
+          403
+        );
+      }
+      if (evRow.booking_closes_at && new Date(evRow.booking_closes_at) < new Date() && actorRole !== "admin") {
+        throw new BookingSystemError(
+          "BOOKING_CLOSED",
+          "The booking deadline for this event has passed.",
+          403
+        );
+      }
+    }
 
     if (evRow && Array.isArray(evRow.custom_questions) && evRow.custom_questions.length > 0) {
       // Merge legacy student_id / degree_or_department into custom_fields before validation if needed

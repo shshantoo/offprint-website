@@ -26,7 +26,7 @@ export default function AboutPage() {
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Govt. Reg. Entity • Est. Sep 2025</span>
           </div>
-          <h1 className="text-4xl sm:text-6xl font-extrabold text-[#141210] tracking-tight">
+          <h1 className="font-editorial text-4xl sm:text-6xl font-normal text-[#141210] tracking-tight">
             The OFFPRINT Story
           </h1>
           <p className="text-base sm:text-lg text-[#5C5449] max-w-2xl mx-auto leading-relaxed">

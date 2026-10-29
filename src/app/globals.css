@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
 @theme {
+  --font-serif: var(--font-serif), Georgia, Cambria, "Times New Roman", Times, serif;
   --color-primary: #3a2008;
   --color-primary-light: #5c4028;
   --color-bronze: #a66d35;
   --color-bronze-light: #c48b52;
   --color-bronze-dark: #7a4b1e;
+  --color-sage: #e8ece5;
+  --color-sage-dark: #dfe4dc;
+  --color-sage-deep: #2f362e;
   --color-cream-bg: #faf7f2;
   --color-cream-alt: #f4efe6;
   --color-surface: #ffffff;
@@ -83,4 +87,36 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #5c4028;
+}
+
+/* Continuous Horizontal Photography Ticker */
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 38s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none;
+    transform: none;
+  }
+}
+
+/* Editorial Serif Utility */
+.font-editorial {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
 }

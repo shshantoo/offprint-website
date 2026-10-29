@@ -370,7 +370,7 @@ export default function ConvocationBookingClient({
       <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-12 text-center space-y-3">
         <RefreshCw className="w-6 h-6 text-[#A66D35] animate-spin mx-auto" />
         <p className="text-sm font-medium text-[#141210]">
-          Fetching real-time event schedule &amp; availability from Supabase...
+          Checking availability &amp; event schedule...
         </p>
       </div>
     );

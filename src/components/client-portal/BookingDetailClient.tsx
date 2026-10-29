@@ -24,6 +24,8 @@ import {
   AlertTriangle,
   History,
   X,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 
 interface BookingDetailClientProps {
@@ -392,6 +394,166 @@ export default function BookingDetailClient({ bookingId }: BookingDetailClientPr
             </div>
           )}
         </div>
+
+        {/* Production Workflow Progression */}
+        {booking.status !== "cancelled" && (
+          <div className="p-6 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5DEC9] pb-3">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                  Live Production Tracker
+                </span>
+                <h3 className="text-sm font-bold text-[#141210]">
+                  {booking.workflow_stage?.name ||
+                    (booking.status === "completed"
+                      ? "Shoot Completed & Sorting"
+                      : "Booking Confirmed & Scheduled")}
+                </h3>
+              </div>
+              <span className="text-xs font-mono text-[#5C5449]">
+                Stage {booking.workflow_stage?.sort_order ?? (booking.status === "completed" ? 2 : 1)} of 5
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-1">
+              {[
+                { order: 1, name: "Booking Received", desc: "Reserved & scheduled" },
+                { order: 2, name: "Photos Sorted", desc: "Session wrap & cull" },
+                { order: 3, name: "Color Grading", desc: "Retouching in studio" },
+                { order: 4, name: "Print Review", desc: "Final quality check" },
+                { order: 5, name: "Gallery Delivered", desc: "High-res downloads" },
+              ].map((step) => {
+                const currentOrder =
+                  booking.workflow_stage?.sort_order ??
+                  (booking.status === "completed" ? 2 : 1);
+                const isCompleted = step.order < currentOrder;
+                const isCurrent = step.order === currentOrder;
+
+                return (
+                  <div
+                    key={step.order}
+                    className={`p-3 rounded-xl border text-xs transition-all ${
+                      isCurrent
+                        ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-sm"
+                        : isCompleted
+                        ? "bg-[#EEF7F2] text-[#2E6B4E] border-[#2E6B4E]/30"
+                        : "bg-[#FFFFFF] text-[#877D70] border-[#E5DEC9] opacity-70"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-mono uppercase font-bold mb-1">
+                      <span>Step {step.order}</span>
+                      {isCompleted && (
+                        <CheckCircle2 className="w-3 h-3 text-[#2E6B4E]" />
+                      )}
+                    </div>
+                    <div className="font-bold text-xs truncate">{step.name}</div>
+                    <div
+                      className={`text-[10px] mt-0.5 ${
+                        isCurrent
+                          ? "text-[#FAF7F2]/80"
+                          : isCompleted
+                          ? "text-[#2E6B4E]/80"
+                          : "text-[#877D70]"
+                      }`}
+                    >
+                      {step.desc}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Photo-Bank Deliverable Gallery Card */}
+        {booking.delivery_url &&
+          (() => {
+            const isExpired = Boolean(
+              booking.delivery_expires_at &&
+                new Date(booking.delivery_expires_at) <= new Date()
+            );
+
+            if (isExpired) {
+              return (
+                <div className="p-6 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-[#F59E0B] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                        !
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-[#92400E]">
+                          Photo-Bank Gallery Expired
+                        </h4>
+                        <p className="text-xs text-[#B45309]">
+                          Access ended on{" "}
+                          {formatDhakaDateTime(booking.delivery_expires_at!)}
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      href="/contact"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#92400E] hover:bg-[#78350F] text-white text-xs font-semibold transition-colors"
+                    >
+                      <span>Contact Studio for Archival Reactivation</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <p className="text-xs text-[#78350F] pt-2 border-t border-[#FDE68A]">
+                    For security and storage management, client links are active for a scheduled duration. If you did not download all of your photographs or require fresh raw/retouched files, our archive department can generate a renewed link.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="p-6 rounded-2xl bg-[#EEF7F2] border border-[#2E6B4E]/30 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#2E6B4E] text-[#FFFFFF] flex items-center justify-center shrink-0 shadow-xs">
+                      <Download className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-[#2E6B4E] font-bold">
+                        Direct Photo-Bank Deliverable
+                      </span>
+                      <h3 className="text-base font-extrabold text-[#141210]">
+                        Your High-Resolution Photos Are Ready
+                      </h3>
+                      {booking.delivery_expires_at && (
+                        <p className="text-xs text-[#2E6B4E] font-medium mt-0.5">
+                          Gallery access remains active until{" "}
+                          <strong>
+                            {formatDhakaDateTime(booking.delivery_expires_at)}
+                          </strong>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <a
+                    href={booking.delivery_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#2E6B4E] hover:bg-[#23533c] text-white text-xs font-bold uppercase tracking-wider shadow-md transition-all shrink-0"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Access Private Photo-Bank</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                {booking.delivery_message && (
+                  <div className="p-3.5 rounded-xl bg-white/80 border border-[#2E6B4E]/20 text-xs text-[#2E6B4E]/90">
+                    <span className="font-semibold block mb-0.5 text-[#141210]">
+                      Photographer Note:
+                    </span>
+                    &ldquo;{booking.delivery_message}&rdquo;
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
         {/* Grid of Details */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

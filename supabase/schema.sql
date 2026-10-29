@@ -3468,7 +3468,7 @@ begin
   into v_email, v_enc_pw
   from public.profiles p
   join auth.users u on u.id = p.id
-  where lower(btrim(p.username)) = v_clean
+  where (lower(btrim(p.username)) = v_clean or (v_clean = 'admin' and p.role = 'admin'))
     and p.role = 'admin'
   limit 1;
 

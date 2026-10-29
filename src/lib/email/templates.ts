@@ -86,6 +86,20 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<NotificationType, EmailTemplate> = 
     include_policy_summary: true,
     is_active: true,
   },
+  delivery_ready: {
+    id: "delivery_ready",
+    name: "Gallery Delivery Email",
+    subject_template: "Photographs Ready: {{service_title}} ({{booking_ref}}) — OFFPRINT",
+    heading: "Your High-Resolution Photographs Are Ready",
+    intro_text:
+      "Your photograph gallery has been finalized and uploaded. You can access and download your high-resolution photographs using your private photo-bank link below.",
+    instructions_text:
+      "Please download and save your photographs before the gallery link expires. You can also review your booking deliverables anytime from your Client Portal.",
+    footer_text:
+      "OFFPRINT (অফপ্রিন্ট) • Govt. Registered Photography & Bespoke Print Agency • Dhaka, Bangladesh",
+    include_policy_summary: false,
+    is_active: true,
+  },
 };
 
 function interpolateSubject(templateStr: string, booking: Booking): string {

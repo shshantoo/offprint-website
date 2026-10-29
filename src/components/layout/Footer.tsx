@@ -4,7 +4,6 @@ import React from "react";
 import Link from "next/link";
 import {
   ShieldCheck,
-  Phone,
   Mail,
   MapPin,
   Calendar,
@@ -34,12 +33,12 @@ export default function Footer() {
             </div>
 
             <p className="text-xs text-[#655E55] leading-relaxed max-w-sm">
-              Govt. Registered photography studio and corporate agency in Bangladesh (Est. Sep 2025). Specializing in IUB Convocation portrait sessions, executive headshots, corporate summits, brand documentaries, and luxury physical print collateral.
+              Independent photography studio and fine-art print atelier in Dhaka, Bangladesh. Specializing in IUB Convocation portrait sessions, executive headshots, corporate summits, brand documentaries, and luxury physical print collateral.
             </p>
 
             <div className="flex items-center gap-2 text-xs text-[#141210] font-medium bg-[#FFFFFF] px-3.5 py-2 rounded-lg border border-[#E5DEC9] w-fit">
               <ShieldCheck className="w-4 h-4 text-[#A66D35] shrink-0" />
-              <span>Govt. Reg. Entity • 50+ Completed Projects</span>
+              <span>Editorial Photography &amp; Print Atelier</span>
             </div>
 
             <div className="pt-1 flex flex-wrap items-center gap-2">
@@ -166,13 +165,6 @@ export default function Footer() {
             </h4>
             <div className="space-y-2.5 text-xs">
               <a
-                href="tel:+8801700000000"
-                className="flex items-center gap-2 text-[#3D3730] hover:text-[#3A2008] transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span className="font-mono">+880 1700-000000</span>
-              </a>
-              <a
                 href="mailto:inquiry@offprint.agency"
                 className="flex items-center gap-2 text-[#3D3730] hover:text-[#3A2008] transition-colors"
               >
@@ -198,7 +190,7 @@ export default function Footer() {
             © 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved. Registered under Laws of Bangladesh.
           </div>
           <div className="flex items-center gap-6">
-            <span>Est. Sep 2025 • Dhaka</span>
+            <span>Studio Atelier • Dhaka</span>
             <Link href="/privacy" className="hover:text-[#141210] transition-colors">
               Booking Policy &amp; Privacy
             </Link>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
@@ -14,10 +14,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const playfair = Playfair_Display({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "OFFPRINT (অফপ্রিন্ট) • Photography Studio, Convocation Portraits & Print Agency",
   description:
-    "Govt. Registered photography studio and corporate agency in Bangladesh (Est. Sep 2025). Book IUB 27th Convocation photography, executive portraits, corporate summits, documentaries, and bespoke print collateral.",
+    "Editorial photography studio and print atelier in Dhaka, Bangladesh. Book IUB 27th Convocation photography, executive portraits, corporate summits, documentaries, and bespoke print collateral.",
   keywords: [
     "OFFPRINT",
     "অফপ্রিন্ট",
@@ -32,7 +38,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "OFFPRINT (অফপ্রিন্ট) • Photography Studio & Bespoke Print Solutions",
     description:
-      "Govt. Registered photography studio & luxury print merchandise agency in Bangladesh.",
+      "Editorial photography studio and fine-art print atelier in Dhaka, Bangladesh.",
     url: "https://offprint.agency",
     siteName: "OFFPRINT",
     locale: "en_BD",
@@ -48,7 +54,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#FAF7F2] text-[#141210] selection:bg-[#3A2008] selection:text-[#FAF7F2]">
         <Header />

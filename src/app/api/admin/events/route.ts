@@ -376,6 +376,166 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (entity === "rebuild_event_schedule") {
+      const eventId = String(body.event_id || "");
+      if (!eventId) {
+        return NextResponse.json(
+          { success: false, error: "event_id is required." },
+          { status: 400 }
+        );
+      }
+
+      const { data: event, error: evErr } = await supabase
+        .from("booking_events")
+        .select("*")
+        .eq("id", eventId)
+        .single();
+
+      if (evErr || !event) {
+        return NextResponse.json(
+          { success: false, error: "Event not found." },
+          { status: 404 }
+        );
+      }
+
+      const startDateStr = body.start_date || event.event_start_date;
+      const endDateStr = body.end_date || event.event_end_date || startDateStr;
+
+      if (!startDateStr || !endDateStr) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Event Start Date and End Date are required to generate sessions.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const operatingDays: number[] = Array.isArray(body.operating_days)
+        ? body.operating_days
+        : Array.isArray(event.operating_days)
+        ? event.operating_days
+        : [0, 1, 2, 3, 4, 5, 6];
+
+      const opStartTime = body.operating_start_time || event.operating_start_time || "09:00";
+      const opEndTime = body.operating_end_time || event.operating_end_time || "18:00";
+      const slotDuration = Number(body.slot_duration_mins || event.default_slot_duration_mins || 30);
+      const slotCapacity = Number(body.capacity_per_slot || event.default_slot_capacity || 1);
+      const bufferBefore = Number(body.buffer_before_mins || event.buffer_before_mins || 0);
+      const bufferAfter = Number(body.buffer_after_mins || event.buffer_after_mins || 10);
+      const breakPeriods: Array<{ name: string; start_time: string; end_time: string }> =
+        Array.isArray(body.break_periods)
+          ? body.break_periods
+          : Array.isArray(event.break_periods)
+          ? event.break_periods
+          : [];
+
+      let totalSessions = 0;
+      let totalSlots = 0;
+
+      const curDate = new Date(`${startDateStr}T00:00:00Z`);
+      const stopDate = new Date(`${endDateStr}T00:00:00Z`);
+
+      while (curDate <= stopDate) {
+        const ymd = curDate.toISOString().split("T")[0];
+        const dayOfWeek = curDate.getUTCDay();
+
+        if (operatingDays.includes(dayOfWeek)) {
+          // Check if session already exists for this event and date
+          const { data: existingSess } = await supabase
+            .from("event_sessions")
+            .select("id")
+            .eq("event_id", eventId)
+            .eq("session_date", ymd)
+            .maybeSingle();
+
+          let sessionId = existingSess?.id;
+
+          if (!sessionId) {
+            const { data: newSess, error: newSessErr } = await supabase
+              .from("event_sessions")
+              .insert({
+                event_id: eventId,
+                session_date: ymd,
+                title: `${event.title} - ${ymd}`,
+                start_time: `${opStartTime.slice(0, 5)}:00`,
+                end_time: `${opEndTime.slice(0, 5)}:00`,
+                slot_duration_mins: slotDuration,
+                buffer_before_mins: bufferBefore,
+                buffer_after_mins: bufferAfter,
+                capacity_per_slot: slotCapacity,
+                is_active: true,
+              })
+              .select("id")
+              .single();
+
+            if (newSessErr) throw parseDatabaseBookingError(newSessErr);
+            sessionId = newSess?.id;
+          } else {
+            await supabase
+              .from("event_sessions")
+              .update({
+                start_time: `${opStartTime.slice(0, 5)}:00`,
+                end_time: `${opEndTime.slice(0, 5)}:00`,
+                slot_duration_mins: slotDuration,
+                buffer_before_mins: bufferBefore,
+                buffer_after_mins: bufferAfter,
+                capacity_per_slot: slotCapacity,
+                is_active: true,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", sessionId);
+          }
+
+          if (sessionId) {
+            totalSessions++;
+
+            // Auto-generate slots
+            const { data: genCount } = await supabase.rpc(
+              "generate_event_session_slots",
+              { p_session_id: sessionId }
+            );
+
+            // Filter out slots overlapping break periods (only if unbooked)
+            if (breakPeriods.length > 0) {
+              for (const bp of breakPeriods) {
+                if (bp.start_time && bp.end_time) {
+                  const bStart = `${ymd}T${bp.start_time.slice(0, 5)}:00+06:00`;
+                  const bEnd = `${ymd}T${bp.end_time.slice(0, 5)}:00+06:00`;
+                  await supabase
+                    .from("event_time_slots")
+                    .delete()
+                    .eq("session_id", sessionId)
+                    .eq("booked_count", 0)
+                    .lt("start_at", bEnd)
+                    .gt("end_at", bStart);
+                }
+              }
+            }
+
+            // Count final slots
+            const { count } = await supabase
+              .from("event_time_slots")
+              .select("*", { count: "exact", head: true })
+              .eq("session_id", sessionId);
+
+            totalSlots += count || Number(genCount || 0);
+          }
+        }
+
+        curDate.setUTCDate(curDate.getUTCDate() + 1);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Successfully generated ${totalSessions} sessions and ${totalSlots} available slots.`,
+        data: {
+          sessions_count: totalSessions,
+          slots_count: totalSlots,
+        },
+      });
+    }
+
     if (entity === "slot") {
       const {
         id,

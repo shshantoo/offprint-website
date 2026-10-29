@@ -211,6 +211,14 @@ export interface BookingEvent {
   custom_questions?: CustomBookingQuestion[];
   frame_printing_config?: FramePrintingConfig;
   is_featured_on_home?: boolean;
+  is_booking_enabled?: boolean;
+  is_visible_on_booking_page?: boolean;
+  operating_days?: number[];
+  operating_start_time?: string;
+  operating_end_time?: string;
+  slot_interval_mins?: number;
+  break_periods?: Array<{ name: string; start_time: string; end_time: string }>;
+  schedule_overrides?: Array<{ date: string; is_closed?: boolean; start_time?: string; end_time?: string }>;
   resource_pool: string;
   created_at?: string;
   updated_at?: string;
@@ -415,10 +423,33 @@ export interface Booking {
   email_send_status: EmailSendStatus;
   email_last_sent_at?: string | null;
   email_send_error?: string | null;
+  workflow_stage_id?: string | null;
+  workflow_stage?: WorkflowStage | null;
+  delivery_url?: string | null;
+  delivery_status?: 'pending' | 'delivered' | 'expired' | null;
+  delivery_validity_days?: number | null;
+  delivery_expires_at?: string | null;
+  delivery_sent_at?: string | null;
+  delivery_message?: string | null;
   created_at: string;
   updated_at: string;
   // Admin-only joined field (never populated for client queries)
   internal_notes?: string;
+}
+
+export interface WorkflowStage {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  client_facing_description?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  is_final_delivery: boolean;
+  is_visible_to_client: boolean;
+  color?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface BookingStatusHistory {
@@ -440,7 +471,8 @@ export type NotificationType =
   | 'booking_rescheduled'
   | 'booking_cancelled'
   | 'booking_updated'
-  | 'schedule_changed';
+  | 'schedule_changed'
+  | 'delivery_ready';
 
 export interface EmailNotification {
   id: string;
@@ -527,3 +559,159 @@ export interface DayAvailabilitySummary {
   total_slots_count: number;
   reason?: string;
 }
+
+// =============================================================================
+// WEBSITE CMS & HERO SLIDER TYPES
+// =============================================================================
+
+export interface HeroSlide {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  eyebrow?: string | null;
+  cta_label?: string | null;
+  cta_href?: string | null;
+  image_url: string;
+  storage_path?: string | null;
+  alt_text?: string | null;
+  focal_point?: string;
+  text_align?: 'left' | 'center' | 'right';
+  sort_order: number;
+  is_published: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Testimonial {
+  id: string;
+  quote: string;
+  author: string;
+  role_or_title?: string | null;
+  organization?: string | null;
+  project_tag?: string | null;
+  avatar_url?: string | null;
+  sort_order: number;
+  is_published: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface HomepageConfig {
+  hero_autoplay: boolean;
+  hero_interval_sec: number;
+  show_ticker: boolean;
+  show_flagship: boolean;
+  show_testimonials: boolean;
+  show_services: boolean;
+  show_print_bridge: boolean;
+  show_quote_builder: boolean;
+  show_closing_cta: boolean;
+  flagship_heading: string;
+  flagship_subheading: string;
+  services_heading: string;
+  services_subheading: string;
+  closing_cta_heading: string;
+  closing_cta_subheading: string;
+  closing_cta_button_label: string;
+  closing_cta_button_href: string;
+  closing_cta_image_url: string;
+  ticker_items: string[];
+}
+
+// =============================================================================
+// WORK ARCHIVE, SUPABASE MEDIA FOLDERS & EVENT HIGHLIGHTS
+// =============================================================================
+
+export type MediaFolderType = 'event-archive' | 'event-highlight';
+
+export interface MediaFolder {
+  id: string;
+  name: string;
+  slug: string;
+  folder_type: MediaFolderType;
+  storage_prefix: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaFolderWithMeta extends MediaFolder {
+  photo_count: number;
+  assigned_events_count: number;
+  assigned_highlights_count: number;
+  storage_status?: 'available' | 'empty' | 'missing';
+}
+
+export interface MediaFolderPhoto {
+  id: string;
+  folder_id: string;
+  storage_path: string;
+  public_url: string;
+  file_name: string;
+  size_bytes: number;
+  mime_type: string;
+  width?: number | null;
+  height?: number | null;
+  aspect_ratio: 'portrait' | 'landscape' | 'square';
+  focal_point: string;
+  caption?: string | null;
+  alt_text?: string | null;
+  sort_order: number;
+  is_cover: boolean;
+  created_at: string;
+}
+
+export interface EventHeroSlide {
+  id: string;
+  image_url: string;
+  storage_path?: string | null;
+  caption?: string | null;
+  alt_text?: string | null;
+  focal_point?: string; // "center" | "top" | "bottom" | "50% 30%"
+  sort_order: number;
+  is_cover?: boolean;
+}
+
+export interface EventArchive {
+  id: string;
+  title: string;
+  slug: string;
+  event_date: string;
+  short_description: string;
+  full_description?: string | null;
+  cover_image_url?: string | null;
+  cover_storage_path?: string | null;
+  cover_alt_text?: string | null;
+  folder_id?: string | null;
+  category: string;
+  location?: string | null;
+  client_or_institution?: string | null;
+  sort_order: number;
+  is_published: boolean;
+  is_featured: boolean;
+  hero_slides?: EventHeroSlide[] | null;
+  created_at: string;
+  updated_at: string;
+  folder?: MediaFolder | null;
+  photos?: MediaFolderPhoto[];
+  highlights?: EventHighlight[];
+}
+
+export interface EventHighlight {
+  id: string;
+  event_id: string;
+  title: string;
+  slug: string;
+  short_description: string;
+  cover_image_url: string;
+  cover_storage_path?: string | null;
+  folder_id?: string | null;
+  sort_order: number;
+  is_published: boolean;
+  hero_slides?: EventHeroSlide[] | null;
+  created_at: string;
+  updated_at: string;
+  folder?: MediaFolder | null;
+  photos?: MediaFolderPhoto[];
+}
+

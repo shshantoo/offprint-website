@@ -36,7 +36,7 @@ export async function GET(
   try {
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("*")
+      .select("*, workflow_stage:workflow_stages(id, name, slug, sort_order, is_final_delivery, is_visible_to_client)")
       .eq("id", id)
       .maybeSingle();
 
@@ -334,6 +334,122 @@ export async function PATCH(
             idempotencyKey: `email:${updated.id}:booking_updated:${Date.now()}`,
           }),
         ]);
+      }
+
+      return NextResponse.json({ success: true, data: updated });
+    }
+
+    if (action === "update_delivery_and_workflow") {
+      const {
+        workflow_stage_id,
+        delivery_url,
+        delivery_validity_days,
+        delivery_message,
+        send_notification_email = true,
+      } = body;
+
+      let targetStage: any = null;
+      if (workflow_stage_id) {
+        const { data: stg } = await supabase
+          .from("workflow_stages")
+          .select("*")
+          .eq("id", workflow_stage_id)
+          .maybeSingle();
+        targetStage = stg;
+      }
+
+      const activeDeliveryUrl = (delivery_url ?? existing.delivery_url ?? "").trim();
+      const validityDays = Number(delivery_validity_days || existing.delivery_validity_days || 14);
+
+      if (targetStage?.is_final_delivery) {
+        if (!activeDeliveryUrl) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "A valid photo-bank gallery URL is required to advance this booking to the Final Gallery Delivered stage.",
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      let calculatedExpiresAt = existing.delivery_expires_at;
+      let calculatedDeliveryStatus = existing.delivery_status || "pending";
+      let deliverySentAt = existing.delivery_sent_at;
+
+      if (targetStage?.is_final_delivery && activeDeliveryUrl) {
+        calculatedDeliveryStatus = "delivered";
+        deliverySentAt = new Date().toISOString();
+        const expDate = new Date(Date.now() + validityDays * 86_400_000);
+        calculatedExpiresAt = expDate.toISOString();
+      }
+
+      const updates: Record<string, any> = {
+        workflow_stage_id: workflow_stage_id || existing.workflow_stage_id,
+        delivery_url: activeDeliveryUrl || null,
+        delivery_validity_days: validityDays,
+        delivery_expires_at: calculatedExpiresAt,
+        delivery_message:
+          delivery_message !== undefined
+            ? delivery_message
+            : existing.delivery_message,
+        delivery_status: calculatedDeliveryStatus,
+        delivery_sent_at: deliverySentAt,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: updated, error: updErr } = await supabase
+        .from("bookings")
+        .update(updates)
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (updErr) throw parseDatabaseBookingError(updErr);
+
+      // Audit log the workflow stage change
+      if (workflow_stage_id && workflow_stage_id !== existing.workflow_stage_id) {
+        await supabase.from("booking_workflow_logs").insert({
+          booking_id: id,
+          stage_id: workflow_stage_id,
+          notes:
+            delivery_message ||
+            `Workflow updated to ${targetStage?.name || "new stage"}`,
+          performed_by: auth.context.user.id,
+        });
+      }
+
+      // If moved to final delivery and notification requested, trigger Gmail dispatch
+      if (
+        targetStage?.is_final_delivery &&
+        send_notification_email &&
+        activeDeliveryUrl
+      ) {
+        try {
+          const emailRes = await sendBookingNotificationEmail({
+            booking: updated,
+            notificationType: "delivery_ready",
+            idempotencyKey: `email:${updated.id}:delivery_ready:${Date.now()}`,
+          });
+
+          await supabase
+            .from("bookings")
+            .update({
+              delivery_email_status: emailRes.success ? "sent" : "failed",
+              delivery_email_error: emailRes.error || null,
+            })
+            .eq("id", id);
+        } catch (emailErr: any) {
+          console.error("Failed to dispatch delivery email:", emailErr);
+          await supabase
+            .from("bookings")
+            .update({
+              delivery_email_status: "failed",
+              delivery_email_error: emailErr.message,
+            })
+            .eq("id", id);
+        }
       }
 
       return NextResponse.json({ success: true, data: updated });

@@ -18,28 +18,28 @@ const SERVICES = [
     title: "Academic & Milestone Event Portraiture",
     tagline: "Dedicated Event Sessions & Family Portraits",
     description:
-      "Celebrate your academic milestone or special campaign with editorial studio and outdoor portraiture. Real-time time-slot reservations, curated solo & family packages, and archival print options.",
+      "Celebrate your academic milestone with editorial studio and outdoor portraiture. Real-time time-slot reservations, curated solo & family packages, and archival print options.",
     features: [
       "Real-time time-slot reservations with guaranteed capacity",
       "Individual graduate, family & peer group portrait coverage",
       "High-resolution color-graded gallery & archival print options",
       "Instant email confirmation & Google Calendar synchronization",
     ],
-    bookingHref: "/book",
-    bookingLabel: "Explore Special Event Sessions",
+    bookingHref: "/book/convocation",
+    bookingLabel: "IUB Convocation Booking",
     icon: GraduationCap,
     span: "col-span-1 lg:col-span-2",
     featured: true,
   },
   {
     id: "headshots",
-    title: "Executive Headshots & Portraits",
+    title: "Executive Headshots & Leadership Portraits",
     tagline: "Studio & Corporate On-Location",
     description:
-      "Mobile lighting rigs deployed at your Gulshan, Banani, or Motijheel office, or booked at our studio. Tethered live review and natural retouching.",
+      "Mobile lighting rigs deployed at your Gulshan, Banani, or Motijheel office, or booked at our studio. Tethered live review and natural skin retouching.",
     features: [
       "Tethered live review on iPad for instant selection",
-      "High-end natural skin retouching",
+      "High-end natural skin retouching and tone grading",
       "Uniform color-calibrated backdrops for leadership teams",
     ],
     bookingHref: "/book/traditional",
@@ -50,7 +50,7 @@ const SERVICES = [
   },
   {
     id: "summits",
-    title: "Corporate Summits & Seminars",
+    title: "Corporate Summits & Broadcast Forums",
     tagline: "Multicam 4K Broadcast & Same-Day PR Stills",
     description:
       "Designed for embassies, banks, and international forums. Redundant multi-camera coverage, clean board audio sync, and rapid press release photo suites.",
@@ -67,42 +67,73 @@ const SERVICES = [
   },
   {
     id: "documentaries",
-    title: "Brand Documentaries & Weddings",
+    title: "Brand Documentaries & Seasonal Weddings",
     tagline: "Editorial Storytelling & Heritage Chronicles",
     description:
       "From industrial heritage documentaries to bespoke multi-day family wedding chronicles, we bring refined editorial aesthetics and unobtrusive storytelling.",
     features: [
       "Fine-art photography & cinema-grade documentary teams",
-      "Aerial drone cinematography & custom color grading",
+      "Aerial drone cinematography & custom anamorphic grading",
       "Handcrafted archival photo albums & framing options",
     ],
     bookingHref: "/book/traditional",
-    bookingLabel: "Schedule Consultation / Session",
+    bookingLabel: "Schedule Consultation",
     icon: Heart,
     span: "col-span-1 lg:col-span-2",
     featured: false,
   },
 ];
 
-export default function ServicesBento() {
+interface ServicesBentoProps {
+  heading?: string;
+  subheading?: string;
+  show?: boolean;
+}
+
+export default function ServicesBento({
+  heading = "Specialized Studio Capabilities",
+  subheading = "Book your appointment directly online through our live scheduling calendar or commission a bespoke multi-day production scope.",
+  show = true,
+}: ServicesBentoProps) {
+  if (show === false) return null;
   return (
-    <section className="py-24 bg-[#FAF7F2] relative border-t border-[#E5DEC9]" id="services">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="py-20 sm:py-28 bg-[#FAF7F2] relative border-t border-[#E5DEC9]" id="services">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono text-[#A66D35]">
-            <span>Photography & Production Wing</span>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[#E5DEC9] pb-8">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="font-editorial text-3xl sm:text-4xl text-[#A66D35] font-light">
+                04
+              </span>
+              <span className="h-px w-8 bg-[#E5DEC9]" />
+              <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#5C4028]">
+                MEDIA &amp; COVERAGE WING
+              </span>
+            </div>
+
+            <h2 className="font-editorial text-4xl sm:text-5xl font-normal text-[#141210] tracking-tight">
+              {heading}
+            </h2>
+
+            <p className="text-sm sm:text-base text-[#5C5449] max-w-xl">
+              {subheading}
+            </p>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-[#141210] tracking-tight">
-            Specialized Photography & Media Services
-          </h2>
-          <p className="text-sm sm:text-base text-[#5C5449]">
-            Book your appointment directly online through our live scheduling calendar or request a bespoke multi-day production scope.
-          </p>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/book"
+              className="inline-flex items-center gap-1.5 px-5 py-3 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider transition-colors shadow-xs"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Explore All Disciplines</span>
+            </Link>
+          </div>
         </div>
 
         {/* Bento Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
           {SERVICES.map((srv) => {
             const Icon = srv.icon;
             return (
@@ -126,8 +157,8 @@ export default function ServicesBento() {
                       <Icon className="w-6 h-6" />
                     </div>
                     {srv.featured && (
-                      <span className="px-3 py-1 rounded-full bg-[#3A2008] text-[#FAF7F2] text-[11px] font-mono uppercase tracking-wider">
-                        Featured Event
+                      <span className="px-3 py-1 rounded-full bg-[#3A2008] text-[#FAF7F2] text-[10px] font-mono uppercase tracking-widest">
+                        Milestone Campaign
                       </span>
                     )}
                   </div>
@@ -136,7 +167,7 @@ export default function ServicesBento() {
                     <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
                       {srv.tagline}
                     </span>
-                    <h3 className="text-2xl font-bold text-[#141210] mt-1">
+                    <h3 className="font-editorial text-2xl font-normal text-[#141210] mt-1">
                       {srv.title}
                     </h3>
                   </div>
@@ -145,7 +176,7 @@ export default function ServicesBento() {
                     {srv.description}
                   </p>
 
-                  <ul className="space-y-2 pt-2">
+                  <ul className="space-y-2.5 pt-2">
                     {srv.features.map((feat, i) => (
                       <li key={i} className="flex items-start gap-2 text-xs text-[#141210]">
                         <CheckCircle2 className="w-3.5 h-3.5 text-[#A66D35] shrink-0 mt-0.5" />
@@ -158,7 +189,7 @@ export default function ServicesBento() {
                 <div className="pt-6 mt-6 border-t border-[#E5DEC9] flex flex-wrap items-center justify-between gap-3">
                   <Link
                     href={srv.bookingHref}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider transition-colors shadow-xs"
                   >
                     <Calendar className="w-3.5 h-3.5" />
                     <span>{srv.bookingLabel}</span>
@@ -166,10 +197,10 @@ export default function ServicesBento() {
                   </Link>
 
                   <Link
-                    href={`#quote?service=${srv.id}`}
+                    href={`/contact`}
                     className="inline-flex items-center gap-1 text-xs font-semibold text-[#5C4028] hover:text-[#141210] transition-colors"
                   >
-                    <span>Custom Inquiry</span>
+                    <span>Custom Scope Inquiry</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </Link>
                 </div>

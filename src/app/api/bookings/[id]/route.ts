@@ -37,7 +37,7 @@ export async function GET(
   try {
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("*")
+      .select("*, workflow_stage:workflow_stages(id, name, slug, sort_order, is_final_delivery, is_visible_to_client, client_facing_description)")
       .eq("id", id)
       .maybeSingle();
 

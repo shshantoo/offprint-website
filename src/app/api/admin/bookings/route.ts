@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
           data: [],
           blocks: [],
           error:
-            "Booking schema not yet migrated in Supabase. Run supabase/schema.sql in your Supabase SQL Editor.",
+            "Booking records are currently initializing. Review schema setup if this persists.",
         });
       }
       throw error;
