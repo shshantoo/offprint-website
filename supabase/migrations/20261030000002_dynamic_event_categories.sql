@@ -65,3 +65,4 @@ SET
   category = 'Convocation',
   category_id = (SELECT id FROM public.event_archive_categories WHERE name = 'Convocation' LIMIT 1),
   updated_at = now();
+

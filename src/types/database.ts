@@ -745,3 +745,18 @@ export interface EventHighlight {
   photos?: MediaFolderPhoto[];
 }
 
+export interface SliderConfig {
+  autoplay_enabled: boolean;
+  interval_seconds: number;
+  transition_duration_ms: number;
+  pause_on_hover: boolean;
+}
+
+export interface SliderSettings {
+  hero_slider: SliderConfig;
+  archives_carousel: SliderConfig;
+  highlighted_events: SliderConfig;
+  event_hero_slider: SliderConfig;
+}
+
+

@@ -8,7 +8,6 @@ import PrintSolutionsBridge from "@/components/home/PrintSolutionsBridge";
 import InteractiveQuoteBuilder from "@/components/home/InteractiveQuoteBuilder";
 import CinematicCta from "@/components/home/CinematicCta";
 import {
-  fetchFlagshipProjects,
   fetchHeroSlides,
   fetchHomepageConfig,
   fetchTestimonials,
@@ -23,29 +22,34 @@ export default async function HomePage() {
   const [
     heroSlides,
     homepageConfig,
-    flagshipProjects,
     testimonials,
     siteSettings,
-    featuredArchives,
+    allArchives,
     categories,
   ] = await Promise.all([
     fetchHeroSlides(false),
     fetchHomepageConfig(),
-    fetchFlagshipProjects(),
     fetchTestimonials(false),
     fetchSiteSettings(),
-    fetchEventArchives({ includeUnpublished: false, isFeatured: true }),
+    fetchEventArchives({ includeUnpublished: false }),
     fetchEventArchiveCategories({ includeInactive: false }),
   ]);
 
+  const featuredArchives = allArchives.filter((a) => a.is_featured);
+
   return (
     <div className="flex flex-col min-h-screen">
-      <HeroSection slides={heroSlides} config={homepageConfig} />
+      <HeroSection
+        slides={heroSlides}
+        config={homepageConfig}
+        sliderConfig={siteSettings.slider_settings?.hero_slider}
+      />
       <HorizontalTicker items={homepageConfig.ticker_items} show={homepageConfig.show_ticker} />
       <FlagshipShowcase
-        initialProjects={flagshipProjects}
+        archives={allArchives}
         featuredArchives={featuredArchives}
         categories={categories}
+        sliderSettings={siteSettings.slider_settings}
         heading={homepageConfig.flagship_heading}
         subheading={homepageConfig.flagship_subheading}
         show={homepageConfig.show_flagship}

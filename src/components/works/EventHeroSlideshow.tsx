@@ -11,7 +11,7 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import type { EventHeroSlide, MediaFolderPhoto } from "@/types/database";
+import type { EventHeroSlide, MediaFolderPhoto, SliderConfig } from "@/types/database";
 
 interface EventHeroSlideshowProps {
   slides?: EventHeroSlide[] | null;
@@ -20,6 +20,8 @@ interface EventHeroSlideshowProps {
   title: string;
   category?: string;
   eventDate?: string;
+  sliderConfig?: SliderConfig;
+  intervalSeconds?: number;
 }
 
 export default function EventHeroSlideshow({
@@ -29,6 +31,8 @@ export default function EventHeroSlideshow({
   title,
   category,
   eventDate,
+  sliderConfig,
+  intervalSeconds,
 }: EventHeroSlideshowProps) {
   // Normalize slides
   const normalizedSlides: {
@@ -82,9 +86,10 @@ export default function EventHeroSlideshow({
     setCurrentIndex((prev) => (prev - 1 + total) % total);
   }, [total]);
 
-  // Smooth auto-rotation ~2s when not paused
+  // Smooth auto-rotation using centralized timing when not paused
   useEffect(() => {
-    if (total <= 1 || isPaused || lightboxOpen) return;
+    const autoplay = sliderConfig ? sliderConfig.autoplay_enabled : true;
+    if (total <= 1 || isPaused || lightboxOpen || !autoplay) return;
 
     if (
       typeof window !== "undefined" &&
@@ -93,12 +98,17 @@ export default function EventHeroSlideshow({
       return;
     }
 
+    const intervalMs = Math.max(
+      2000,
+      (sliderConfig?.interval_seconds || intervalSeconds || 4) * 1000
+    );
+
     const timer = setInterval(() => {
       handleNext();
-    }, 2500);
+    }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [total, isPaused, lightboxOpen, handleNext]);
+  }, [total, isPaused, lightboxOpen, sliderConfig, intervalSeconds, handleNext]);
 
   // Keyboard navigation
   useEffect(() => {

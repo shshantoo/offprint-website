@@ -317,6 +317,10 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
    - Created table `public.event_archive_categories` with RLS policies, unique slugs, unique names, sort ordering, and active flags.
    - Added `category_id` foreign key column to `public.event_archives` referencing `event_archive_categories(id) ON DELETE SET NULL`.
    - Seeded initial category **Convocation** and migrated existing live event archives to this relational category.
+5. **`20261030000003_slider_settings.sql`**:
+   - Centralized slider timing, interval, transition duration, and pause-on-hover configuration across all studio sliders (`hero_slider`, `archives_carousel`, `highlighted_events`, `event_hero_slider`) within `public.site_settings` under key `'slider_settings'`.
+   - Guaranteed atomic validation, boundary clamping, and admin management through `/admin-portal` under *Website Content & Leads → Slider Settings*.
+   - Completely purged obsolete prototype row `The Royal Crimson Wedding Story` from `public.portfolio_projects`.
 
 ---
 
@@ -336,4 +340,4 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
 ---
 
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.1.0 (Production & Environment Ready)*
+*Document Version: 1.2.0 (Slider Timing CMS & Dynamic Homepage Ready)*

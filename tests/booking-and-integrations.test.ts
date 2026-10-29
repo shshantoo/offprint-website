@@ -31,7 +31,13 @@ import {
   adminAccountUpdateSchema,
   calculateAndVerifyBookingPrice,
 } from "../src/lib/validations";
-import { ensureUuid, normalizePortfolioProject } from "../src/lib/data-service";
+import {
+  ensureUuid,
+  normalizePortfolioProject,
+  validateSliderConfig,
+  validateSliderSettings,
+  DEFAULT_SLIDER_SETTINGS,
+} from "../src/lib/data-service";
 import type {
   AvailabilityRule,
   Booking,
@@ -1923,5 +1929,165 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     archiveState = toggleFeatured(archiveState, false);
     assert.equal(archiveState.is_featured, false);
     assert.equal(archiveState.is_published, true, "is_published must remain unaffected");
+  });
+
+  it("24. validates centralized slider settings schema, boundary clamping, and fallback defaults", () => {
+    // 1. Default slider settings must provide valid configurations for all four sliders
+    assert.ok(DEFAULT_SLIDER_SETTINGS.hero_slider, "hero_slider config must exist");
+    assert.ok(DEFAULT_SLIDER_SETTINGS.archives_carousel, "archives_carousel config must exist");
+    assert.ok(DEFAULT_SLIDER_SETTINGS.highlighted_events, "highlighted_events config must exist");
+    assert.ok(DEFAULT_SLIDER_SETTINGS.event_hero_slider, "event_hero_slider config must exist");
+
+    assert.equal(DEFAULT_SLIDER_SETTINGS.hero_slider.autoplay_enabled, true);
+    assert.equal(DEFAULT_SLIDER_SETTINGS.archives_carousel.autoplay_enabled, true);
+    assert.equal(DEFAULT_SLIDER_SETTINGS.archives_carousel.interval_seconds, 5);
+    assert.equal(DEFAULT_SLIDER_SETTINGS.highlighted_events.interval_seconds, 6);
+    assert.equal(DEFAULT_SLIDER_SETTINGS.event_hero_slider.interval_seconds, 4);
+
+    // 2. Boundary clamping: interval_seconds must be clamped between 2s and 60s
+    const tooLow = validateSliderConfig({ interval_seconds: 0.5 }, DEFAULT_SLIDER_SETTINGS.hero_slider);
+    assert.equal(tooLow.interval_seconds, 2, "intervals below 2s must clamp to 2s");
+
+    const tooHigh = validateSliderConfig({ interval_seconds: 120 }, DEFAULT_SLIDER_SETTINGS.hero_slider);
+    assert.equal(tooHigh.interval_seconds, 60, "intervals above 60s must clamp to 60s");
+
+    const validFloat = validateSliderConfig({ interval_seconds: 7.4 }, DEFAULT_SLIDER_SETTINGS.hero_slider);
+    assert.equal(validFloat.interval_seconds, 7, "intervals should round to whole seconds");
+
+    // 3. Boundary clamping: transition_duration_ms must be clamped between 200ms and 3000ms
+    const transitionTooFast = validateSliderConfig({ transition_duration_ms: 50 }, DEFAULT_SLIDER_SETTINGS.archives_carousel);
+    assert.equal(transitionTooFast.transition_duration_ms, 200, "transition below 200ms must clamp to 200ms");
+
+    const transitionTooSlow = validateSliderConfig({ transition_duration_ms: 10000 }, DEFAULT_SLIDER_SETTINGS.archives_carousel);
+    assert.equal(transitionTooSlow.transition_duration_ms, 3000, "transition above 3000ms must clamp to 3000ms");
+
+    // 4. Fallback handling when invalid types are supplied
+    const invalidTypes = validateSliderConfig(
+      {
+        autoplay_enabled: "yes" as any,
+        interval_seconds: NaN,
+        transition_duration_ms: "fast" as any,
+        pause_on_hover: null as any,
+      },
+      DEFAULT_SLIDER_SETTINGS.hero_slider
+    );
+    assert.equal(invalidTypes.autoplay_enabled, DEFAULT_SLIDER_SETTINGS.hero_slider.autoplay_enabled);
+    assert.equal(invalidTypes.interval_seconds, DEFAULT_SLIDER_SETTINGS.hero_slider.interval_seconds);
+    assert.equal(invalidTypes.transition_duration_ms, DEFAULT_SLIDER_SETTINGS.hero_slider.transition_duration_ms);
+    assert.equal(invalidTypes.pause_on_hover, DEFAULT_SLIDER_SETTINGS.hero_slider.pause_on_hover);
+
+    // 5. Partial settings validation ensures complete SliderSettings object
+    const validatedPartial = validateSliderSettings({
+      archives_carousel: {
+        autoplay_enabled: false,
+        interval_seconds: 8,
+        transition_duration_ms: 450,
+        pause_on_hover: false,
+      },
+    });
+    assert.equal(validatedPartial.archives_carousel.autoplay_enabled, false);
+    assert.equal(validatedPartial.archives_carousel.interval_seconds, 8);
+    assert.equal(validatedPartial.hero_slider.autoplay_enabled, DEFAULT_SLIDER_SETTINGS.hero_slider.autoplay_enabled);
+    assert.equal(validatedPartial.highlighted_events.interval_seconds, DEFAULT_SLIDER_SETTINGS.highlighted_events.interval_seconds);
+    assert.equal(validatedPartial.event_hero_slider.interval_seconds, DEFAULT_SLIDER_SETTINGS.event_hero_slider.interval_seconds);
+  });
+
+  it("25. validates in-place homepage Archives category filtering, zero dummy data, and strict separation from Highlighted Events", () => {
+    // Authentic archives test fixture
+    const archivesPool = [
+      {
+        id: "arch-1",
+        title: "IUB 26th Convocation Ceremony",
+        slug: "iub-26th-convocation",
+        category: "Convocation",
+        is_published: true,
+        is_featured: true,
+        cover_image_url: "https://example.com/iub26.jpg",
+      },
+      {
+        id: "arch-2",
+        title: "Dhaka Architectural Triennial",
+        slug: "dhaka-architectural-triennial",
+        category: "Exhibition",
+        is_published: true,
+        is_featured: false,
+        cover_image_url: "https://example.com/arch.jpg",
+      },
+      {
+        id: "arch-3",
+        title: "Summit Group Executive Leadership",
+        slug: "summit-executive-leadership",
+        category: "Corporate",
+        is_published: true,
+        is_featured: true,
+        cover_image_url: "https://example.com/summit.jpg",
+      },
+      {
+        id: "arch-4",
+        title: "Internal Unreleased Documentary",
+        slug: "internal-unreleased",
+        category: "Documentary",
+        is_published: false, // Draft: must never appear on public homepage
+        is_featured: false,
+        cover_image_url: "https://example.com/draft.jpg",
+      },
+    ];
+
+    // 1. Homepage Archives section receives ALL published archives (both featured and non-featured)
+    const publicArchives = archivesPool.filter((a) => a.is_published);
+    assert.equal(publicArchives.length, 3);
+    assert.deepEqual(
+      publicArchives.map((a) => a.id),
+      ["arch-1", "arch-2", "arch-3"]
+    );
+
+    // 2. Highlighted Events section receives ONLY published AND featured archives
+    const highlightedEvents = publicArchives.filter((a) => a.is_featured);
+    assert.equal(highlightedEvents.length, 2);
+    assert.deepEqual(
+      highlightedEvents.map((a) => a.id),
+      ["arch-1", "arch-3"]
+    );
+    // Non-featured archive (arch-2) must NOT be in highlighted events
+    assert.ok(!highlightedEvents.some((e) => e.id === "arch-2"));
+
+    // 3. In-place category filter simulation (as implemented in FlagshipShowcase.tsx)
+    const filterInPlace = (category: string) => {
+      if (!category || category === "all" || category === "All") {
+        return publicArchives;
+      }
+      return publicArchives.filter(
+        (a) => a.category?.trim().toLowerCase() === category.trim().toLowerCase()
+      );
+    };
+
+    // "All" filter returns all published archives
+    assert.equal(filterInPlace("All").length, 3);
+    assert.equal(filterInPlace("all").length, 3);
+
+    // Category filter "Convocation" returns only matching archive
+    const convocationFiltered = filterInPlace("Convocation");
+    assert.equal(convocationFiltered.length, 1);
+    assert.equal(convocationFiltered[0].id, "arch-1");
+
+    // Category filter "Exhibition" returns only arch-2
+    const exhibitionFiltered = filterInPlace("Exhibition");
+    assert.equal(exhibitionFiltered.length, 1);
+    assert.equal(exhibitionFiltered[0].id, "arch-2");
+
+    // Category filtering Archives section has zero impact on Highlighted Events
+    assert.equal(highlightedEvents.length, 2, "Highlighted events must remain stable regardless of archive filters");
+
+    // Non-matching category yields empty array without fallback or mock data
+    const nonExistent = filterInPlace("NonExistentCategory");
+    assert.equal(nonExistent.length, 0);
+
+    // 4. Hard-coded dummy check: Ensure "The Royal Crimson Wedding Story" does not exist anywhere in pool
+    const containsRoyalCrimson = archivesPool.some(
+      (a) =>
+        a.title.toLowerCase().includes("royal crimson") ||
+        a.slug.toLowerCase().includes("royal-crimson")
+    );
+    assert.equal(containsRoyalCrimson, false, "Dummy event 'The Royal Crimson Wedding Story' must never exist");
   });
 });

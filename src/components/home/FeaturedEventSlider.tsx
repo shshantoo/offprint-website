@@ -4,14 +4,25 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, ArrowUpRight, Sparkles, Calendar, Tag } from "lucide-react";
-import type { EventArchive } from "@/types/database";
+import type { EventArchive, SliderConfig } from "@/types/database";
 import { formatDate } from "@/lib/utils";
 
 interface FeaturedEventSliderProps {
   events: EventArchive[];
+  sliderConfig?: SliderConfig;
 }
 
-export default function FeaturedEventSlider({ events = [] }: FeaturedEventSliderProps) {
+export default function FeaturedEventSlider({
+  events = [],
+  sliderConfig,
+}: FeaturedEventSliderProps) {
+  const config = {
+    autoplay_enabled: sliderConfig?.autoplay_enabled ?? true,
+    interval_seconds: sliderConfig?.interval_seconds ?? 6,
+    transition_duration_ms: sliderConfig?.transition_duration_ms ?? 700,
+    pause_on_hover: sliderConfig?.pause_on_hover ?? true,
+  };
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -38,21 +49,22 @@ export default function FeaturedEventSlider({ events = [] }: FeaturedEventSlider
     setCurrentIndex((prev) => (prev === 0 ? events.length - 1 : prev - 1));
   }, [events.length]);
 
-  // Autoplay rotation every 6 seconds if multiple events exist and not paused
+  // Autoplay rotation using configurable timing
   useEffect(() => {
-    if (events.length <= 1 || isPaused || prefersReducedMotion) {
+    if (events.length <= 1 || isPaused || prefersReducedMotion || !config.autoplay_enabled) {
       if (timerRef.current) clearInterval(timerRef.current);
       return;
     }
 
+    const intervalMs = Math.max(2000, config.interval_seconds * 1000);
     timerRef.current = setInterval(() => {
       goToNext();
-    }, 6000);
+    }, intervalMs);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [events.length, isPaused, prefersReducedMotion, goToNext]);
+  }, [events.length, isPaused, prefersReducedMotion, config.autoplay_enabled, config.interval_seconds, goToNext]);
 
   // Empty state: clean, no demo events or placeholders
   if (events.length === 0) {
@@ -60,7 +72,7 @@ export default function FeaturedEventSlider({ events = [] }: FeaturedEventSlider
       <div className="rounded-3xl border border-dashed border-[#E5DEC9] bg-[#FAF7F2] p-10 sm:p-14 text-center space-y-3">
         <Sparkles className="w-5 h-5 text-[#A66D35] mx-auto opacity-70" />
         <h4 className="text-sm font-semibold text-[#141210]">
-          No Featured Productions on Display
+          No Highlighted Events on Display
         </h4>
         <p className="text-xs text-[#5C5449] max-w-md mx-auto leading-relaxed">
           Published event archives marked as &ldquo;Featured on Dashboard&rdquo; by the administrator will automatically rotate in this presentation.
@@ -144,13 +156,13 @@ export default function FeaturedEventSlider({ events = [] }: FeaturedEventSlider
   return (
     <div
       className="relative rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] overflow-hidden shadow-2xs group"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      onFocus={() => setIsPaused(true)}
-      onBlur={() => setIsPaused(false)}
+      onMouseEnter={() => config.pause_on_hover && setIsPaused(true)}
+      onMouseLeave={() => config.pause_on_hover && setIsPaused(false)}
+      onFocus={() => config.pause_on_hover && setIsPaused(true)}
+      onBlur={() => config.pause_on_hover && setIsPaused(false)}
       role="region"
       aria-roledescription="carousel"
-      aria-label="Featured Productions Slider"
+      aria-label="Highlighted Events Slider"
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch min-h-[440px]">
         {/* Cover Photograph Frame with Smooth Crossfade */}
@@ -160,9 +172,14 @@ export default function FeaturedEventSlider({ events = [] }: FeaturedEventSlider
             return (
               <div
                 key={ev.id}
-                className={`absolute inset-0 transition-opacity ${
-                  prefersReducedMotion ? "duration-0" : "duration-700 ease-in-out"
-                } ${isActive ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}
+                className={`absolute inset-0 transition-opacity ease-in-out ${
+                  isActive ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+                }`}
+                style={{
+                  transitionDuration: prefersReducedMotion
+                    ? "0ms"
+                    : `${config.transition_duration_ms}ms`,
+                }}
                 aria-hidden={!isActive}
               >
                 {ev.cover_image_url && (
@@ -268,3 +285,4 @@ export default function FeaturedEventSlider({ events = [] }: FeaturedEventSlider
     </div>
   );
 }
+

@@ -217,3 +217,4 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: err.message || "Failed to remove category" }, { status: 500 });
   }
 }
+

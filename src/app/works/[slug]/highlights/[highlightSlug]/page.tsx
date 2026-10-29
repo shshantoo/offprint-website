@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Sparkles, MapPin } from "lucide-react";
-import { fetchEventHighlightBySlug } from "@/lib/data-service";
+import { fetchEventHighlightBySlug, fetchSliderSettings } from "@/lib/data-service";
 import EventHeroSlideshow from "@/components/works/EventHeroSlideshow";
 import MinimalistPhotoGallery from "@/components/works/MinimalistPhotoGallery";
 
@@ -25,7 +25,10 @@ export async function generateMetadata({ params }: HighlightPageProps): Promise<
 
 export default async function EventHighlightPage({ params }: HighlightPageProps) {
   const { slug, highlightSlug } = await params;
-  const result = await fetchEventHighlightBySlug(slug, highlightSlug);
+  const [result, sliderSettings] = await Promise.all([
+    fetchEventHighlightBySlug(slug, highlightSlug),
+    fetchSliderSettings(),
+  ]);
 
   if (!result) {
     notFound();
@@ -82,6 +85,7 @@ export default async function EventHighlightPage({ params }: HighlightPageProps)
           coverUrl={highlight.cover_image_url}
           title={highlight.title}
           category="Event Highlight"
+          sliderConfig={sliderSettings.event_hero_slider}
         />
 
         {/* Minimalist Animated Photography Gallery for Highlight */}

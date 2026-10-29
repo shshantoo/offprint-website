@@ -8,6 +8,7 @@ export async function GET() {
       success: true,
       data: settings.general,
       homepage_config: settings.homepage_config,
+      slider_settings: settings.slider_settings,
     });
   } catch (err: any) {
     return NextResponse.json(

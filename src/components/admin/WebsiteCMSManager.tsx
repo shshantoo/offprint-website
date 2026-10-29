@@ -18,8 +18,17 @@ import {
   Sliders,
   Globe,
   Settings,
+  Clock,
+  Check,
 } from "lucide-react";
-import type { HeroSlide, Testimonial, HomepageConfig, PortfolioProject } from "@/types/database";
+import type {
+  HeroSlide,
+  Testimonial,
+  HomepageConfig,
+  PortfolioProject,
+  SliderSettings,
+} from "@/types/database";
+import { DEFAULT_SLIDER_SETTINGS, validateSliderSettings } from "@/lib/data-service";
 
 interface WebsiteCMSManagerProps {
   onNotify?: (message: string, type?: "success" | "error") => void;
@@ -27,7 +36,7 @@ interface WebsiteCMSManagerProps {
 
 export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    "hero" | "sections" | "ticker" | "testimonials" | "global"
+    "hero" | "sections" | "ticker" | "testimonials" | "sliders" | "global"
   >("hero");
 
   // State for Hero Slides
@@ -59,6 +68,10 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
   const [globalSettings, setGlobalSettings] = useState<Record<string, any>>({});
   const [_loadingGlobal, setLoadingGlobal] = useState(true);
   const [savingGlobal, setSavingGlobal] = useState(false);
+
+  // State for Centralized Slider Timing & Transition Settings
+  const [sliderSettings, setSliderSettings] = useState<SliderSettings>(DEFAULT_SLIDER_SETTINGS);
+  const [savingSliders, setSavingSliders] = useState(false);
 
   // State for available portfolio covers (for selecting existing images)
   const [portfolioProjects, setPortfolioProjects] = useState<PortfolioProject[]>([]);
@@ -105,6 +118,9 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
         }
         if (json.data.general) {
           setGlobalSettings(json.data.general);
+        }
+        if (json.data.slider_settings) {
+          setSliderSettings(validateSliderSettings(json.data.slider_settings));
         }
       }
     } catch {
@@ -441,6 +457,34 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
     }
   };
 
+  // Save Centralized Slider Timing & Transition Settings
+  const handleSaveSliderSettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    try {
+      setSavingSliders(true);
+      const validated = validateSliderSettings(sliderSettings);
+      const res = await fetch("/api/admin/cms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "slider_settings",
+          value: validated,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Failed to save slider settings.");
+      }
+      setSliderSettings(validated);
+      notify("Slider timing & transition settings saved successfully.");
+    } catch (err: any) {
+      notify(err?.message || "Failed to save slider settings.", "error");
+    } finally {
+      setSavingSliders(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* CMS Sub-Navigation Tabs */}
@@ -450,6 +494,7 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
           { id: "sections", label: "Homepage Sections & CTA", icon: Sliders },
           { id: "ticker", label: "Ticker Disciplines", icon: Globe },
           { id: "testimonials", label: "Client Testimonials", icon: Quote },
+          { id: "sliders", label: "Slider Timing & Transitions", icon: Clock },
           { id: "global", label: "Global Site Settings", icon: Settings },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -1693,6 +1738,543 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
             </div>
           )}
         </div>
+      )}
+
+      {/* =========================================================================
+          SUB-TAB: CENTRALIZED SLIDER & CAROUSEL TIMING SETTINGS
+      ========================================================================= */}
+      {activeSubTab === "sliders" && (
+        <form onSubmit={handleSaveSliderSettings} className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
+                Motion &amp; Carousel Timing Engine
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-[#141210]">
+                Slider Timing &amp; Transition Settings
+              </h2>
+              <p className="text-xs text-[#5C5449]">
+                Configure independent rotation intervals, transition speeds, and interaction behaviors for all slideshows and carousels across the website. Settings persist in Supabase and automatically respect user reduced-motion preferences.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={savingSliders}
+              className="px-6 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider transition-all shadow-xs disabled:opacity-50 cursor-pointer self-start sm:self-auto flex items-center gap-2"
+            >
+              {savingSliders ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 text-[#D9A673]" />
+                  <span>Save Slider Settings</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 1. HOMEPAGE HERO SLIDER */}
+            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5 shadow-2xs">
+              <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                    Homepage • Top Banner
+                  </span>
+                  <h3 className="font-bold text-base text-[#141210]">
+                    Full-Screen Hero Slider
+                  </h3>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] flex items-center justify-center text-[#3A2008]">
+                  <Layers className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9]">
+                  <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-[#141210]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.hero_slider.autoplay_enabled}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          hero_slider: {
+                            ...prev.hero_slider,
+                            autoplay_enabled: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Autoplay Enabled</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-[#5C5449]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.hero_slider.pause_on_hover}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          hero_slider: {
+                            ...prev.hero_slider,
+                            pause_on_hover: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Pause on Hover</span>
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Slide Interval (Rotation Speed)
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.hero_slider.interval_seconds} seconds
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={3}
+                    max={20}
+                    step={1}
+                    value={sliderSettings.hero_slider.interval_seconds}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        hero_slider: {
+                          ...prev.hero_slider,
+                          interval_seconds: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Time each hero photograph remains active before transitioning to the next slide.
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-[#E5DEC9]/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Crossfade Transition Duration
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.hero_slider.transition_duration_ms} ms
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={300}
+                    max={2000}
+                    step={50}
+                    value={sliderSettings.hero_slider.transition_duration_ms}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        hero_slider: {
+                          ...prev.hero_slider,
+                          transition_duration_ms: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Duration of the smooth image opacity crossfade animation.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. HOMEPAGE ARCHIVES CAROUSEL */}
+            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5 shadow-2xs">
+              <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                    Homepage • Archives Section
+                  </span>
+                  <h3 className="font-bold text-base text-[#141210]">
+                    Archives Carousel
+                  </h3>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] flex items-center justify-center text-[#3A2008]">
+                  <Sliders className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9]">
+                  <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-[#141210]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.archives_carousel.autoplay_enabled}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          archives_carousel: {
+                            ...prev.archives_carousel,
+                            autoplay_enabled: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Autoplay Enabled</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-[#5C5449]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.archives_carousel.pause_on_hover}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          archives_carousel: {
+                            ...prev.archives_carousel,
+                            pause_on_hover: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Pause on Hover</span>
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Slide Interval (Rotation Speed)
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.archives_carousel.interval_seconds} seconds
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={15}
+                    step={1}
+                    value={sliderSettings.archives_carousel.interval_seconds}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        archives_carousel: {
+                          ...prev.archives_carousel,
+                          interval_seconds: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Time between automatic advancement of published archive cards.
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-[#E5DEC9]/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Slide Transition Duration
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.archives_carousel.transition_duration_ms} ms
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={200}
+                    max={1500}
+                    step={50}
+                    value={sliderSettings.archives_carousel.transition_duration_ms}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        archives_carousel: {
+                          ...prev.archives_carousel,
+                          transition_duration_ms: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Speed of the horizontal slide movement when advancing cards.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. HOMEPAGE HIGHLIGHTED EVENTS */}
+            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5 shadow-2xs">
+              <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                    Homepage • Featured Showcase
+                  </span>
+                  <h3 className="font-bold text-base text-[#141210]">
+                    Highlighted Events Carousel
+                  </h3>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] flex items-center justify-center text-[#3A2008]">
+                  <Clock className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9]">
+                  <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-[#141210]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.highlighted_events.autoplay_enabled}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          highlighted_events: {
+                            ...prev.highlighted_events,
+                            autoplay_enabled: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Autoplay Enabled</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-[#5C5449]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.highlighted_events.pause_on_hover}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          highlighted_events: {
+                            ...prev.highlighted_events,
+                            pause_on_hover: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Pause on Hover</span>
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Slide Interval (Rotation Speed)
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.highlighted_events.interval_seconds} seconds
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={3}
+                    max={20}
+                    step={1}
+                    value={sliderSettings.highlighted_events.interval_seconds}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        highlighted_events: {
+                          ...prev.highlighted_events,
+                          interval_seconds: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Duration each highlighted production is presented before crossfading to the next.
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-[#E5DEC9]/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Crossfade Transition Duration
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.highlighted_events.transition_duration_ms} ms
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={200}
+                    max={1500}
+                    step={50}
+                    value={sliderSettings.highlighted_events.transition_duration_ms}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        highlighted_events: {
+                          ...prev.highlighted_events,
+                          transition_duration_ms: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Crossfade animation duration between featured productions.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. EVENT HERO SLIDESHOW & GALLERY */}
+            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5 shadow-2xs">
+              <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                    Works Pages • Archive Detail
+                  </span>
+                  <h3 className="font-bold text-base text-[#141210]">
+                    Event Archive Hero Slideshow
+                  </h3>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] flex items-center justify-center text-[#3A2008]">
+                  <Globe className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9]">
+                  <label className="flex items-center gap-2.5 cursor-pointer font-semibold text-[#141210]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.event_hero_slider.autoplay_enabled}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          event_hero_slider: {
+                            ...prev.event_hero_slider,
+                            autoplay_enabled: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Autoplay Enabled</span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer text-[#5C5449]">
+                    <input
+                      type="checkbox"
+                      checked={sliderSettings.event_hero_slider.pause_on_hover}
+                      onChange={(e) =>
+                        setSliderSettings((prev) => ({
+                          ...prev,
+                          event_hero_slider: {
+                            ...prev.event_hero_slider,
+                            pause_on_hover: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="rounded accent-[#3A2008] w-4 h-4"
+                    />
+                    <span>Pause on Hover</span>
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Slide Interval (Rotation Speed)
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.event_hero_slider.interval_seconds} seconds
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={15}
+                    step={1}
+                    value={sliderSettings.event_hero_slider.interval_seconds}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        event_hero_slider: {
+                          ...prev.event_hero_slider,
+                          interval_seconds: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Interval between rotating hero photograph banners on individual event archive pages.
+                  </span>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-[#E5DEC9]/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#141210]">
+                      Slide Transition Duration
+                    </label>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {sliderSettings.event_hero_slider.transition_duration_ms} ms
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={200}
+                    max={1500}
+                    step={50}
+                    value={sliderSettings.event_hero_slider.transition_duration_ms}
+                    onChange={(e) =>
+                      setSliderSettings((prev) => ({
+                        ...prev,
+                        event_hero_slider: {
+                          ...prev.event_hero_slider,
+                          transition_duration_ms: Number(e.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-[#3A2008] cursor-pointer"
+                  />
+                  <span className="text-[10px] text-[#877D70]">
+                    Crossfade animation speed between event banner photographs.
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-[#E5DEC9] flex justify-end">
+            <button
+              type="submit"
+              disabled={savingSliders}
+              className="px-6 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold cursor-pointer shadow-xs disabled:opacity-50 flex items-center gap-2"
+            >
+              {savingSliders ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving to Supabase...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 text-[#D9A673]" />
+                  <span>Save Slider Settings</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       )}
 
       {/* =========================================================================

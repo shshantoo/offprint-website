@@ -5,14 +5,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight, ArrowUpRight } from "lucide-react";
-import type { HeroSlide, HomepageConfig } from "@/types/database";
+import type { HeroSlide, HomepageConfig, SliderConfig } from "@/types/database";
 
 interface HeroSectionProps {
   slides?: HeroSlide[];
   config?: Partial<HomepageConfig>;
+  sliderConfig?: SliderConfig;
 }
 
-export default function HeroSection({ slides = [], config }: HeroSectionProps) {
+export default function HeroSection({
+  slides = [],
+  config,
+  sliderConfig,
+}: HeroSectionProps) {
   const shouldReduceMotion = useReducedMotion();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -27,8 +32,16 @@ export default function HeroSection({ slides = [], config }: HeroSectionProps) {
   const totalSlides = activeSlides.length;
   const currentSlide = activeSlides[currentIndex] || activeSlides[0];
 
-  const autoplay = config?.hero_autoplay !== false && totalSlides > 1;
-  const intervalSeconds = Math.max(3, Number(config?.hero_interval_sec) || 6);
+  const autoplay =
+    (sliderConfig
+      ? sliderConfig.autoplay_enabled
+      : config?.hero_autoplay !== false) && totalSlides > 1;
+  const intervalSeconds =
+    sliderConfig?.interval_seconds ??
+    Math.max(3, Number(config?.hero_interval_sec) || 6);
+  const transitionDurationSec =
+    (sliderConfig?.transition_duration_ms ?? 900) / 1000;
+  const pauseOnHover = sliderConfig?.pause_on_hover ?? true;
 
   const nextSlide = useCallback(() => {
     if (totalSlides <= 1) return;
@@ -138,8 +151,8 @@ export default function HeroSection({ slides = [], config }: HeroSectionProps) {
     <section
       aria-label="Hero Photography Slider"
       className="relative w-full h-screen min-h-[100dvh] overflow-hidden bg-[#141210] select-none"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
+      onMouseEnter={() => pauseOnHover && setIsPaused(true)}
+      onMouseLeave={() => pauseOnHover && setIsPaused(false)}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -152,7 +165,7 @@ export default function HeroSection({ slides = [], config }: HeroSectionProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{
-            duration: shouldReduceMotion ? 0.3 : 0.9,
+            duration: shouldReduceMotion ? 0.2 : transitionDurationSec,
             ease: [0.25, 0.1, 0.25, 1],
           }}
           className="absolute inset-0 w-full h-full"

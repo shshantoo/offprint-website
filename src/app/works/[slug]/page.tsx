@@ -12,7 +12,7 @@ import {
   ChevronRight,
   BookOpen,
 } from "lucide-react";
-import { fetchEventArchiveBySlug } from "@/lib/data-service";
+import { fetchEventArchiveBySlug, fetchSliderSettings } from "@/lib/data-service";
 import EventHeroSlideshow from "@/components/works/EventHeroSlideshow";
 import MinimalistPhotoGallery from "@/components/works/MinimalistPhotoGallery";
 
@@ -34,7 +34,10 @@ export async function generateMetadata({ params }: EventPageProps): Promise<Meta
 
 export default async function EventArchivePage({ params }: EventPageProps) {
   const { slug } = await params;
-  const event = await fetchEventArchiveBySlug(slug);
+  const [event, sliderSettings] = await Promise.all([
+    fetchEventArchiveBySlug(slug),
+    fetchSliderSettings(),
+  ]);
 
   if (!event) {
     notFound();
@@ -149,6 +152,7 @@ export default async function EventArchivePage({ params }: EventPageProps) {
             title={event.title}
             category={event.category}
             eventDate={event.event_date}
+            sliderConfig={sliderSettings.event_hero_slider}
           />
         </div>
 

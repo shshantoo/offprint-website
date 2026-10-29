@@ -17,6 +17,8 @@ import type {
   EventArchive,
   EventHighlight,
   EventArchiveCategory,
+  SliderConfig,
+  SliderSettings,
 } from "@/types/database";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -179,24 +181,6 @@ export const INITIAL_PORTFOLIO: PortfolioProject[] = [
     created_at: "2025-12-05T10:00:00Z",
     description:
       "Comprehensive multi-day workshop coverage including panel discussions, interactive Q&A captures, and highlight reels.",
-  },
-  {
-    id: "port-5",
-    title: "The Royal Crimson Wedding Story",
-    client_name: "The Chowdhury & Rahman Family",
-    category: "wedding",
-    is_flagship: true,
-    thumbnail_url:
-      "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80",
-    gallery_urls: [
-      "https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80",
-      "https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?auto=format&fit=crop&w=1200&q=80",
-    ],
-    video_url: null,
-    completed_date: "2026-02-14",
-    created_at: "2026-02-15T10:00:00Z",
-    description:
-      "3-day bespoke destination celebration coverage with cinematic anamorphic color grading and handcrafted memory albums.",
   },
   {
     id: "port-6",
@@ -1260,6 +1244,81 @@ export interface SiteSettingsMap {
     mission_body: string;
   };
   homepage_config?: HomepageConfig;
+  slider_settings?: SliderSettings;
+}
+
+export const DEFAULT_SLIDER_SETTINGS: SliderSettings = {
+  hero_slider: {
+    autoplay_enabled: true,
+    interval_seconds: 6,
+    transition_duration_ms: 800,
+    pause_on_hover: true,
+  },
+  archives_carousel: {
+    autoplay_enabled: true,
+    interval_seconds: 5,
+    transition_duration_ms: 600,
+    pause_on_hover: true,
+  },
+  highlighted_events: {
+    autoplay_enabled: true,
+    interval_seconds: 6,
+    transition_duration_ms: 700,
+    pause_on_hover: true,
+  },
+  event_hero_slider: {
+    autoplay_enabled: true,
+    interval_seconds: 4,
+    transition_duration_ms: 600,
+    pause_on_hover: true,
+  },
+};
+
+export function validateSliderConfig(
+  cfg: Partial<SliderConfig> | undefined,
+  fallback: SliderConfig
+): SliderConfig {
+  return {
+    autoplay_enabled:
+      typeof cfg?.autoplay_enabled === "boolean"
+        ? cfg.autoplay_enabled
+        : fallback.autoplay_enabled,
+    interval_seconds:
+      typeof cfg?.interval_seconds === "number" && !isNaN(cfg.interval_seconds)
+        ? Math.min(60, Math.max(2, Math.round(cfg.interval_seconds)))
+        : fallback.interval_seconds,
+    transition_duration_ms:
+      typeof cfg?.transition_duration_ms === "number" && !isNaN(cfg.transition_duration_ms)
+        ? Math.min(3000, Math.max(200, Math.round(cfg.transition_duration_ms)))
+        : fallback.transition_duration_ms,
+    pause_on_hover:
+      typeof cfg?.pause_on_hover === "boolean"
+        ? cfg.pause_on_hover
+        : fallback.pause_on_hover,
+  };
+}
+
+export function validateSliderSettings(
+  settings: Partial<SliderSettings> | undefined
+): SliderSettings {
+  return {
+    hero_slider: validateSliderConfig(
+      settings?.hero_slider,
+      DEFAULT_SLIDER_SETTINGS.hero_slider
+    ),
+    archives_carousel: validateSliderConfig(
+      settings?.archives_carousel,
+      DEFAULT_SLIDER_SETTINGS.archives_carousel
+    ),
+    highlighted_events: validateSliderConfig(
+      settings?.highlighted_events,
+      DEFAULT_SLIDER_SETTINGS.highlighted_events
+    ),
+    event_hero_slider: validateSliderConfig(
+      settings?.event_hero_slider,
+      DEFAULT_SLIDER_SETTINGS.event_hero_slider
+    ),
+  };
 }
 
 export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
@@ -1348,6 +1407,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
     mission_body:
       "Established in Dhaka, Bangladesh, OFFPRINT (অফপ্রিন্ট) was founded with a singular conviction: institutions and individuals deserve photography and tangible print editions that match the stature of their milestones.",
   },
+  slider_settings: DEFAULT_SLIDER_SETTINGS,
 };
 
 export async function fetchHomepageConfig(): Promise<HomepageConfig> {
@@ -1548,7 +1608,11 @@ export async function fetchSiteSettings(): Promise<SiteSettingsMap> {
         const merged: any = { ...DEFAULT_SITE_SETTINGS };
         for (const row of data) {
           if (row.key && row.value) {
-            merged[row.key] = { ...(merged[row.key] || {}), ...row.value };
+            if (row.key === "slider_settings") {
+              merged.slider_settings = validateSliderSettings(row.value);
+            } else {
+              merged[row.key] = { ...(merged[row.key] || {}), ...row.value };
+            }
           }
         }
         return merged as SiteSettingsMap;
@@ -1560,14 +1624,57 @@ export async function fetchSiteSettings(): Promise<SiteSettingsMap> {
   return DEFAULT_SITE_SETTINGS;
 }
 
+export async function fetchSliderSettings(customClient?: any): Promise<SliderSettings> {
+  const client = customClient || supabase;
+  if (isSupabaseConfigured() && client) {
+    try {
+      const { data, error } = await client
+        .from("site_settings")
+        .select("value")
+        .eq("key", "slider_settings")
+        .maybeSingle();
+      if (!error && data?.value) {
+        return validateSliderSettings(data.value);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch slider settings:", e);
+    }
+  }
+  return DEFAULT_SLIDER_SETTINGS;
+}
+
+export async function saveSliderSettings(
+  settings: Partial<SliderSettings>,
+  customClient?: any
+): Promise<SliderSettings> {
+  const current = await fetchSliderSettings(customClient);
+  const validated = validateSliderSettings({ ...current, ...settings });
+  const client = customClient || supabase;
+
+  if (isSupabaseConfigured() && client) {
+    const { error } = await client.from("site_settings").upsert({
+      key: "slider_settings",
+      value: validated,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      throw new Error(`Failed to save slider settings: ${error.message}`);
+    }
+  }
+  return validated;
+}
+
 export async function saveSiteSettingKey<K extends keyof SiteSettingsMap>(
   key: K,
   value: SiteSettingsMap[K]
 ): Promise<boolean> {
   if (isSupabaseConfigured() && supabase) {
+    const payload = key === "slider_settings"
+      ? validateSliderSettings(value as any)
+      : value;
     const { error } = await supabase
       .from("site_settings")
-      .upsert({ key, value, updated_at: new Date().toISOString() });
+      .upsert({ key, value: payload, updated_at: new Date().toISOString() });
     if (error) {
       throw new Error(error.message);
     }

@@ -55,19 +55,6 @@ VALUES
   '2025-12-04'
 ),
 (
-  'The Royal Crimson Wedding Story',
-  'The Chowdhury & Rahman Family',
-  'wedding',
-  true,
-  'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80',
-  ARRAY[
-    'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?auto=format&fit=crop&w=1200&q=80'
-  ],
-  null,
-  '2026-02-14'
-),
-(
   'Modern Gastronomy: Chef Table Series',
   'Ouzo Fine Dining Gulshan',
   'documentary',
