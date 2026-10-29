@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import type { EventArchive } from "@/types/database";
+import { useSearchParams } from "next/navigation";
+import type { EventArchive, EventArchiveCategory } from "@/types/database";
 import {
   Calendar,
   Search,
@@ -15,30 +16,48 @@ import {
 
 interface WorksArchiveClientProps {
   initialEventArchives: EventArchive[];
+  initialCategories?: EventArchiveCategory[];
 }
-
-const CATEGORY_MAP: Record<string, string> = {
-  all: "All Archives",
-  academic_convocation: "Convocations",
-  corporate_summit: "Corporate Summits",
-  documentary: "Documentaries",
-  headshot: "Executive Portraits",
-  wedding: "Wedding Stories",
-  workshop: "Workshops",
-};
 
 export default function WorksArchiveClient({
   initialEventArchives = [],
+  initialCategories = [],
 }: WorksArchiveClientProps) {
+  const searchParams = useSearchParams();
+  const urlCategory = searchParams.get("category");
+
   const [selectedCat, setSelectedCat] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
+  useEffect(() => {
+    if (urlCategory) {
+      setSelectedCat(urlCategory.toLowerCase());
+    }
+  }, [urlCategory]);
+
+  // Dynamic Categories from Supabase (filtered to active)
+  const activeCategories = initialCategories.filter((cat) => cat.is_active !== false);
+
   // Filtered Event Archives
   const filteredEvents = initialEventArchives.filter((ev) => {
-    const matchesCat =
-      selectedCat === "all" ||
-      ev.category === selectedCat ||
-      (selectedCat === "documentary" && ev.category === "brand_documentary");
+    let matchesCat = selectedCat === "all";
+    if (!matchesCat) {
+      const target = selectedCat.toLowerCase();
+      matchesCat =
+        Boolean(ev.category_id && ev.category_id === selectedCat) ||
+        Boolean(
+          ev.category &&
+            (ev.category.toLowerCase() === target ||
+              ev.category.toLowerCase().replace(/[\s_-]+/g, "") ===
+                target.replace(/[\s_-]+/g, ""))
+        ) ||
+        Boolean(
+          ev.category_rel &&
+            (ev.category_rel.slug.toLowerCase() === target ||
+              ev.category_rel.name.toLowerCase() === target ||
+              ev.category_rel.id === selectedCat)
+        );
+    }
 
     if (!matchesCat) return false;
 
@@ -56,21 +75,56 @@ export default function WorksArchiveClient({
     <div className="space-y-10">
       {/* Search & Filter Toolbar */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] shadow-2xs">
-        {/* Categories */}
+        {/* Dynamic Database Categories */}
         <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
-          {Object.entries(CATEGORY_MAP).map(([catKey, label]) => {
-            const isSelected = selectedCat === catKey;
+          {/* All Archives Option */}
+          <button
+            onClick={() => setSelectedCat("all")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              selectedCat === "all"
+                ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-2xs"
+                : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9] hover:bg-[#FFFFFF]"
+            }`}
+          >
+            <span>All Archives</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                selectedCat === "all"
+                  ? "bg-[#5C4028] text-[#FAF7F2]"
+                  : "bg-[#E5DEC9] text-[#5C5449]"
+              }`}
+            >
+              {initialEventArchives.length}
+            </span>
+          </button>
+
+          {/* Database Categories */}
+          {activeCategories.map((cat) => {
+            const isSelected =
+              selectedCat === cat.slug.toLowerCase() ||
+              selectedCat === cat.name.toLowerCase() ||
+              selectedCat === cat.id;
+
             return (
               <button
-                key={catKey}
-                onClick={() => setSelectedCat(catKey)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                key={cat.id}
+                onClick={() => setSelectedCat(cat.slug.toLowerCase())}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
                   isSelected
                     ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-2xs"
                     : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9] hover:bg-[#FFFFFF]"
                 }`}
               >
-                {label}
+                <span>{cat.name}</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    isSelected
+                      ? "bg-[#5C4028] text-[#FAF7F2]"
+                      : "bg-[#E5DEC9] text-[#5C5449]"
+                  }`}
+                >
+                  {cat.archive_count ?? 0}
+                </span>
               </button>
             );
           })}
@@ -149,7 +203,7 @@ export default function WorksArchiveClient({
 
                     <div className="absolute top-3 left-3">
                       <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-[#FAF7F2]/95 backdrop-blur-xs text-[#3A2008] border border-[#E5DEC9] shadow-2xs">
-                        {ev.category?.replace(/_/g, " ").toUpperCase()}
+                        {(ev.category_rel?.name || ev.category?.replace(/_/g, " ") || "Convocation").toUpperCase()}
                       </span>
                     </div>
 

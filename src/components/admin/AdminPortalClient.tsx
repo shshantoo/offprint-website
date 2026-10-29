@@ -30,6 +30,7 @@ import WebsiteCMSManager from "./WebsiteCMSManager";
 import RegisteredUsersAdminClient from "./RegisteredUsersAdminClient";
 import SpecialEventsAdminClient from "./SpecialEventsAdminClient";
 import WorkflowStagesAdminClient from "./WorkflowStagesAdminClient";
+import EventCategoriesAdminClient from "./EventCategoriesAdminClient";
 import {
   LayoutDashboard,
   Calendar as CalendarIcon,
@@ -63,6 +64,7 @@ import {
   Send,
   Loader2,
   GitCommit,
+  Layers,
 } from "lucide-react";
 
 type AdminMainTab =
@@ -379,6 +381,7 @@ export default function AdminPortalClient() {
   const [secLoading, setSecLoading] = useState(false);
   const [secFeedback, setSecFeedback] = useState<string | null>(null);
   const [secError, setSecError] = useState<string | null>(null);
+  const [settingsSubTab, setSettingsSubTab] = useState<"credentials" | "categories" | "workflow">("credentials");
 
   // Loaders
   const loadAdminProfile = useCallback(async () => {
@@ -3009,159 +3012,213 @@ export default function AdminPortalClient() {
         </div>
       )}
 
-      {/* TAB 8: ACCOUNT & SECURITY SETTINGS */}
+      {/* TAB 8: ACCOUNT & SECURITY / SETTINGS */}
       {activeTab === "security" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-5 rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
-                  Verified Administrator Identity
-                </span>
-                <h2 className="text-xl font-bold text-[#141210]">
-                  Administrator Profile
-                </h2>
-              </div>
-              <ShieldCheck className="w-6 h-6 text-[#3A2008]" />
-            </div>
-
-            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-2.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-[#5C5449]">Current Username:</span>
-                <span className="font-mono font-bold text-[#3A2008]">
-                  {adminProfile?.username
-                    ? `@${adminProfile.username}`
-                    : "Not Set"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#5C5449]">Auth Email:</span>
-                <span className="font-mono font-semibold text-[#141210]">
-                  {adminProfile?.email || "—"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#5C5449]">Role:</span>
-                <span className="px-2 py-0.5 rounded bg-[#EEF7F2] text-[#2E6B4E] font-mono text-[10px] uppercase font-bold">
-                  Administrator
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#5C5449]">Credentials Updated:</span>
-                <span className="font-mono text-[#5C5449]">
-                  {adminProfile?.credentialsChangedAt
-                    ? formatDhakaDateTime(adminProfile.credentialsChangedAt)
-                    : "Initial Setup"}
-                </span>
-              </div>
-            </div>
-
-            <p className="text-xs text-[#5C5449] leading-relaxed">
-              You can sign in to the OFFPRINT Admin Portal using either your{" "}
-              <strong className="text-[#141210]">@username</strong> or your
-              email address. Changing your username or password requires
-              confirming your current password.
-            </p>
-          </div>
-
-          <form
-            onSubmit={handleUpdateAccountCredentials}
-            className="lg:col-span-7 rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-4 text-xs"
-          >
-            <div>
-              <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
-                Account & Security
-              </span>
-              <h2 className="text-xl font-bold text-[#141210]">
-                Update Administrator Username & Password
-              </h2>
-            </div>
-
-            {secError && (
-              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{secError}</span>
-              </div>
-            )}
-
-            {secFeedback && (
-              <div className="p-3.5 rounded-xl bg-[#EEF7F2] border border-[#2E6B4E]/30 text-[#2E6B4E] font-semibold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{secFeedback}</span>
-              </div>
-            )}
-
-            <div>
-              <label className="font-semibold block mb-1">
-                Administrator Username (3-32 lowercase letters, numbers, ., _, -)
-              </label>
-              <input
-                type="text"
-                value={secUsername}
-                onChange={(e) =>
-                  setSecUsername(
-                    e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
-                  )
-                }
-                placeholder="offprint_admin"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="font-semibold block mb-1">
-                  New Password (leave blank to keep current)
-                </label>
-                <input
-                  type="password"
-                  value={secNewPassword}
-                  onChange={(e) => setSecNewPassword(e.target.value)}
-                  placeholder="Min 8 chars, upper + lower + number"
-                  autoComplete="new-password"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
-              </div>
-              <div>
-                <label className="font-semibold block mb-1">
-                  Confirm New Password
-                </label>
-                <input
-                  type="password"
-                  value={secConfirmPassword}
-                  onChange={(e) => setSecConfirmPassword(e.target.value)}
-                  placeholder="Re-enter new password"
-                  autoComplete="new-password"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-[#E5DEC9]">
-              <label className="font-semibold block mb-1 text-[#3A2008]">
-                Current Password (Required to Authorize Changes) *
-              </label>
-              <input
-                type="password"
-                required
-                value={secCurrentPassword}
-                onChange={(e) => setSecCurrentPassword(e.target.value)}
-                placeholder="Enter your current password"
-                autoComplete="current-password"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D5CCB4]"
-              />
-            </div>
+        <div className="space-y-6">
+          {/* Settings Sub-navigation Bar */}
+          <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9] w-fit shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setSettingsSubTab("credentials")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                settingsSubTab === "credentials"
+                  ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                  : "text-[#5C5449] hover:text-[#141210] hover:bg-[#FAF7F2]"
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Identity & Credentials</span>
+            </button>
 
             <button
-              type="submit"
-              disabled={secLoading}
-              className="px-6 py-3 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] disabled:opacity-50 text-[#FAF7F2] font-semibold uppercase tracking-wider"
+              type="button"
+              onClick={() => setSettingsSubTab("categories")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                settingsSubTab === "categories"
+                  ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                  : "text-[#5C5449] hover:text-[#141210] hover:bg-[#FAF7F2]"
+              }`}
             >
-              {secLoading
-                ? "Verifying & Updating..."
-                : "Save Username & Password"}
+              <Layers className="w-4 h-4" />
+              <span>Event Archive Categories</span>
             </button>
-          </form>
+
+            <button
+              type="button"
+              onClick={() => setSettingsSubTab("workflow")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                settingsSubTab === "workflow"
+                  ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                  : "text-[#5C5449] hover:text-[#141210] hover:bg-[#FAF7F2]"
+              }`}
+            >
+              <GitCommit className="w-4 h-4" />
+              <span>Global Workflow Stages</span>
+            </button>
+          </div>
+
+          {settingsSubTab === "credentials" && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-5 rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
+                      Verified Administrator Identity
+                    </span>
+                    <h2 className="text-xl font-bold text-[#141210]">
+                      Administrator Profile
+                    </h2>
+                  </div>
+                  <ShieldCheck className="w-6 h-6 text-[#3A2008]" />
+                </div>
+
+                <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-2.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#5C5449]">Current Username:</span>
+                    <span className="font-mono font-bold text-[#3A2008]">
+                      {adminProfile?.username
+                        ? `@${adminProfile.username}`
+                        : "Not Set"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5C5449]">Auth Email:</span>
+                    <span className="font-mono font-semibold text-[#141210]">
+                      {adminProfile?.email || "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5C5449]">Role:</span>
+                    <span className="px-2 py-0.5 rounded bg-[#EEF7F2] text-[#2E6B4E] font-mono text-[10px] uppercase font-bold">
+                      Administrator
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5C5449]">Credentials Updated:</span>
+                    <span className="font-mono text-[#5C5449]">
+                      {adminProfile?.credentialsChangedAt
+                        ? formatDhakaDateTime(adminProfile.credentialsChangedAt)
+                        : "Initial Setup"}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[#5C5449] leading-relaxed">
+                  You can sign in to the OFFPRINT Admin Portal using either your{" "}
+                  <strong className="text-[#141210]">@username</strong> or your
+                  email address. Changing your username or password requires
+                  confirming your current password.
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleUpdateAccountCredentials}
+                className="lg:col-span-7 rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-4 text-xs"
+              >
+                <div>
+                  <span className="text-xs font-mono uppercase tracking-wider text-[#A66D35]">
+                    Account & Security
+                  </span>
+                  <h2 className="text-xl font-bold text-[#141210]">
+                    Update Administrator Username & Password
+                  </h2>
+                </div>
+
+                {secError && (
+                  <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 font-semibold flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{secError}</span>
+                  </div>
+                )}
+
+                {secFeedback && (
+                  <div className="p-3.5 rounded-xl bg-[#EEF7F2] border border-[#2E6B4E]/30 text-[#2E6B4E] font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{secFeedback}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="font-semibold block mb-1">
+                    Administrator Username (3-32 lowercase letters, numbers, ., _, -)
+                  </label>
+                  <input
+                    type="text"
+                    value={secUsername}
+                    onChange={(e) =>
+                      setSecUsername(
+                        e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
+                      )
+                    }
+                    placeholder="offprint_admin"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold block mb-1">
+                      New Password (leave blank to keep current)
+                    </label>
+                    <input
+                      type="password"
+                      value={secNewPassword}
+                      onChange={(e) => setSecNewPassword(e.target.value)}
+                      placeholder="Min 8 chars, upper + lower + number"
+                      autoComplete="new-password"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={secConfirmPassword}
+                      onChange={(e) => setSecConfirmPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      autoComplete="new-password"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#E5DEC9]">
+                  <label className="font-semibold block mb-1 text-[#3A2008]">
+                    Current Password (Required to Authorize Changes) *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={secCurrentPassword}
+                    onChange={(e) => setSecCurrentPassword(e.target.value)}
+                    placeholder="Enter your current password"
+                    autoComplete="current-password"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D5CCB4]"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={secLoading}
+                  className="px-6 py-3 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] disabled:opacity-50 text-[#FAF7F2] font-semibold uppercase tracking-wider"
+                >
+                  {secLoading
+                    ? "Verifying & Updating..."
+                    : "Save Username & Password"}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {settingsSubTab === "categories" && (
+            <EventCategoriesAdminClient />
+          )}
+
+          {settingsSubTab === "workflow" && (
+            <WorkflowStagesAdminClient />
+          )}
         </div>
       )}
 

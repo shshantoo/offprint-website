@@ -13,19 +13,30 @@ import {
   fetchHomepageConfig,
   fetchTestimonials,
   fetchSiteSettings,
+  fetchEventArchives,
+  fetchEventArchiveCategories,
 } from "@/lib/data-service";
 
 export const revalidate = 0; // Ensure fresh CMS content is immediately visible
 
 export default async function HomePage() {
-  const [heroSlides, homepageConfig, flagshipProjects, testimonials, siteSettings] =
-    await Promise.all([
-      fetchHeroSlides(false),
-      fetchHomepageConfig(),
-      fetchFlagshipProjects(),
-      fetchTestimonials(false),
-      fetchSiteSettings(),
-    ]);
+  const [
+    heroSlides,
+    homepageConfig,
+    flagshipProjects,
+    testimonials,
+    siteSettings,
+    featuredArchives,
+    categories,
+  ] = await Promise.all([
+    fetchHeroSlides(false),
+    fetchHomepageConfig(),
+    fetchFlagshipProjects(),
+    fetchTestimonials(false),
+    fetchSiteSettings(),
+    fetchEventArchives({ includeUnpublished: false, isFeatured: true }),
+    fetchEventArchiveCategories({ includeInactive: false }),
+  ]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -33,6 +44,8 @@ export default async function HomePage() {
       <HorizontalTicker items={homepageConfig.ticker_items} show={homepageConfig.show_ticker} />
       <FlagshipShowcase
         initialProjects={flagshipProjects}
+        featuredArchives={featuredArchives}
+        categories={categories}
         heading={homepageConfig.flagship_heading}
         subheading={homepageConfig.flagship_subheading}
         show={homepageConfig.show_flagship}

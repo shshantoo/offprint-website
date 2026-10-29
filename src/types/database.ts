@@ -686,6 +686,18 @@ export interface EventHeroSlide {
   is_cover?: boolean;
 }
 
+export interface EventArchiveCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  archive_count?: number;
+}
+
 export interface EventArchive {
   id: string;
   title: string;
@@ -698,6 +710,8 @@ export interface EventArchive {
   cover_alt_text?: string | null;
   folder_id?: string | null;
   category: string;
+  category_id?: string | null;
+  category_rel?: EventArchiveCategory | null;
   location?: string | null;
   client_or_institution?: string | null;
   sort_order: number;

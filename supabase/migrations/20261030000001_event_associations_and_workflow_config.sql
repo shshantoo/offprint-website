@@ -56,3 +56,4 @@ SET
   auto_send_email = true,
   default_validity_days = 14
 WHERE is_final_delivery = true OR slug = 'delivered';
+

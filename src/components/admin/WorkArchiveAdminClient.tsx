@@ -30,6 +30,7 @@ import {
 import SearchableFolderSelector from "./SearchableFolderSelector";
 import type {
   EventArchive,
+  EventArchiveCategory,
   EventHighlight,
   MediaFolderWithMeta,
   MediaFolderPhoto,
@@ -49,6 +50,12 @@ export default function WorkArchiveAdminClient() {
   };
 
   // ---------------------------------------------------------------------------
+  // DYNAMIC CATEGORIES STATE
+  // ---------------------------------------------------------------------------
+  const [availableCategories, setAvailableCategories] = useState<EventArchiveCategory[]>([]);
+  const [eventCategoryId, setEventCategoryId] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------------
   // EVENTS STATE
   // ---------------------------------------------------------------------------
   const [events, setEvents] = useState<EventArchive[]>([]);
@@ -61,7 +68,7 @@ export default function WorkArchiveAdminClient() {
   const [eventTitle, setEventTitle] = useState("");
   const [eventSlug, setEventSlug] = useState("");
   const [eventDate, setEventDate] = useState("");
-  const [eventCategory, setEventCategory] = useState("academic_convocation");
+  const [eventCategory, setEventCategory] = useState("Convocation");
   const [eventLocation, setEventLocation] = useState("");
   const [eventClient, setEventClient] = useState("");
   const [eventShortDesc, setEventShortDesc] = useState("");
@@ -191,6 +198,22 @@ export default function WorkArchiveAdminClient() {
     }
   }, []);
 
+  const loadCategories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/event-categories");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setAvailableCategories(json.data);
+      }
+    } catch {
+      // silent fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
+
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
@@ -207,7 +230,9 @@ export default function WorkArchiveAdminClient() {
     setEventTitle("");
     setEventSlug("");
     setEventDate(new Date().toISOString().split("T")[0]);
-    setEventCategory("academic_convocation");
+    const firstCat = availableCategories.find((c) => c.is_active) || availableCategories[0];
+    setEventCategoryId(firstCat ? firstCat.id : null);
+    setEventCategory(firstCat ? firstCat.name : "Convocation");
     setEventLocation("");
     setEventClient("");
     setEventShortDesc("");
@@ -236,15 +261,16 @@ export default function WorkArchiveAdminClient() {
     setEventTitle(ev.title);
     setEventSlug(ev.slug);
     setEventDate(ev.event_date);
-    setEventCategory(ev.category || "academic_convocation");
+    setEventCategoryId(ev.category_id || (ev.category_rel ? ev.category_rel.id : null));
+    setEventCategory(ev.category || (ev.category_rel ? ev.category_rel.name : "Convocation"));
     setEventLocation(ev.location || "");
     setEventClient(ev.client_or_institution || "");
     setEventShortDesc(ev.short_description);
     setEventFullDesc(ev.full_description || "");
     setEventCoverUrl(ev.cover_image_url || "");
     setEventFolderId(ev.folder_id || null);
-    setEventPublished(ev.is_published);
-    setEventFeatured(ev.is_featured);
+    setEventPublished(Boolean(ev.is_published));
+    setEventFeatured(Boolean(ev.is_featured));
     setEventSortOrder(ev.sort_order);
     setEventHeroSlides(ev.hero_slides || []);
     setRelatedBookingEventIds([]);
@@ -282,6 +308,7 @@ export default function WorkArchiveAdminClient() {
         slug: eventSlug.trim() || undefined,
         event_date: eventDate,
         category: eventCategory,
+        category_id: eventCategoryId || null,
         location: eventLocation.trim() || null,
         client_or_institution: eventClient.trim() || null,
         short_description: eventShortDesc.trim(),
@@ -837,8 +864,9 @@ export default function WorkArchiveAdminClient() {
                           {ev.is_published ? "Published" : "Draft"}
                         </span>
                         {ev.is_featured && (
-                          <span className="rounded-full bg-[#FAF7F2] border border-[#E5DEC9] px-2 py-0.5 text-[9px] font-bold uppercase text-[#3A2008]">
-                            Featured
+                          <span className="rounded-full bg-[#FAF7F2] border border-[#A66D35]/30 px-2 py-0.5 text-[9px] font-bold uppercase text-[#3A2008] flex items-center gap-1 shadow-2xs">
+                            <Sparkles className="w-2.5 h-2.5 text-[#A66D35]" />
+                            Featured on Dashboard
                           </span>
                         )}
                         {ev.hero_slides && ev.hero_slides.length > 0 && (
@@ -1393,19 +1421,34 @@ export default function WorkArchiveAdminClient() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[#141210] mb-1">
-                    Category
+                    Event Category
                   </label>
                   <select
-                    value={eventCategory}
-                    onChange={(e) => setEventCategory(e.target.value)}
+                    value={
+                      eventCategoryId ||
+                      (availableCategories.find(
+                        (c) => c.name.toLowerCase() === eventCategory.toLowerCase()
+                      )?.id ?? "")
+                    }
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setEventCategoryId(selId || null);
+                      const found = availableCategories.find((c) => c.id === selId);
+                      if (found) {
+                        setEventCategory(found.name);
+                      }
+                    }}
                     className="w-full rounded-xl border border-[#E5DEC9] bg-[#FAF7F2] px-3 py-2 text-xs text-[#141210] focus:border-[#3A2008] focus:bg-[#FFFFFF] focus:outline-none"
                   >
-                    <option value="academic_convocation">Academic Convocation</option>
-                    <option value="corporate_summit">Corporate Summit</option>
-                    <option value="documentary">Brand Documentary</option>
-                    <option value="headshot">Executive Portraits</option>
-                    <option value="wedding">Wedding Story</option>
-                    <option value="workshop">Workshop</option>
+                    {availableCategories.length === 0 ? (
+                      <option value="">Convocation</option>
+                    ) : (
+                      availableCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name} {!cat.is_active ? "(Inactive)" : ""}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -1678,25 +1721,36 @@ export default function WorkArchiveAdminClient() {
               </div>
 
               {/* Publication Toggles */}
-              <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-[#E5DEC9] bg-[#FAF7F2] p-4 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer font-semibold text-[#141210]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-[#E5DEC9] bg-[#FAF7F2] p-4 text-xs">
+                <label className="flex items-start gap-2.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={eventPublished}
                     onChange={(e) => setEventPublished(e.target.checked)}
-                    className="h-4 w-4 rounded accent-[#3A2008]"
+                    className="mt-0.5 h-4 w-4 rounded accent-[#3A2008]"
                   />
-                  <span>Published on Live Works Archive</span>
+                  <div>
+                    <span className="font-semibold text-[#141210] block">Published on Live Works Archive</span>
+                    <span className="text-[11px] text-[#5C5449]">Makes this production visible to visitors in the /works directory.</span>
+                  </div>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer font-semibold text-[#141210]">
+                <label className="flex items-start gap-2.5 cursor-pointer pt-3 sm:pt-0 sm:border-l sm:border-[#E5DEC9] sm:pl-6">
                   <input
                     type="checkbox"
                     checked={eventFeatured}
                     onChange={(e) => setEventFeatured(e.target.checked)}
-                    className="h-4 w-4 rounded accent-[#3A2008]"
+                    className="mt-0.5 h-4 w-4 rounded accent-[#3A2008]"
                   />
-                  <span>Featured Production</span>
+                  <div>
+                    <span className="font-semibold text-[#141210] flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#A66D35]" />
+                      <span>Featured on Dashboard</span>
+                    </span>
+                    <span className="text-[11px] text-[#5C5449] block">
+                      Includes this published production in the dashboard&apos;s Additional Gallery Portfolio Entries rotation.
+                    </span>
+                  </div>
                 </label>
               </div>
 

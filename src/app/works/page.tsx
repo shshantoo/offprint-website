@@ -2,8 +2,10 @@ import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import WorksArchiveClient from "@/components/works/WorksArchiveClient";
-import { fetchEventArchives } from "@/lib/data-service";
+import { fetchEventArchives, fetchEventArchiveCategories } from "@/lib/data-service";
 import { Film, Calendar, ArrowUpRight } from "lucide-react";
+
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Works Archive • OFFPRINT (অফপ্রিন্ট)",
@@ -12,7 +14,10 @@ export const metadata: Metadata = {
 };
 
 export default async function WorksPage() {
-  const eventArchives = await fetchEventArchives({ includeUnpublished: false });
+  const [eventArchives, categories] = await Promise.all([
+    fetchEventArchives({ includeUnpublished: false }),
+    fetchEventArchiveCategories({ includeInactive: false }),
+  ]);
 
   return (
     <div className="py-16 md:py-24 bg-[#FAF7F2]">
@@ -41,7 +46,12 @@ export default async function WorksPage() {
           </Link>
         </div>
 
-        <WorksArchiveClient initialEventArchives={eventArchives} />
+        <React.Suspense fallback={<div className="py-12 text-center text-xs font-mono text-[#877D70]">Loading production archives...</div>}>
+          <WorksArchiveClient
+            initialEventArchives={eventArchives}
+            initialCategories={categories}
+          />
+        </React.Suspense>
       </div>
     </div>
   );

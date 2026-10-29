@@ -3,8 +3,9 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { PortfolioProject, PortfolioCategory } from "@/types/database";
+import type { PortfolioProject, PortfolioCategory, EventArchive, EventArchiveCategory } from "@/types/database";
 import { formatDate } from "@/lib/utils";
+import FeaturedEventSlider from "./FeaturedEventSlider";
 import {
   Play,
   Eye,
@@ -12,11 +13,12 @@ import {
   ArrowUpRight,
   ChevronRight,
   Camera,
-  Maximize2,
 } from "lucide-react";
 
 interface FlagshipShowcaseProps {
-  initialProjects: PortfolioProject[];
+  initialProjects?: PortfolioProject[];
+  featuredArchives?: EventArchive[];
+  categories?: EventArchiveCategory[];
   heading?: string;
   subheading?: string;
   show?: boolean;
@@ -32,9 +34,11 @@ const CATEGORY_LABELS: Record<PortfolioCategory | "all", string> = {
 };
 
 export default function FlagshipShowcase({
-  initialProjects,
+  initialProjects = [],
+  featuredArchives = [],
+  categories = [],
   heading = "Editorial Photography Showcase",
-  subheading = "From international summits at Dhaka luxury hotels to high-impact brand documentaries and executive portraiture, explore our signature visual productions.",
+  subheading = "From academic convocations to executive portraiture and cultural brand visual stories, explore our signature productions in Dhaka and beyond.",
   show = true,
 }: FlagshipShowcaseProps) {
   const [selectedCategory, setSelectedCategory] = useState<PortfolioCategory | "all">("all");
@@ -52,9 +56,6 @@ export default function FlagshipShowcase({
   const centerpieceProject =
     filteredProjects.find((p) => p.is_flagship) || filteredProjects[0] || initialProjects[0];
 
-  // Remaining projects for the asymmetrical editorial grid
-  const gridProjects = filteredProjects.filter((p) => p.id !== centerpieceProject?.id);
-
   const openModal = (proj: PortfolioProject) => {
     setActiveModalProject(proj);
     setModalActiveImage(proj.thumbnail_url);
@@ -71,7 +72,7 @@ export default function FlagshipShowcase({
       id="works"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16 lg:space-y-24">
-        {/* Section Header with Oversized Editorial Number & Typography */}
+        {/* Section Header with Oversized Editorial Typography */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-[#E5DEC9] pb-8">
           <div className="space-y-3">
             <div className="flex items-center gap-3">
@@ -98,7 +99,7 @@ export default function FlagshipShowcase({
               href="/book/convocation"
               className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-widest transition-all shadow-xs"
             >
-              <Camera className="w-3.5 h-3.5 text-[#A66D35]" />
+              <Camera className="w-3.5 h-3.5 text-[#D9A673]" />
               <span>Book a Session</span>
             </Link>
 
@@ -112,91 +113,136 @@ export default function FlagshipShowcase({
           </div>
         </div>
 
-        {/* Category Filter Pills */}
-        <div className="flex flex-wrap items-center gap-2.5 pb-2 overflow-x-auto">
-          {(Object.keys(CATEGORY_LABELS) as Array<PortfolioCategory | "all">).map((catKey) => {
-            const isSelected = selectedCategory === catKey;
-            return (
-              <button
-                key={catKey}
-                onClick={() => setSelectedCategory(catKey)}
-                className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
-                    : "bg-[#FFFFFF] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9] hover:border-[#D5CCB4]"
-                }`}
-              >
-                {CATEGORY_LABELS[catKey]}
-              </button>
-            );
-          })}
+        {/* Dynamic Category Overview & Filter Bar */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-mono text-[#5C5449]">
+            <span className="uppercase tracking-[0.2em]">PRODUCTION DISCIPLINES &amp; ARCHIVES</span>
+            <span className="text-[#A66D35]">
+              {categories && categories.length > 0 ? `${categories.length} Categories Active` : "Database Categories"}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 pb-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setSelectedCategory("all")}
+              className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                selectedCategory === "all"
+                  ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
+                  : "bg-[#FFFFFF] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9] hover:border-[#D5CCB4]"
+              }`}
+            >
+              All Flagship Works
+            </button>
+
+            {categories && categories.length > 0
+              ? categories.map((cat) => {
+                  return (
+                    <Link
+                      key={cat.id}
+                      href={`/works?category=${encodeURIComponent(cat.slug || cat.name)}`}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all bg-[#FFFFFF] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9] hover:border-[#3A2008] hover:bg-[#FAF7F2]"
+                    >
+                      <span>{cat.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#FAF7F2] border border-[#E5DEC9] text-[#A66D35] font-bold">
+                        {cat.archive_count ?? 0}
+                      </span>
+                    </Link>
+                  );
+                })
+              : (Object.keys(CATEGORY_LABELS) as Array<PortfolioCategory | "all">)
+                  .filter((k) => k !== "all")
+                  .map((catKey) => (
+                    <button
+                      key={catKey}
+                      onClick={() => setSelectedCategory(catKey)}
+                      className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                        selectedCategory === catKey
+                          ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
+                          : "bg-[#FFFFFF] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9] hover:border-[#D5CCB4]"
+                      }`}
+                    >
+                      {CATEGORY_LABELS[catKey]}
+                    </button>
+                  ))}
+          </div>
         </div>
 
-        {/* CENTERPIECE 1: Large Featured Composition (Inspired by Reference Image) */}
+        {/* CENTERPIECE: Featured Flagship Work Composition */}
         {centerpieceProject && (
           <div className="group relative rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 sm:p-10 lg:p-12 shadow-sm transition-all hover:border-[#D5CCB4] overflow-hidden">
-            {/* Subtle background grey-green architectural tone for editorial contrast */}
             <div
               aria-hidden="true"
-              className="absolute top-0 right-0 w-1/3 h-full bg-[#E8ECE5]/40 pointer-events-none -z-0"
+              className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-[#E8ECE5]/60 blur-3xl pointer-events-none"
             />
 
-            <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-              {/* Left Column: Oversized Image with subtle zoom interaction */}
-              <div
-                onClick={() => openModal(centerpieceProject)}
-                className="lg:col-span-8 relative aspect-[16/10] sm:aspect-[16/9] rounded-2xl overflow-hidden bg-[#161311] cursor-pointer shadow-md"
-              >
-                <Image
-                  src={centerpieceProject.thumbnail_url}
-                  alt={centerpieceProject.title}
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 70vw"
-                  priority
-                  className="object-cover object-center filter contrast-[1.02] group-hover:scale-[1.03] transition-transform duration-700 ease-out"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#161311]/80 via-transparent to-transparent opacity-50 group-hover:opacity-30 transition-opacity" />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center relative z-10">
+              <div className="lg:col-span-7 space-y-4">
+                <div
+                  onClick={() => openModal(centerpieceProject)}
+                  className="relative aspect-[16/10] sm:aspect-[16/9] rounded-2xl overflow-hidden bg-[#161311] border border-[#E5DEC9] cursor-pointer group/img"
+                >
+                  <Image
+                    src={centerpieceProject.thumbnail_url}
+                    alt={centerpieceProject.title}
+                    fill
+                    priority
+                    sizes="(max-width: 1024px) 100vw, 60vw"
+                    className="object-cover object-center filter contrast-[1.02] transition-transform duration-700 ease-out group-hover/img:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60" />
 
-                {/* Inspect Overlay Pill */}
-                <div className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#161311]/80 backdrop-blur-md text-[10px] font-mono uppercase tracking-widest text-[#FAF7F2] border border-white/15 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <Maximize2 className="w-3 h-3 text-[#A66D35]" />
-                  <span>Inspect Photograph</span>
-                </div>
+                  <div className="absolute top-4 left-4 flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-[#3A2008]/85 backdrop-blur-md text-[#FAF7F2] text-[10px] font-mono uppercase tracking-widest border border-white/10">
+                      Signature Commission
+                    </span>
+                  </div>
 
-                <div className="absolute top-4 left-4 px-3 py-1 rounded bg-[#161311]/80 backdrop-blur-md border border-white/10 text-[10px] font-mono uppercase tracking-widest text-[#D5CCB4]">
-                  FLAGSHIP PRODUCTION • 01
+                  {centerpieceProject.video_url && (
+                    <div className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-md text-[#FAF7F2] text-xs font-mono">
+                      <Play className="w-3.5 h-3.5 text-[#D9A673] fill-current" />
+                      <span>Motion Record</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Right Column: Editorial Typography & Metadata */}
-              <div className="lg:col-span-4 space-y-6">
-                <div className="space-y-2">
-                  <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#A66D35] block">
-                    {CATEGORY_LABELS[centerpieceProject.category]}
-                  </span>
-                  <h3 className="font-editorial text-2xl sm:text-3xl lg:text-4xl font-normal text-[#141210] leading-snug">
-                    {centerpieceProject.title}
-                  </h3>
-                  <p className="text-xs font-mono text-[#6E3C08] font-semibold">
-                    Client: {centerpieceProject.client_name}
-                  </p>
-                </div>
-
-                <p className="text-xs sm:text-sm text-[#5C5449] leading-relaxed">
-                  {centerpieceProject.description}
-                </p>
-
-                <div className="pt-4 border-t border-[#E5DEC9] space-y-3">
-                  <div className="flex items-center justify-between text-xs text-[#5C5449]">
-                    <span className="font-mono">Completed Date</span>
-                    <span className="font-medium text-[#141210]">
+              <div className="lg:col-span-5 space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
+                      {CATEGORY_LABELS[centerpieceProject.category] || "Editorial Production"}
+                    </span>
+                    <span className="h-px w-6 bg-[#E5DEC9]" />
+                    <span className="text-xs font-mono text-[#5C5449]">
                       {formatDate(centerpieceProject.completed_date || undefined)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-[#5C5449]">
-                    <span className="font-mono">Media Deliverables</span>
-                    <span className="font-medium text-[#141210]">
-                      {centerpieceProject.gallery_urls?.length || 4} Master Stills
+
+                  <h3 className="font-editorial text-3xl sm:text-4xl lg:text-5xl font-normal tracking-tight text-[#141210] leading-tight">
+                    {centerpieceProject.title}
+                  </h3>
+
+                  <p className="text-sm text-[#5C5449] leading-relaxed">
+                    {centerpieceProject.description}
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#6E3C08] block">
+                    COMMISSION CREDENTIALS
+                  </span>
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-[#5C5449]">Client Organization:</span>
+                    <span className="font-semibold text-[#141210]">
+                      {centerpieceProject.client_name}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-[#5C5449]">Delivery Status:</span>
+                    <span className="text-[#2E6B4E] font-semibold flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-[#2E6B4E]" />
+                      Archival Record Complete
                     </span>
                   </div>
                 </div>
@@ -224,98 +270,21 @@ export default function FlagshipShowcase({
           </div>
         )}
 
-        {/* ASYMMETRICAL EDITORIAL GRID (Inspired by Reference Image & Visual Rhythm) */}
-        {gridProjects.length > 0 && (
-          <div className="space-y-8">
-            <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-4">
-              <span className="text-xs font-mono uppercase tracking-[0.2em] text-[#5C5449]">
-                ADDITIONAL GALLERY PORTFOLIO ENTRIES
-              </span>
-              <span className="text-xs font-mono text-[#A66D35]">
-                {gridProjects.length} Works Displayed
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-              {gridProjects.map((project, idx) => {
-                // Alternate styling for editorial variety: 
-                // idx % 3 === 0 uses soft sage surface (#E8ECE5), 
-                // idx % 3 === 1 uses warm sand (#F4EFE6), 
-                // idx % 3 === 2 uses crisp white (#FFFFFF)
-                const surfaceBg =
-                  idx % 3 === 0
-                    ? "bg-[#E8ECE5]/70 border-[#D2DACD]"
-                    : idx % 3 === 1
-                    ? "bg-[#F4EFE6] border-[#E5DEC9]"
-                    : "bg-[#FFFFFF] border-[#E5DEC9]";
-
-                return (
-                  <article
-                    key={project.id}
-                    className={`group rounded-2xl border p-5 sm:p-6 shadow-2xs hover:shadow-md transition-all duration-300 flex flex-col justify-between ${surfaceBg}`}
-                  >
-                    <div className="space-y-4">
-                      {/* Image Frame with Aspect Ratio Variety */}
-                      <div
-                        onClick={() => openModal(project)}
-                        className="relative aspect-[4/3] rounded-xl overflow-hidden bg-[#161311] cursor-pointer"
-                      >
-                        <Image
-                          src={project.thumbnail_url}
-                          alt={project.title}
-                          fill
-                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                          className="object-cover object-center filter contrast-[1.03] group-hover:scale-105 transition-transform duration-500 ease-out"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-40 group-hover:opacity-20 transition-opacity" />
-
-                        <div className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono uppercase tracking-widest text-[#FAF7F2]">
-                          {CATEGORY_LABELS[project.category]}
-                        </div>
-
-                        {project.video_url && (
-                          <div className="absolute top-3 right-3 w-7 h-7 rounded-full bg-[#3A2008]/90 text-[#FAF7F2] flex items-center justify-center">
-                            <Play className="w-3.5 h-3.5 fill-current" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Project Title & Metadata */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px] font-mono text-[#6E3C08]">
-                          <span>{project.client_name}</span>
-                          <span>{formatDate(project.completed_date || undefined)}</span>
-                        </div>
-                        <h4 className="font-editorial text-xl font-normal text-[#141210] group-hover:text-[#3A2008] transition-colors leading-snug">
-                          {project.title}
-                        </h4>
-                        <p className="text-xs text-[#5C5449] line-clamp-2 leading-relaxed">
-                          {project.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Bottom Action Footer */}
-                    <div className="pt-4 mt-4 border-t border-[#E5DEC9]/80 flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={() => openModal(project)}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#3A2008] group-hover:text-[#A66D35] transition-colors cursor-pointer"
-                      >
-                        <span>View Frames</span>
-                        <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                      </button>
-
-                      <span className="text-[10px] font-mono text-[#8A8175]">
-                        {(project.gallery_urls?.length || 0) + 1} STILLS
-                      </span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+        {/* ADDITIONAL GALLERY PORTFOLIO ENTRIES — FEATURED PRODUCTIONS SLIDER */}
+        <div className="space-y-8">
+          <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-4">
+            <span className="text-xs font-mono uppercase tracking-[0.2em] text-[#5C5449]">
+              ADDITIONAL GALLERY PORTFOLIO ENTRIES
+            </span>
+            <span className="text-xs font-mono text-[#A66D35]">
+              {featuredArchives && featuredArchives.length > 0
+                ? `${featuredArchives.length} Featured ${featuredArchives.length === 1 ? "Archive" : "Archives"}`
+                : "0 Featured Archives"}
+            </span>
           </div>
-        )}
+
+          <FeaturedEventSlider events={featuredArchives} />
+        </div>
 
         {/* Gallery Inspection Lightbox Modal */}
         {activeModalProject && (
@@ -330,7 +299,7 @@ export default function FlagshipShowcase({
               <div className="flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
                   <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
-                    {CATEGORY_LABELS[activeModalProject.category]}
+                    {CATEGORY_LABELS[activeModalProject.category] || "Photography Production"}
                   </span>
                   <h3 className="font-editorial text-2xl font-normal text-[#FAF7F2] mt-0.5">
                     {activeModalProject.title}

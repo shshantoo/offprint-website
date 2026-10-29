@@ -16,6 +16,7 @@ import type {
   MediaFolderPhoto,
   EventArchive,
   EventHighlight,
+  EventArchiveCategory,
 } from "@/types/database";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -653,7 +654,12 @@ export async function deleteFolderPhoto(id: string, customClient?: any): Promise
 }
 
 export async function fetchEventArchives(
-  options?: { includeUnpublished?: boolean; category?: string; client?: any }
+  options?: {
+    includeUnpublished?: boolean;
+    category?: string;
+    isFeatured?: boolean;
+    client?: any;
+  }
 ): Promise<EventArchive[]> {
   const client = options?.client || supabase;
   if (!isSupabaseConfigured() || !client) return [];
@@ -662,7 +668,8 @@ export async function fetchEventArchives(
     .from("event_archives")
     .select(`
       *,
-      folder:media_folders(*)
+      folder:media_folders(*),
+      category_rel:event_archive_categories(*)
     `)
     .order("sort_order", { ascending: true })
     .order("event_date", { ascending: false });
@@ -670,17 +677,84 @@ export async function fetchEventArchives(
   if (!options?.includeUnpublished) {
     query = query.eq("is_published", true);
   }
+  if (options?.isFeatured !== undefined) {
+    query = query.eq("is_featured", options.isFeatured);
+  }
   if (options?.category && options.category !== "all") {
-    query = query.eq("category", options.category);
+    query = query.or(
+      `category.eq."${options.category}",category_id.eq."${options.category}"`
+    );
   }
 
   const { data, error } = await query;
   if (error) {
-    console.error("Supabase fetchEventArchives error:", error);
-    return [];
+    // Fallback without category_rel if relation is still syncing
+    const fallbackQuery = client
+      .from("event_archives")
+      .select(`*, folder:media_folders(*)`)
+      .order("sort_order", { ascending: true })
+      .order("event_date", { ascending: false });
+    if (!options?.includeUnpublished) fallbackQuery.eq("is_published", true);
+    if (options?.isFeatured !== undefined) fallbackQuery.eq("is_featured", options.isFeatured);
+    if (options?.category && options.category !== "all") fallbackQuery.eq("category", options.category);
+
+    const { data: fbData } = await fallbackQuery;
+    return (fbData || []) as EventArchive[];
   }
 
   return (data || []) as EventArchive[];
+}
+
+export async function fetchEventArchiveCategories(
+  options?: { client?: any; includeInactive?: boolean }
+): Promise<EventArchiveCategory[]> {
+  const client = options?.client || supabase;
+  if (!isSupabaseConfigured() || !client) return [];
+
+  try {
+    let query = client
+      .from("event_archive_categories")
+      .select("*")
+      .order("sort_order", { ascending: true });
+
+    if (!options?.includeInactive) {
+      query = query.eq("is_active", true);
+    }
+
+    const { data: categories, error } = await query;
+    if (error || !categories) return [];
+
+    // Tally actual published event archives count per category
+    const { data: archives } = await client
+      .from("event_archives")
+      .select("id, category_id, category, is_published")
+      .eq("is_published", true);
+
+    const counts: Record<string, number> = {};
+    if (archives) {
+      for (const a of archives) {
+        if (a.category_id) {
+          counts[a.category_id] = (counts[a.category_id] || 0) + 1;
+        }
+        if (a.category) {
+          const catKey = a.category.toLowerCase().trim();
+          counts[catKey] = (counts[catKey] || 0) + 1;
+        }
+      }
+    }
+
+    return categories.map((cat: any) => ({
+      ...cat,
+      archive_count:
+        counts[cat.id] ||
+        counts[cat.name.toLowerCase().trim()] ||
+        counts[cat.slug.toLowerCase().trim()] ||
+        0,
+    })) as EventArchiveCategory[];
+  } catch (err) {
+    console.error("fetchEventArchiveCategories error:", err);
+    return [];
+  }
 }
 
 export async function fetchEventArchiveBySlug(
@@ -769,7 +843,8 @@ export async function saveEventArchive(
     cover_storage_path: event.cover_storage_path || null,
     cover_alt_text: event.cover_alt_text?.trim() || `${event.title.trim()} — Cover`,
     folder_id: event.folder_id || null,
-    category: event.category || "general",
+    category: event.category || "Convocation",
+    category_id: event.category_id || null,
     location: event.location?.trim() || null,
     client_or_institution: event.client_or_institution?.trim() || null,
     sort_order: typeof event.sort_order === "number" ? event.sort_order : 0,

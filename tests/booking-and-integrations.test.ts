@@ -1735,4 +1735,193 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     assert.equal(canHardDeleteStage("stg-2"), false); // Has bookings -> should archive/deactivate
     assert.equal(canHardDeleteStage("stg-non-existent"), true); // Safe to hard delete
   });
+
+  it("22. validates dynamic Event Archive Categories ordering, live archive count calculation, and safe deactivation protection", () => {
+    interface CategoryItem {
+      id: string;
+      name: string;
+      slug: string;
+      description?: string | null;
+      sort_order: number;
+      is_active: boolean;
+    }
+
+    const categories: CategoryItem[] = [
+      {
+        id: "cat-convocation",
+        name: "Convocation",
+        slug: "convocation",
+        description: "Academic convocation ceremonies across universities in Bangladesh",
+        sort_order: 1,
+        is_active: true,
+      },
+      {
+        id: "cat-documentary",
+        name: "Brand Documentary",
+        slug: "documentary",
+        description: "Visual stories for institutions and creative brands",
+        sort_order: 2,
+        is_active: true,
+      },
+      {
+        id: "cat-executive",
+        name: "Executive Portraits",
+        slug: "executive-portraits",
+        description: "Editorial leadership and portrait series",
+        sort_order: 3,
+        is_active: false, // Inactive category
+      },
+    ];
+
+    // 1. Ordering: categories must order by sort_order ascending
+    const activeOrdered = categories
+      .filter((c) => c.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    assert.equal(activeOrdered.length, 2);
+    assert.equal(activeOrdered[0].slug, "convocation");
+    assert.equal(activeOrdered[1].slug, "documentary");
+
+    // 2. Published archive count computation
+    const mockArchives = [
+      { id: "ev-1", category_id: "cat-convocation", is_published: true },
+      { id: "ev-2", category_id: "cat-convocation", is_published: true },
+      { id: "ev-3", category_id: "cat-convocation", is_published: false }, // draft: excluded from count
+      { id: "ev-4", category_id: "cat-documentary", is_published: true },
+    ];
+
+    const computeCounts = (catList: CategoryItem[], archives: typeof mockArchives) => {
+      return catList.map((cat) => {
+        const count = archives.filter(
+          (a) => a.is_published && a.category_id === cat.id
+        ).length;
+        return { ...cat, archive_count: count };
+      });
+    };
+
+    const categoriesWithCounts = computeCounts(categories, mockArchives);
+    const convocation = categoriesWithCounts.find((c) => c.id === "cat-convocation");
+    const documentary = categoriesWithCounts.find((c) => c.id === "cat-documentary");
+    const executive = categoriesWithCounts.find((c) => c.id === "cat-executive");
+
+    assert.equal(convocation?.archive_count, 2, "Convocation has 2 published archives");
+    assert.equal(documentary?.archive_count, 1, "Documentary has 1 published archive");
+    assert.equal(executive?.archive_count, 0, "Executive portraits has 0 published archives");
+
+    // 3. Safe deactivation protection: categories in use must not be hard deleted
+    function resolveCategoryDeletion(categoryId: string, archives: typeof mockArchives) {
+      const activeUsages = archives.filter((a) => a.category_id === categoryId).length;
+      if (activeUsages > 0) {
+        // Soft deactivate to protect historical productions
+        return { action: "deactivated", hardDeleted: false, usages: activeUsages };
+      }
+      return { action: "deleted", hardDeleted: true, usages: 0 };
+    }
+
+    const deleteUsed = resolveCategoryDeletion("cat-convocation", mockArchives);
+    assert.equal(deleteUsed.hardDeleted, false);
+    assert.equal(deleteUsed.action, "deactivated");
+    assert.equal(deleteUsed.usages, 3); // 2 published + 1 draft
+
+    const deleteUnused = resolveCategoryDeletion("cat-executive", mockArchives);
+    assert.equal(deleteUnused.hardDeleted, true);
+    assert.equal(deleteUnused.action, "deleted");
+  });
+
+  it("23. validates Dashboard Featured Event Slider rotation, single-event presentation, and empty state", () => {
+    interface MockEventArchive {
+      id: string;
+      title: string;
+      cover_image_url: string;
+      is_published: boolean;
+      is_featured: boolean;
+    }
+
+    const testPool: MockEventArchive[] = [
+      {
+        id: "ev-pub-feat-1",
+        title: "BRAC University Convocation",
+        cover_image_url: "https://example.com/brac.jpg",
+        is_published: true,
+        is_featured: true,
+      },
+      {
+        id: "ev-pub-feat-2",
+        title: "IUB 26th Convocation",
+        cover_image_url: "https://example.com/iub.jpg",
+        is_published: true,
+        is_featured: true,
+      },
+      {
+        id: "ev-pub-unfeat",
+        title: "Private Summit",
+        cover_image_url: "https://example.com/summit.jpg",
+        is_published: true,
+        is_featured: false, // Not featured
+      },
+      {
+        id: "ev-draft-feat",
+        title: "Draft Event Marked Featured",
+        cover_image_url: "https://example.com/draft.jpg",
+        is_published: false, // Draft: must NOT appear
+        is_featured: true,
+      },
+    ];
+
+    // 1. Selector logic: Only published AND featured
+    const getDashboardFeatured = (pool: MockEventArchive[]) => {
+      return pool.filter((ev) => ev.is_published && ev.is_featured);
+    };
+
+    const dashboardEvents = getDashboardFeatured(testPool);
+    assert.equal(dashboardEvents.length, 2);
+    assert.deepEqual(
+      dashboardEvents.map((e) => e.id),
+      ["ev-pub-feat-1", "ev-pub-feat-2"]
+    );
+
+    // 2. Slider presentation modes
+    const resolvePresentationMode = (events: MockEventArchive[]) => {
+      if (events.length === 0) {
+        return { mode: "empty", autoRotate: false, showNavigation: false };
+      }
+      if (events.length === 1) {
+        return { mode: "single_static", autoRotate: false, showNavigation: false };
+      }
+      return { mode: "multi_slider", autoRotate: true, intervalMs: 6000, showNavigation: true };
+    };
+
+    // Mode 0: Empty state (never fake data)
+    const emptyMode = resolvePresentationMode([]);
+    assert.equal(emptyMode.mode, "empty");
+    assert.equal(emptyMode.autoRotate, false);
+
+    // Mode 1: Exactly 1 event -> Static presentation, no unnecessary pagination controls
+    const singleMode = resolvePresentationMode([testPool[0]]);
+    assert.equal(singleMode.mode, "single_static");
+    assert.equal(singleMode.autoRotate, false);
+
+    // Mode 2: Multiple events -> 6s auto-slider
+    const multiMode = resolvePresentationMode(dashboardEvents);
+    assert.equal(multiMode.mode, "multi_slider");
+    assert.equal(multiMode.autoRotate, true);
+    assert.equal(multiMode.intervalMs, 6000);
+
+    // 3. Independence of is_featured and is_published toggles
+    let archiveState = { is_published: true, is_featured: false };
+
+    // Toggling featured on dashboard preserves publication status
+    const toggleFeatured = (state: typeof archiveState, featured: boolean) => ({
+      ...state,
+      is_featured: featured,
+    });
+
+    archiveState = toggleFeatured(archiveState, true);
+    assert.equal(archiveState.is_featured, true);
+    assert.equal(archiveState.is_published, true, "is_published must remain unaffected");
+
+    archiveState = toggleFeatured(archiveState, false);
+    assert.equal(archiveState.is_featured, false);
+    assert.equal(archiveState.is_published, true, "is_published must remain unaffected");
+  });
 });

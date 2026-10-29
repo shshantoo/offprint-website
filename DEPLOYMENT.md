@@ -279,6 +279,15 @@ Once the production deployment is complete, execute the following verification s
 - [ ] Test **Global Site Settings & Dynamic Footer**:
   - In Website Content & Leads → Global Site Settings, update brand details, contact email/phone, or toggle link visibility.
   - Verify the website footer updates immediately across all public routes.
+- [ ] Test **Featured Event Slider on Homepage**:
+  - In `/admin-portal` Portfolio & Work Archive, toggle **Featured on Dashboard** on one or more published event archives.
+  - Verify the homepage's **Additional Gallery Portfolio Entries** section renders the minimalist automatic slider (6-second rotation, discreet controls, pause on hover/interaction, reduced-motion compliance).
+  - Verify that when zero events are featured, a clean empty state is displayed without placeholder images or fabricated events.
+- [ ] Test **Dynamic Event Archive Categories**:
+  - In `/admin-portal` Account & Security / Settings → **Event Archive Categories**, create, rename, reorder, or toggle category status.
+  - Verify real published archive counts update accurately.
+  - Verify that deleting a category currently in use by archives performs a safe deactivation (`is_active: false`) preserving historical productions.
+  - Navigate to `/works` and verify category filter buttons reflect live database categories with accurate counts.
 - [ ] Test **Package Management**:
   - Edit an existing package's name, duration, price, or description.
   - Create a new package and change its display order.
@@ -304,6 +313,10 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
    - Created junction table `public.event_archive_booking_events` with cascading foreign keys and unique composite constraint `(archive_id, booking_event_id)`.
    - Added workflow stage configuration columns: `allow_link_delivery`, `is_link_required`, `send_email_on_delivery`, `auto_send_email`, and `default_validity_days`.
    - Configured the delivered stage (`slug = 'delivered'`) as default photo-bank eligible delivery stage with 14-day validity.
+4. **`20261030000002_dynamic_event_categories.sql`**:
+   - Created table `public.event_archive_categories` with RLS policies, unique slugs, unique names, sort ordering, and active flags.
+   - Added `category_id` foreign key column to `public.event_archives` referencing `event_archive_categories(id) ON DELETE SET NULL`.
+   - Seeded initial category **Convocation** and migrated existing live event archives to this relational category.
 
 ---
 
