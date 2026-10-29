@@ -4,12 +4,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   BookingEvent,
   EventSession,
-  CustomBookingQuestion,
-  FramePrintingConfig,
   PhotographyPackage,
+  EventArchive,
 } from "@/types/database";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { formatDhakaDateTime, formatDhakaTime } from "@/lib/booking/timezone";
 import {
   Plus,
   RefreshCw,
@@ -25,12 +23,10 @@ import {
   Sliders,
   Check,
   X,
-  ToggleLeft,
-  ToggleRight,
   Upload,
   Eye,
-  Calendar as CalendarIcon,
-  HelpCircle,
+  BookOpen,
+  Search,
 } from "lucide-react";
 
 const WEEKDAYS = [
@@ -59,7 +55,7 @@ export default function SpecialEventsAdminClient() {
   const [events, setEvents] = useState<BookingEvent[]>([]);
   const [sessions, setSessions] = useState<EventSession[]>([]);
   const [slots, setSlots] = useState<any[]>([]);
-  const [packages, setPackages] = useState<PhotographyPackage[]>([]);
+  const [_packages, setPackages] = useState<PhotographyPackage[]>([]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Editor State
@@ -78,15 +74,30 @@ export default function SpecialEventsAdminClient() {
   const [editingSessionModal, setEditingSessionModal] = useState<EventSession | null>(null);
   const [savingSessionModal, setSavingSessionModal] = useState(false);
 
+  // Related Event Archives
+  const [availableArchives, setAvailableArchives] = useState<EventArchive[]>([]);
+  const [relatedArchiveIds, setRelatedArchiveIds] = useState<string[]>([]);
+  const [archiveSearch, setArchiveSearch] = useState("");
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/events");
+      const [res, archRes] = await Promise.all([
+        fetch("/api/admin/events"),
+        fetch("/api/admin/event-archives"),
+      ]);
       const json = await res.json();
       if (json.events) setEvents(json.events);
       if (json.sessions) setSessions(json.sessions);
       if (json.slots) setSlots(json.slots);
       if (json.packages) setPackages(json.packages);
+
+      if (archRes.ok) {
+        const archJson = await archRes.json();
+        if (archJson.success && Array.isArray(archJson.data)) {
+          setAvailableArchives(archJson.data);
+        }
+      }
     } catch (err) {
       console.error("Failed to load events data:", err);
     } finally {
@@ -132,6 +143,7 @@ export default function SpecialEventsAdminClient() {
       },
       resource_pool: "primary_studio",
     });
+    setRelatedArchiveIds([]);
     setIsFormDirty(false);
     setFeedback(null);
     setViewMode("editor");
@@ -146,6 +158,16 @@ export default function SpecialEventsAdminClient() {
       slot_interval_mins: ev.slot_interval_mins || ev.default_slot_duration_mins || 30,
       break_periods: Array.isArray(ev.break_periods) ? ev.break_periods : [],
     });
+    setRelatedArchiveIds([]);
+    // Fetch associated event archives
+    fetch(`/api/admin/event-associations?bookingEventId=${encodeURIComponent(ev.id)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.data?.event_archive_ids) {
+          setRelatedArchiveIds(j.data.event_archive_ids);
+        }
+      })
+      .catch(() => setRelatedArchiveIds([]));
     setIsFormDirty(false);
     setFeedback(null);
     setViewMode("editor");
@@ -293,6 +315,23 @@ export default function SpecialEventsAdminClient() {
       if (res.ok && json.data) {
         setEditingEvent(json.data);
         setIsFormDirty(false);
+
+        // Persist archive associations
+        if (json.data.id) {
+          try {
+            await fetch("/api/admin/event-associations", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                bookingEventId: json.data.id,
+                archiveIds: relatedArchiveIds,
+              }),
+            });
+          } catch (e) {
+            console.error("Failed to persist event associations:", e);
+          }
+        }
+
         setFeedback({
           type: "success",
           text: `Special Booking Type "${json.data.title}" saved successfully.`,
@@ -1018,6 +1057,105 @@ export default function SpecialEventsAdminClient() {
                     }}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono text-[#141210]"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2.5: Related Event Archives */}
+            <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5DEC9] pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#3A2008] text-[#FAF7F2] flex items-center justify-center shrink-0">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[#141210]">
+                      2.5 Related Event Archives ({relatedArchiveIds.length} Linked)
+                    </h3>
+                    <p className="text-[11px] text-[#5C5449]">
+                      Associate photographic event archives from your Works Archive with this booking event.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected Archives Chips */}
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-[#141210] block">
+                  Currently Associated Archives:
+                </span>
+                {relatedArchiveIds.length === 0 ? (
+                  <p className="text-xs text-[#877D70] italic">
+                    No event archives linked yet. Select from the dropdown below to connect one.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {relatedArchiveIds.map((archId) => {
+                      const arch = availableArchives.find((a) => a.id === archId);
+                      return (
+                        <div
+                          key={archId}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs font-semibold text-[#3A2008]"
+                        >
+                          <span>{arch ? arch.title : `Archive (${archId.slice(0, 8)})`}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRelatedArchiveIds((prev) => prev.filter((id) => id !== archId));
+                              setIsFormDirty(true);
+                            }}
+                            className="p-0.5 rounded-full hover:bg-[#E5DEC9] text-[#877D70] hover:text-[#141210]"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Searchable Add Archive Selector */}
+              <div className="pt-2 border-t border-[#E5DEC9] space-y-2">
+                <label className="text-xs font-semibold text-[#141210] block">
+                  Add Event Archive Association
+                </label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#877D70]" />
+                    <input
+                      type="text"
+                      value={archiveSearch}
+                      onChange={(e) => setArchiveSearch(e.target.value)}
+                      placeholder="Search available archives by title..."
+                      className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs"
+                    />
+                  </div>
+                  <select
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val && !relatedArchiveIds.includes(val)) {
+                        setRelatedArchiveIds((prev) => [...prev, val]);
+                        setIsFormDirty(true);
+                      }
+                      e.target.value = "";
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs font-medium text-[#141210]"
+                  >
+                    <option value="">-- Choose Archive to Link --</option>
+                    {availableArchives
+                      .filter(
+                        (a) =>
+                          !relatedArchiveIds.includes(a.id) &&
+                          (!archiveSearch ||
+                            a.title.toLowerCase().includes(archiveSearch.toLowerCase()))
+                      )
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.title} ({a.event_date || "No date"})
+                        </option>
+                      ))}
+                  </select>
                 </div>
               </div>
             </div>

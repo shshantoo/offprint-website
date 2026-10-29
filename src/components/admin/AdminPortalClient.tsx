@@ -29,6 +29,7 @@ import LeadsCRMClient from "./LeadsCRMClient";
 import WebsiteCMSManager from "./WebsiteCMSManager";
 import RegisteredUsersAdminClient from "./RegisteredUsersAdminClient";
 import SpecialEventsAdminClient from "./SpecialEventsAdminClient";
+import WorkflowStagesAdminClient from "./WorkflowStagesAdminClient";
 import {
   LayoutDashboard,
   Calendar as CalendarIcon,
@@ -53,18 +54,15 @@ import {
   ShieldCheck,
   Copy,
   ExternalLink,
-  Upload,
   ArrowUp,
   ArrowDown,
   CheckCircle2,
   Edit3,
   Users,
-  ArrowLeft,
-  ToggleLeft,
-  ToggleRight,
   Check,
   Send,
   Loader2,
+  GitCommit,
 } from "lucide-react";
 
 type AdminMainTab =
@@ -72,6 +70,7 @@ type AdminMainTab =
   | "bookings"
   | "calendar"
   | "scheduling"
+  | "workflow"
   | "portfolio"
   | "users"
   | "integrations"
@@ -90,7 +89,7 @@ const WEEKDAY_NAMES = [
   "Saturday",
 ];
 
-const SPECIAL_EVENT_CATEGORIES = [
+const _SPECIAL_EVENT_CATEGORIES = [
   { value: "convocation", label: "University Convocation / Graduation" },
   { value: "corporate", label: "Corporate / Executive Portrait Drive" },
   { value: "festival", label: "Cultural Festival / Concert" },
@@ -104,6 +103,43 @@ export default function AdminPortalClient() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as AdminMainTab) || "dashboard";
   const [activeTab, setActiveTab] = useState<AdminMainTab>(initialTab);
+
+  const handleSelectTab = (tabId: AdminMainTab) => {
+    setActiveTab(tabId);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("admin_active_tab", tabId);
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tabId);
+        window.history.replaceState(null, "", url.toString());
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlTab = searchParams.get("tab") as AdminMainTab;
+      const savedTab = sessionStorage.getItem("admin_active_tab") as AdminMainTab;
+      const target = urlTab || savedTab;
+      const validTabs: AdminMainTab[] = [
+        "dashboard",
+        "bookings",
+        "calendar",
+        "scheduling",
+        "workflow",
+        "portfolio",
+        "users",
+        "integrations",
+        "cms",
+        "security",
+      ];
+      if (target && validTabs.includes(target) && target !== activeTab) {
+        setActiveTab(target);
+      }
+    }
+  }, [searchParams]);
 
   // Overview state
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -153,6 +189,18 @@ export default function AdminPortalClient() {
   const [deliveryMessageInput, setDeliveryMessageInput] = useState<string>("");
   const [deliverySendEmail, setDeliverySendEmail] = useState<boolean>(true);
   const [deliverySaving, setDeliverySaving] = useState<boolean>(false);
+  const [estimatedExpiryString, setEstimatedExpiryString] = useState<string>("");
+
+  useEffect(() => {
+    if (deliveryValidityDays > 0) {
+      const d = new Date(Date.now() + deliveryValidityDays * 86400000);
+      setEstimatedExpiryString(
+        d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      );
+    } else {
+      setEstimatedExpiryString("No expiration");
+    }
+  }, [deliveryValidityDays]);
 
   // Booking Inspector Session & Extras Modifier state
   const [modifierDuration, setModifierDuration] = useState<number>(30);
@@ -501,6 +549,21 @@ export default function AdminPortalClient() {
       }
     } finally {
       setInspectorLoading(false);
+    }
+  };
+
+  const handleSelectDeliveryStage = (stageId: string) => {
+    setDeliveryStageId(stageId);
+    const sel = workflowStages.find((s) => s.id === stageId);
+    if (sel) {
+      if (sel.default_validity_days) {
+        setDeliveryValidityDays(sel.default_validity_days);
+      }
+      if (sel.auto_send_email) {
+        setDeliverySendEmail(true);
+      } else if (sel.send_email_on_delivery !== undefined) {
+        setDeliverySendEmail(sel.send_email_on_delivery);
+      }
     }
   };
 
@@ -1438,6 +1501,11 @@ export default function AdminPortalClient() {
             icon: Sliders,
           },
           {
+            id: "workflow",
+            label: "Workflow Stages",
+            icon: GitCommit,
+          },
+          {
             id: "portfolio",
             label: "Portfolio & Storage",
             icon: ImageIcon,
@@ -1465,7 +1533,7 @@ export default function AdminPortalClient() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id as AdminMainTab)}
+              onClick={() => handleSelectTab(tab.id as AdminMainTab)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
                 isActive
                   ? "bg-[#3A2008] text-[#FAF7F2] shadow-xs"
@@ -2922,6 +2990,11 @@ export default function AdminPortalClient() {
         </div>
       )}
 
+      {/* TAB: WORKFLOW STAGES & PHOTO-BANK CONFIGURATION */}
+      {activeTab === "workflow" && (
+        <WorkflowStagesAdminClient />
+      )}
+
       {/* TAB 7: PORTFOLIO & SUPABASE STORAGE MEDIA MANAGER */}
       {activeTab === "portfolio" && (
         <div className="space-y-6">
@@ -3746,14 +3819,20 @@ export default function AdminPortalClient() {
                       </label>
                       <select
                         value={deliveryStageId}
-                        onChange={(e) => setDeliveryStageId(e.target.value)}
+                        onChange={(e) => handleSelectDeliveryStage(e.target.value)}
                         className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-medium text-[#141210]"
                       >
                         <option value="">-- No Stage Assigned --</option>
                         {workflowStages.map((stg) => (
                           <option key={stg.id} value={stg.id}>
                             Stage {stg.sort_order}: {stg.name}{" "}
-                            {stg.is_final_delivery ? "★ (Final Delivery)" : ""}
+                            {stg.is_final_delivery
+                              ? "★ (Final Delivery)"
+                              : stg.is_link_required
+                              ? "(Link Required)"
+                              : stg.allow_link_delivery
+                              ? "(Link Allowed)"
+                              : ""}
                           </option>
                         ))}
                       </select>
@@ -3761,14 +3840,29 @@ export default function AdminPortalClient() {
                         const sel = workflowStages.find(
                           (s) => s.id === deliveryStageId
                         );
-                        if (sel?.is_final_delivery) {
+                        if (!sel) return null;
+                        if (sel.is_final_delivery) {
                           return (
                             <p className="text-[11px] text-[#A66D35] font-semibold">
                               ★ Final Delivery Stage: A photo-bank URL is required and client access will be unlocked.
                             </p>
                           );
                         }
-                        return sel?.description ? (
+                        if (sel.is_link_required) {
+                          return (
+                            <p className="text-[11px] text-[#DC2626] font-semibold">
+                              Photo-bank gallery URL is required to advance to this stage ({sel.name}).
+                            </p>
+                          );
+                        }
+                        if (sel.allow_link_delivery) {
+                          return (
+                            <p className="text-[11px] text-[#16A34A] font-medium">
+                              Photo-bank gallery URL delivery is permitted at this stage.
+                            </p>
+                          );
+                        }
+                        return sel.description ? (
                           <p className="text-[11px] text-[#5C5449]">
                             {sel.description}
                           </p>
@@ -3783,16 +3877,7 @@ export default function AdminPortalClient() {
                           Gallery Validity Duration (Days)
                         </label>
                         <span className="text-[11px] font-mono font-medium text-[#5C5449]">
-                          {deliveryValidityDays > 0
-                            ? `Expires: ${new Date(
-                                Date.now() +
-                                  deliveryValidityDays * 86400000
-                              ).toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}`
-                            : "No expiration"}
+                          {estimatedExpiryString ? `Expires: ${estimatedExpiryString}` : "No expiration"}
                         </span>
                       </div>
                       <div className="flex gap-2">
@@ -3841,9 +3926,22 @@ export default function AdminPortalClient() {
 
                     {/* Photo-Bank Gallery URL */}
                     <div className="sm:col-span-2 space-y-1.5">
-                      <label className="font-semibold block text-[#141210]">
-                        Photo-Bank Gallery URL (Google Drive, Supabase Storage, Pixieset, etc.)
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="font-semibold block text-[#141210]">
+                          Photo-Bank Gallery URL (Google Drive, Supabase Storage, Pixieset, etc.)
+                        </label>
+                        {(() => {
+                          const sel = workflowStages.find((s) => s.id === deliveryStageId);
+                          if (sel?.is_link_required || sel?.is_final_delivery) {
+                            return (
+                              <span className="text-[10px] font-bold text-[#DC2626] uppercase">
+                                * Required
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                       <input
                         type="url"
                         value={deliveryUrlInput}

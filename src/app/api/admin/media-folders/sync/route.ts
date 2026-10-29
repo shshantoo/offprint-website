@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/supabase/auth-helpers";
 import { createSupabasePrivilegedClient } from "@/lib/supabase/server";
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   const auth = await requireAdminAuth();
   if (!auth.authorized) {
     return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
@@ -101,3 +101,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: err.message || "Failed to sync media folders" }, { status: 500 });
   }
 }
+

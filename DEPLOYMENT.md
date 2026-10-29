@@ -262,6 +262,23 @@ Once the production deployment is complete, execute the following verification s
 - [ ] Navigate to `/admin-portal`.
 - [ ] Sign in using administrator credentials (`shanto` / `admin@offprint.agency`).
 - [ ] Verify overview stats, calendar schedules, and booking tables populate from the live database.
+- [ ] Verify **Admin Navigation & Tab Persistence**:
+  - Switch between tabs (Dashboard, Bookings, Calendar, Special Events, Workflow Stages, Portfolio, Registered Users, Integrations, CMS, Security).
+  - Verify tabs switch instantly without displaying "Verifying administrator credentials..." spinners.
+  - Refresh the page and confirm the selected tab persists via URL query parameters and session storage.
+- [ ] Test **Registered Users Dossier**:
+  - Open a registered user from the Registered Users tab.
+  - Verify user statistics, BDT spending format (`BDT X,XXX`), and booking history display without runtime errors.
+- [ ] Test **Workflow Stages & Photo-Bank Delivery**:
+  - Navigate to the **Workflow Stages** tab.
+  - Reorder stages, toggle client visibility, and configure photo-bank link delivery rules (e.g., link required, default validity duration in days, automatic email alerts).
+  - Verify that transition rules and required link constraints are strictly enforced in the Booking Inspector modal.
+- [ ] Test **Event Archive & Booking Associations**:
+  - In Special Events & Services, link an active Special Event to an Event Archive in section 2.5.
+  - Navigate to the public Work Archive page (`/works/[slug]`) and verify the direct booking button (`Book Session Now`) or "Booking Paused" status badge renders accurately.
+- [ ] Test **Global Site Settings & Dynamic Footer**:
+  - In Website Content & Leads → Global Site Settings, update brand details, contact email/phone, or toggle link visibility.
+  - Verify the website footer updates immediately across all public routes.
 - [ ] Test **Package Management**:
   - Edit an existing package's name, duration, price, or description.
   - Create a new package and change its display order.
@@ -277,7 +294,20 @@ Once the production deployment is complete, execute the following verification s
 
 ---
 
-## 10. Troubleshooting & FAQ
+## 10. Database Schema Migrations Summary
+
+The following migrations have been applied to Supabase project `qqklsbbysybzivifnykd`:
+
+1. **`20261028000001_storage_reconciler_and_booking_switches.sql`**: Added `booking_events.is_visible_on_booking_page`, `media_folders.physical_exists_in_bucket`, and media folder reconciliation triggers.
+2. **`20261029000001_add_client_photo_delivery_to_bookings.sql`**: Added photo-bank delivery columns (`delivery_url`, `delivery_status`, `delivery_expires_at`, `delivery_validity_days`, `delivery_message`, `delivery_sent_at`, `delivery_email_status`).
+3. **`20261030000001_event_associations_and_workflow_config.sql`**:
+   - Created junction table `public.event_archive_booking_events` with cascading foreign keys and unique composite constraint `(archive_id, booking_event_id)`.
+   - Added workflow stage configuration columns: `allow_link_delivery`, `is_link_required`, `send_email_on_delivery`, `auto_send_email`, and `default_validity_days`.
+   - Configured the delivered stage (`slug = 'delivered'`) as default photo-bank eligible delivery stage with 14-day validity.
+
+---
+
+## 11. Troubleshooting & FAQ
 
 ### Q: Why did uploads fail with `413 FUNCTION_PAYLOAD_TOO_LARGE`?
 **A:** Vercel limits Serverless Function request payloads to 4.5 MB. The OFFPRINT codebase uses client-direct uploads (`getSupabaseBrowserClient().storage.from("portfolio-media").upload(...)`) so high-resolution photography files upload directly from the user's browser to Supabase Storage, bypassing Vercel functions entirely. Ensure your browser is signed in to the admin portal so Supabase RLS permits the upload.

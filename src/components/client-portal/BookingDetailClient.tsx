@@ -37,6 +37,7 @@ export default function BookingDetailClient({ bookingId }: BookingDetailClientPr
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState<Booking | null>(null);
   const [history, setHistory] = useState<BookingStatusHistory[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<any[]>([]);
 
   // Modals
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -86,6 +87,20 @@ export default function BookingDetailClient({ bookingId }: BookingDetailClientPr
 
   useEffect(() => {
     loadBooking();
+    async function fetchStages() {
+      try {
+        const res = await fetch("/api/workflow-stages");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+            setPipelineStages(json.data);
+          }
+        }
+      } catch {
+        // fallback to defaults
+      }
+    }
+    fetchStages();
   }, [loadBooking]);
 
   const loadRescheduleAvailability = useCallback(
@@ -396,74 +411,93 @@ export default function BookingDetailClient({ bookingId }: BookingDetailClientPr
         </div>
 
         {/* Production Workflow Progression */}
-        {booking.status !== "cancelled" && (
-          <div className="p-6 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5DEC9] pb-3">
-              <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
-                  Live Production Tracker
+        {booking.status !== "cancelled" && (() => {
+          const stepsToRender = pipelineStages.length > 0
+            ? pipelineStages.map((s, idx) => ({
+                order: idx + 1,
+                sort_order: s.sort_order,
+                name: s.name,
+                desc: s.client_facing_description || s.description || "",
+                color: s.color,
+              }))
+            : [
+                { order: 1, sort_order: 1, name: "Booking Received", desc: "Reserved & scheduled" },
+                { order: 2, sort_order: 2, name: "Photos Sorted", desc: "Session wrap & cull" },
+                { order: 3, sort_order: 3, name: "Color Grading", desc: "Retouching in studio" },
+                { order: 4, sort_order: 4, name: "Print Review", desc: "Final quality check" },
+                { order: 5, sort_order: 5, name: "Gallery Delivered", desc: "High-res downloads" },
+              ];
+
+          const currentSortOrder =
+            booking.workflow_stage?.sort_order ??
+            (booking.status === "completed" ? 2 : 1);
+
+          const currentStepIndex = stepsToRender.findIndex(
+            (s) => s.sort_order === currentSortOrder
+          );
+          const activeDisplayIndex =
+            currentStepIndex >= 0 ? currentStepIndex + 1 : 1;
+
+          return (
+            <div className="p-6 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5DEC9] pb-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                    Live Production Tracker
+                  </span>
+                  <h3 className="text-sm font-bold text-[#141210]">
+                    {booking.workflow_stage?.name ||
+                      (booking.status === "completed"
+                        ? "Shoot Completed & Sorting"
+                        : "Booking Confirmed & Scheduled")}
+                  </h3>
+                </div>
+                <span className="text-xs font-mono text-[#5C5449]">
+                  Stage {activeDisplayIndex} of {stepsToRender.length}
                 </span>
-                <h3 className="text-sm font-bold text-[#141210]">
-                  {booking.workflow_stage?.name ||
-                    (booking.status === "completed"
-                      ? "Shoot Completed & Sorting"
-                      : "Booking Confirmed & Scheduled")}
-                </h3>
               </div>
-              <span className="text-xs font-mono text-[#5C5449]">
-                Stage {booking.workflow_stage?.sort_order ?? (booking.status === "completed" ? 2 : 1)} of 5
-              </span>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-1">
-              {[
-                { order: 1, name: "Booking Received", desc: "Reserved & scheduled" },
-                { order: 2, name: "Photos Sorted", desc: "Session wrap & cull" },
-                { order: 3, name: "Color Grading", desc: "Retouching in studio" },
-                { order: 4, name: "Print Review", desc: "Final quality check" },
-                { order: 5, name: "Gallery Delivered", desc: "High-res downloads" },
-              ].map((step) => {
-                const currentOrder =
-                  booking.workflow_stage?.sort_order ??
-                  (booking.status === "completed" ? 2 : 1);
-                const isCompleted = step.order < currentOrder;
-                const isCurrent = step.order === currentOrder;
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1">
+                {stepsToRender.map((step, idx) => {
+                  const isCompleted = idx < (currentStepIndex >= 0 ? currentStepIndex : 0);
+                  const isCurrent = idx === currentStepIndex;
 
-                return (
-                  <div
-                    key={step.order}
-                    className={`p-3 rounded-xl border text-xs transition-all ${
-                      isCurrent
-                        ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-sm"
-                        : isCompleted
-                        ? "bg-[#EEF7F2] text-[#2E6B4E] border-[#2E6B4E]/30"
-                        : "bg-[#FFFFFF] text-[#877D70] border-[#E5DEC9] opacity-70"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-[10px] font-mono uppercase font-bold mb-1">
-                      <span>Step {step.order}</span>
-                      {isCompleted && (
-                        <CheckCircle2 className="w-3 h-3 text-[#2E6B4E]" />
-                      )}
-                    </div>
-                    <div className="font-bold text-xs truncate">{step.name}</div>
+                  return (
                     <div
-                      className={`text-[10px] mt-0.5 ${
+                      key={step.order}
+                      className={`p-3 rounded-xl border text-xs transition-all ${
                         isCurrent
-                          ? "text-[#FAF7F2]/80"
+                          ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-sm"
                           : isCompleted
-                          ? "text-[#2E6B4E]/80"
-                          : "text-[#877D70]"
+                          ? "bg-[#EEF7F2] text-[#2E6B4E] border-[#2E6B4E]/30"
+                          : "bg-[#FFFFFF] text-[#877D70] border-[#E5DEC9] opacity-70"
                       }`}
                     >
-                      {step.desc}
+                      <div className="flex items-center justify-between text-[10px] font-mono uppercase font-bold mb-1">
+                        <span>Step {idx + 1}</span>
+                        {isCompleted && (
+                          <CheckCircle2 className="w-3 h-3 text-[#2E6B4E]" />
+                        )}
+                      </div>
+                      <div className="font-bold text-xs truncate">{step.name}</div>
+                      <div
+                        className={`text-[10px] mt-0.5 ${
+                          isCurrent
+                            ? "text-[#FAF7F2]/80"
+                            : isCompleted
+                            ? "text-[#2E6B4E]/80"
+                            : "text-[#877D70]"
+                        }`}
+                      >
+                        {step.desc}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Photo-Bank Deliverable Gallery Card */}
         {booking.delivery_url &&

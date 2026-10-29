@@ -720,6 +720,27 @@ export async function fetchEventArchiveBySlug(
     client,
   });
 
+  // Resolve related booking events
+  try {
+    const { data: assocRows } = await client
+      .from("event_archive_booking_events")
+      .select("booking_event_id, booking_events(*)")
+      .eq("event_archive_id", event.id);
+
+    if (assocRows && assocRows.length > 0) {
+      event.related_booking_events = assocRows
+        .map((r: any) => r.booking_events)
+        .filter((ev: any) => Boolean(ev));
+      event.related_booking_event_ids = assocRows.map((r: any) => r.booking_event_id);
+    } else {
+      event.related_booking_events = [];
+      event.related_booking_event_ids = [];
+    }
+  } catch {
+    event.related_booking_events = [];
+    event.related_booking_event_ids = [];
+  }
+
   return event;
 }
 
@@ -1121,6 +1142,8 @@ export async function deleteLead(id: string): Promise<boolean> {
 export interface SiteSettingsMap {
   general: {
     agency_name: string;
+    brand_name_en?: string;
+    brand_name_bn?: string;
     tagline: string;
     established: string;
     registration_badge: string;
@@ -1131,6 +1154,16 @@ export interface SiteSettingsMap {
     instagram_url: string;
     facebook_url: string;
     linkedin_url: string;
+    youtube_url?: string;
+    whatsapp_number?: string;
+    footer_description?: string;
+    footer_supporting_text?: string;
+    footer_copyright?: string;
+    show_booking_links?: boolean;
+    show_print_links?: boolean;
+    show_social_links?: boolean;
+    seo_meta_title?: string;
+    seo_meta_description?: string;
   };
   homepage: {
     hero_eyebrow: string;
@@ -1190,6 +1223,8 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
 export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
   general: {
     agency_name: "OFFPRINT (অফপ্রিন্ট)",
+    brand_name_en: "OFFPRINT",
+    brand_name_bn: "অফপ্রিন্ট",
     tagline: "Editorial Photography & Fine-Art Print Studio",
     established: "September 2025",
     registration_badge: "",
@@ -1201,6 +1236,18 @@ export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
     instagram_url: "https://instagram.com/offprint.agency",
     facebook_url: "https://facebook.com/offprint.agency",
     linkedin_url: "https://linkedin.com/company/offprint-agency",
+    youtube_url: "",
+    whatsapp_number: "",
+    footer_description:
+      "Independent photography studio and fine-art print atelier in Dhaka, Bangladesh. Specializing in IUB Convocation portrait sessions, executive headshots, corporate summits, brand documentaries, and luxury physical print collateral.",
+    footer_supporting_text: "Editorial Photography & Print Atelier",
+    footer_copyright: "© 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved. Registered under Laws of Bangladesh.",
+    show_booking_links: true,
+    show_print_links: true,
+    show_social_links: true,
+    seo_meta_title: "OFFPRINT (অফপ্রিন্ট) • Photography Studio & Print Agency",
+    seo_meta_description:
+      "Editorial photography studio and print atelier in Dhaka, Bangladesh.",
   },
   homepage: {
     hero_eyebrow: "",

@@ -219,6 +219,8 @@ export interface BookingEvent {
   slot_interval_mins?: number;
   break_periods?: Array<{ name: string; start_time: string; end_time: string }>;
   schedule_overrides?: Array<{ date: string; is_closed?: boolean; start_time?: string; end_time?: string }>;
+  related_event_archive_ids?: string[];
+  related_event_archives?: EventArchive[];
   resource_pool: string;
   created_at?: string;
   updated_at?: string;
@@ -447,9 +449,21 @@ export interface WorkflowStage {
   is_active: boolean;
   is_final_delivery: boolean;
   is_visible_to_client: boolean;
+  allow_link_delivery: boolean;
+  is_link_required: boolean;
+  send_email_on_delivery: boolean;
+  auto_send_email: boolean;
+  default_validity_days: number;
   color?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface EventArchiveBookingEvent {
+  id: string;
+  event_archive_id: string;
+  booking_event_id: string;
+  created_at: string;
 }
 
 export interface BookingStatusHistory {
@@ -695,6 +709,8 @@ export interface EventArchive {
   folder?: MediaFolder | null;
   photos?: MediaFolderPhoto[];
   highlights?: EventHighlight[];
+  related_booking_events?: BookingEvent[];
+  related_booking_event_ids?: string[];
 }
 
 export interface EventHighlight {

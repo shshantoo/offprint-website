@@ -2,19 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Users,
   Search,
   RefreshCw,
   Mail,
   Phone,
   Building,
   GraduationCap,
-  Calendar,
-  ExternalLink,
   X,
   ShieldCheck,
-  CheckCircle2,
-  Clock,
   ArrowRight,
 } from "lucide-react";
 import { formatDhakaDateTime } from "@/lib/booking/timezone";
@@ -39,13 +34,20 @@ interface UserDetailDocket {
   bookings: any[];
 }
 
+function formatSpendingBDT(amount: number | string | null | undefined): string {
+  if (amount == null || amount === "") return "BDT 0";
+  const num = Number(amount);
+  if (isNaN(num)) return "BDT 0";
+  return `BDT ${num.toLocaleString()}`;
+}
+
 export default function RegisteredUsersAdminClient() {
   const [users, setUsers] = useState<RegisteredUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [selectedUserDocket, setSelectedUserDocket] = useState<UserDetailDocket | null>(null);
-  const [loadingDocket, setLoadingDocket] = useState(false);
+  const [_loadingDocket, setLoadingDocket] = useState(false);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -222,12 +224,12 @@ export default function RegisteredUsersAdminClient() {
 
                     <td className="py-3.5 px-4 font-mono">
                       <span className="px-2.5 py-1 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] font-bold text-[#3A2008]">
-                        {u.bookings_count} booking{u.bookings_count === 1 ? "" : "s"}
+                        {u.bookings_count ?? 0} booking{(u.bookings_count ?? 0) === 1 ? "" : "s"}
                       </span>
                     </td>
 
                     <td className="py-3.5 px-4 font-mono font-bold text-[#141210]">
-                      BDT {u.total_spent.toLocaleString()}
+                      {formatSpendingBDT(u.total_spent)}
                     </td>
 
                     <td className="py-3.5 px-4 font-mono text-[11px] text-[#5C5449]">
@@ -268,7 +270,7 @@ export default function RegisteredUsersAdminClient() {
                   Client Dossier &amp; Booking History
                 </span>
                 <h3 className="text-xl font-bold text-[#141210]">
-                  {selectedUserDocket.user.full_name}
+                  {selectedUserDocket.user?.full_name || selectedUserDocket.user?.email || "Registered Client"}
                 </h3>
               </div>
               <button
@@ -284,17 +286,17 @@ export default function RegisteredUsersAdminClient() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs">
               <div>
                 <span className="text-[#877D70] block">Email Address</span>
-                <strong className="text-[#141210] font-mono">{selectedUserDocket.user.email}</strong>
+                <strong className="text-[#141210] font-mono">{selectedUserDocket.user?.email || "—"}</strong>
               </div>
               <div>
                 <span className="text-[#877D70] block">Mobile Phone</span>
-                <strong className="text-[#141210] font-mono">{selectedUserDocket.user.phone || "Not Set"}</strong>
+                <strong className="text-[#141210] font-mono">{selectedUserDocket.user?.phone || "Not Set"}</strong>
               </div>
               <div>
                 <span className="text-[#877D70] block">Institution / Student ID</span>
                 <strong className="text-[#141210]">
-                  {selectedUserDocket.user.company_or_institution || "—"}{" "}
-                  {selectedUserDocket.user.student_id ? `(${selectedUserDocket.user.student_id})` : ""}
+                  {selectedUserDocket.user?.company_or_institution || "—"}{" "}
+                  {selectedUserDocket.user?.student_id ? `(${selectedUserDocket.user.student_id})` : ""}
                 </strong>
               </div>
             </div>
@@ -302,19 +304,19 @@ export default function RegisteredUsersAdminClient() {
             {/* Bookings Docket */}
             <div className="space-y-3">
               <h4 className="text-sm font-bold text-[#141210] flex items-center justify-between">
-                <span>Reservation History ({selectedUserDocket.bookings.length})</span>
+                <span>Reservation History ({(selectedUserDocket.bookings || []).length})</span>
                 <span className="font-mono text-xs text-[#A66D35]">
-                  Total Spent: BDT {selectedUserDocket.user.total_spent.toLocaleString()}
+                  Total Spent: {formatSpendingBDT(selectedUserDocket.user?.total_spent)}
                 </span>
               </h4>
 
-              {selectedUserDocket.bookings.length === 0 ? (
+              {(selectedUserDocket.bookings || []).length === 0 ? (
                 <div className="p-8 text-center text-xs text-[#5C5449] rounded-2xl border border-dashed border-[#E5DEC9] bg-[#FAF7F2]">
                   This client has not created any bookings yet.
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {selectedUserDocket.bookings.map((b: any) => (
+                  {(selectedUserDocket.bookings || []).map((b: any) => (
                     <div
                       key={b.id}
                       className="p-4 rounded-2xl border border-[#E5DEC9] bg-[#FFFFFF] hover:border-[#A66D35] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
@@ -339,13 +341,13 @@ export default function RegisteredUsersAdminClient() {
                         </div>
                         <p className="font-bold text-[#141210]">{b.service_or_event_title}</p>
                         <p className="text-[#5C5449] text-[11px] font-mono">
-                          {formatDhakaDateTime(b.start_at)} • {b.duration_mins} mins
+                          {b.start_at ? formatDhakaDateTime(b.start_at) : "Date unassigned"} • {b.duration_mins || 30} mins
                         </p>
                       </div>
 
                       <div className="sm:text-right shrink-0">
                         <div className="font-mono font-bold text-sm text-[#141210]">
-                          BDT {Number(b.total_price || 0).toLocaleString()}
+                          {formatSpendingBDT(b.total_price)}
                         </div>
                         {b.delivery_status && (
                           <div className="mt-1">
@@ -372,3 +374,4 @@ export default function RegisteredUsersAdminClient() {
     </div>
   );
 }
+

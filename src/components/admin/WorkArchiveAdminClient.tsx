@@ -25,6 +25,7 @@ import {
   ChevronUp,
   ChevronDown,
   Layers,
+  X,
 } from "lucide-react";
 import SearchableFolderSelector from "./SearchableFolderSelector";
 import type {
@@ -34,6 +35,7 @@ import type {
   MediaFolderPhoto,
   MediaFolderType,
   EventHeroSlide,
+  BookingEvent,
 } from "@/types/database";
 
 export default function WorkArchiveAdminClient() {
@@ -71,6 +73,11 @@ export default function WorkArchiveAdminClient() {
   const [eventSortOrder, setEventSortOrder] = useState(0);
   const [eventHeroSlides, setEventHeroSlides] = useState<EventHeroSlide[]>([]);
   const [savingEvent, setSavingEvent] = useState(false);
+
+  // Related Booking Coverage state
+  const [availableBookingEvents, setAvailableBookingEvents] = useState<BookingEvent[]>([]);
+  const [relatedBookingEventIds, setRelatedBookingEventIds] = useState<string[]>([]);
+  const [bookingEventSearch, setBookingEventSearch] = useState("");
 
   // Quick slide add modal for event
   const [showAddSlideModal, setShowAddSlideModal] = useState(false);
@@ -211,7 +218,17 @@ export default function WorkArchiveAdminClient() {
     setEventFeatured(false);
     setEventSortOrder(events.length + 1);
     setEventHeroSlides([]);
+    setRelatedBookingEventIds([]);
     setIsEventModalOpen(true);
+
+    if (availableBookingEvents.length === 0) {
+      fetch("/api/admin/events")
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.events) setAvailableBookingEvents(j.events);
+        })
+        .catch(() => {});
+    }
   };
 
   const handleOpenEditEvent = (ev: EventArchive) => {
@@ -230,7 +247,24 @@ export default function WorkArchiveAdminClient() {
     setEventFeatured(ev.is_featured);
     setEventSortOrder(ev.sort_order);
     setEventHeroSlides(ev.hero_slides || []);
+    setRelatedBookingEventIds([]);
     setIsEventModalOpen(true);
+
+    fetch("/api/admin/events")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.events) setAvailableBookingEvents(j.events);
+      })
+      .catch(() => {});
+
+    fetch(`/api/admin/event-associations?archiveId=${encodeURIComponent(ev.id)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.data?.booking_event_ids) {
+          setRelatedBookingEventIds(j.data.booking_event_ids);
+        }
+      })
+      .catch(() => {});
   };
 
   const handleSaveEvent = async (e: React.FormEvent) => {
@@ -269,6 +303,22 @@ export default function WorkArchiveAdminClient() {
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || "Failed to save event archive.");
+      }
+
+      // Persist related booking events association
+      if (json.data?.id) {
+        try {
+          await fetch("/api/admin/event-associations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              archiveId: json.data.id,
+              bookingEventIds: relatedBookingEventIds,
+            }),
+          });
+        } catch (e) {
+          console.error("Failed to persist booking event associations:", e);
+        }
       }
 
       notify(editingEvent ? "Event archive updated." : "Event archive published.");
@@ -1534,6 +1584,97 @@ export default function WorkArchiveAdminClient() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* Related Booking Coverage */}
+              <div className="rounded-2xl border border-[#E5DEC9] bg-[#FAF7F2] p-4 space-y-3">
+                <div>
+                  <h4 className="text-xs font-bold text-[#141210] flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4 text-[#A66D35]" />
+                    Related Booking Coverage ({relatedBookingEventIds.length} Linked)
+                  </h4>
+                  <p className="text-[11px] text-[#5C5449] mt-0.5">
+                    Connect applicable booking events from your studio calendar. Linked events that are publicly visible will display direct booking links on this event archive page.
+                  </p>
+                </div>
+
+                {/* Selected Booking Events Chips */}
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-[#141210] block">
+                    Currently Associated Booking Events:
+                  </span>
+                  {relatedBookingEventIds.length === 0 ? (
+                    <p className="text-xs text-[#877D70] italic">
+                      No booking events linked yet. Select from the dropdown below to connect one.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {relatedBookingEventIds.map((bId) => {
+                        const bEv = availableBookingEvents.find((b) => b.id === bId);
+                        return (
+                          <div
+                            key={bId}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-semibold text-[#3A2008]"
+                          >
+                            <span>{bEv ? bEv.title : `Booking Event (${bId.slice(0, 8)})`}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRelatedBookingEventIds((prev) => prev.filter((id) => id !== bId));
+                              }}
+                              className="p-0.5 rounded-full hover:bg-[#E5DEC9] text-[#877D70] hover:text-[#141210]"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Searchable Add Booking Event Selector */}
+                <div className="pt-2 border-t border-[#E5DEC9] space-y-2">
+                  <label className="text-xs font-semibold text-[#141210] block">
+                    Add Booking Event Association
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#877D70]" />
+                      <input
+                        type="text"
+                        value={bookingEventSearch}
+                        onChange={(e) => setBookingEventSearch(e.target.value)}
+                        placeholder="Search booking events by title..."
+                        className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs"
+                      />
+                    </div>
+                    <select
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val && !relatedBookingEventIds.includes(val)) {
+                          setRelatedBookingEventIds((prev) => [...prev, val]);
+                        }
+                        e.target.value = "";
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-medium text-[#141210]"
+                    >
+                      <option value="">-- Choose Booking Event to Link --</option>
+                      {availableBookingEvents
+                        .filter(
+                          (b) =>
+                            !relatedBookingEventIds.includes(b.id) &&
+                            (!bookingEventSearch ||
+                              b.title.toLowerCase().includes(bookingEventSearch.toLowerCase()))
+                        )
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.title} ({b.category || "Special Event"})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
               </div>
 
               {/* Publication Toggles */}

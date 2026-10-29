@@ -95,14 +95,48 @@ export default async function EventArchivePage({ params }: EventPageProps) {
                 </p>
               </div>
 
-              <div className="flex items-center gap-3 self-start lg:self-auto">
-                <Link
-                  href="/book"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-[#3A2008] hover:bg-[#5C4028] px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition-colors border border-[#D9A673]/30 shadow-lg"
-                >
-                  <BookOpen className="h-4 w-4 text-[#D9A673]" />
-                  <span>Book Coverage</span>
-                </Link>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 self-start lg:self-auto">
+                {(() => {
+                  const visibleBookings = (event.related_booking_events || []).filter(
+                    (b) => b.is_visible_on_booking_page !== false && b.status === "published"
+                  );
+
+                  if (visibleBookings.length > 0) {
+                    return visibleBookings.map((b) => {
+                      if (b.is_booking_enabled) {
+                        return (
+                          <Link
+                            key={b.id}
+                            href={`/book/special/${b.slug}`}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-[#3A2008] hover:bg-[#5C4028] px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition-colors border border-[#D9A673]/30 shadow-lg"
+                          >
+                            <BookOpen className="h-4 w-4 text-[#D9A673]" />
+                            <span>Reserve Session: {b.title}</span>
+                          </Link>
+                        );
+                      }
+                      return (
+                        <div
+                          key={b.id}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-[#1F1B17] px-5 py-3 text-xs font-mono text-[#D9A673] border border-[#2E2822]"
+                        >
+                          <BookOpen className="h-4 w-4 text-[#877D70]" />
+                          <span>Booking Paused: {b.title}</span>
+                        </div>
+                      );
+                    });
+                  }
+
+                  return (
+                    <Link
+                      href="/book"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-[#3A2008] hover:bg-[#5C4028] px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition-colors border border-[#D9A673]/30 shadow-lg"
+                    >
+                      <BookOpen className="h-4 w-4 text-[#D9A673]" />
+                      <span>Book Studio Coverage</span>
+                    </Link>
+                  );
+                })()}
               </div>
             </div>
           </div>

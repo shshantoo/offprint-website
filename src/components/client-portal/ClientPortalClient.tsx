@@ -51,6 +51,7 @@ export default function ClientPortalClient() {
   // Portal data
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [workflowStages, setWorkflowStages] = useState<any[]>([]);
   const [schemaReady, setSchemaReady] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
 
@@ -65,10 +66,18 @@ export default function ClientPortalClient() {
   const loadPortalData = useCallback(async () => {
     try {
       setDataLoading(true);
-      const [bookingsRes, profileRes] = await Promise.all([
+      const [bookingsRes, profileRes, stagesRes] = await Promise.all([
         fetch("/api/bookings", { cache: "no-store" }),
         fetch("/api/client/profile", { cache: "no-store" }),
+        fetch("/api/workflow-stages", { cache: "no-store" }).catch(() => null),
       ]);
+
+      if (stagesRes && stagesRes.ok) {
+        const stagesJson = await stagesRes.json();
+        if (stagesJson.success && Array.isArray(stagesJson.data)) {
+          setWorkflowStages(stagesJson.data);
+        }
+      }
 
       const bJson = await bookingsRes.json();
       if (bJson?.code === "SCHEMA_NOT_INSTALLED") {
@@ -898,26 +907,39 @@ export default function ClientPortalClient() {
                           {b.workflow_stage?.name || (b.status === "completed" ? "Shoot Completed" : "Booking Confirmed")}
                         </span>
                       </div>
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {[1, 2, 3, 4, 5].map((step) => {
-                          const currentOrder = b.workflow_stage?.sort_order ?? (b.status === "completed" ? 2 : 1);
-                          const isReached = step <= currentOrder;
-                          const isCurrent = step === currentOrder;
-                          return (
-                            <div
-                              key={step}
-                              className={`h-1.5 rounded-full transition-all ${
-                                isCurrent
-                                  ? "bg-[#3A2008]"
-                                  : isReached
-                                  ? "bg-[#A66D35]"
-                                  : "bg-[#E5DEC9]"
-                              }`}
-                              title={`Workflow Stage ${step}`}
-                            />
-                          );
-                        })}
-                      </div>
+                      {(() => {
+                        const stageCount = workflowStages.length > 0 ? workflowStages.length : 5;
+                        const currentOrder = b.workflow_stage?.sort_order ?? (b.status === "completed" ? 2 : 1);
+                        const matchedIdx = workflowStages.length > 0
+                          ? workflowStages.findIndex((s) => s.sort_order === currentOrder)
+                          : currentOrder - 1;
+                        const activeIdx = matchedIdx >= 0 ? matchedIdx : 0;
+
+                        return (
+                          <div
+                            className="grid gap-1.5"
+                            style={{ gridTemplateColumns: `repeat(${stageCount}, minmax(0, 1fr))` }}
+                          >
+                            {Array.from({ length: stageCount }).map((_, stepIdx) => {
+                              const isReached = stepIdx <= activeIdx;
+                              const isCurrent = stepIdx === activeIdx;
+                              return (
+                                <div
+                                  key={stepIdx}
+                                  className={`h-1.5 rounded-full transition-all ${
+                                    isCurrent
+                                      ? "bg-[#3A2008]"
+                                      : isReached
+                                      ? "bg-[#A66D35]"
+                                      : "bg-[#E5DEC9]"
+                                  }`}
+                                  title={`Workflow Stage ${stepIdx + 1}`}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 

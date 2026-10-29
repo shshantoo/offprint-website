@@ -99,15 +99,17 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
     };
   }, [adminStatus?.authenticated]);
 
-  const verifyAdminSession = useCallback(async () => {
+  const verifyAdminSession = useCallback(async (isInitial = false) => {
     try {
-      setChecking(true);
+      if (isInitial) {
+        setChecking(true);
+      }
       const res = await fetch("/api/admin/me", { cache: "no-store" });
       if (res.ok) {
         const json = (await res.json()) as AdminMeResponse;
         setAdminStatus(json);
-        if (json.profile?.username && !newUsername) {
-          setNewUsername(json.profile.username);
+        if (json.profile?.username) {
+          setNewUsername((prev) => prev || json.profile!.username!);
         }
       } else {
         setAdminStatus({
@@ -129,18 +131,31 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
         profile: null,
       });
     } finally {
-      setChecking(false);
+      if (isInitial) {
+        setChecking(false);
+      }
     }
-  }, [newUsername]);
+  }, []);
 
   useEffect(() => {
-    verifyAdminSession();
+    verifyAdminSession(true);
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      verifyAdminSession();
+    const { data: sub } = supabase.auth.onAuthStateChange((event: any) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        verifyAdminSession(false);
+      } else if (event === "SIGNED_OUT") {
+        setAdminStatus({
+          authenticated: false,
+          isAdmin: false,
+          mustChangeCredentials: false,
+          schemaReady: true,
+          user: null,
+          profile: null,
+        });
+      }
     });
 
     return () => {
@@ -384,7 +399,7 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             <button
               type="button"
-              onClick={verifyAdminSession}
+              onClick={() => verifyAdminSession(true)}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#3A2008] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider"
             >
               <RefreshCw className="w-3.5 h-3.5" />

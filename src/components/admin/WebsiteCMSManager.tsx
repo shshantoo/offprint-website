@@ -450,7 +450,7 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
           { id: "sections", label: "Homepage Sections & CTA", icon: Sliders },
           { id: "ticker", label: "Ticker Disciplines", icon: Globe },
           { id: "testimonials", label: "Client Testimonials", icon: Quote },
-          { id: "global", label: "Studio Info & Metadata", icon: Settings },
+          { id: "global", label: "Global Site Settings", icon: Settings },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -1714,19 +1714,49 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
 
           <form
             onSubmit={handleSaveGlobalSettings}
-            className="rounded-3xl bg-white border border-[#E5DEC9] p-6 sm:p-8 space-y-5 text-xs max-w-3xl"
+            className="rounded-3xl bg-white border border-[#E5DEC9] p-6 sm:p-8 space-y-6 text-xs max-w-4xl shadow-xs"
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="font-semibold block mb-1 text-[#141210]">Agency Brand Name</label>
-                <input
-                  type="text"
-                  value={globalSettings.agency_name || "OFFPRINT (অফপ্রিন্ট)"}
-                  onChange={(e) =>
-                    setGlobalSettings((prev) => ({ ...prev, agency_name: e.target.value }))
-                  }
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
+            {/* Brand Display Names & Tagline */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-sm text-[#141210] border-b border-[#E5DEC9] pb-2">
+                1. Brand Identity &amp; Studio Tagline
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Full Agency Name</label>
+                  <input
+                    type="text"
+                    value={globalSettings.agency_name || "OFFPRINT (অফপ্রিন্ট)"}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, agency_name: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Brand Name (English)</label>
+                  <input
+                    type="text"
+                    value={globalSettings.brand_name_en || "OFFPRINT"}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, brand_name_en: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Brand Name (Bangla)</label>
+                  <input
+                    type="text"
+                    value={globalSettings.brand_name_bn || "অফপ্রিন্ট"}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, brand_name_bn: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1743,86 +1773,230 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="font-semibold block mb-1 text-[#141210]">Inquiry Email</label>
-                <input
-                  type="email"
-                  value={globalSettings.email || "inquiry@offprint.agency"}
-                  onChange={(e) =>
-                    setGlobalSettings((prev) => ({ ...prev, email: e.target.value }))
-                  }
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
+            {/* Public Contact & Location Information */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-sm text-[#141210] border-b border-[#E5DEC9] pb-2">
+                2. Contact &amp; Physical Studio Information
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Inquiry Email *</label>
+                  <input
+                    type="email"
+                    value={globalSettings.email || "inquiry@offprint.agency"}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Public Phone / Hotline</label>
+                  <input
+                    type="text"
+                    value={globalSettings.phone || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    placeholder="+880 1..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">WhatsApp Hotline</label>
+                  <input
+                    type="text"
+                    value={globalSettings.whatsapp_number || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, whatsapp_number: e.target.value }))
+                    }
+                    placeholder="+880 1..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Physical Studio Address</label>
+                  <input
+                    type="text"
+                    value={globalSettings.address || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, address: e.target.value }))
+                    }
+                    placeholder="Gulshan & Banani, Dhaka, Bangladesh"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Operating Hours Label</label>
+                  <input
+                    type="text"
+                    value={globalSettings.operating_hours_label || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, operating_hours_label: e.target.value }))
+                    }
+                    placeholder="Sunday – Thursday (9:00 AM – 7:00 PM BST)..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Social Media Channels */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-sm text-[#141210] border-b border-[#E5DEC9] pb-2">
+                3. Social Media Channels
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Instagram URL</label>
+                  <input
+                    type="text"
+                    value={globalSettings.instagram_url || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, instagram_url: e.target.value }))
+                    }
+                    placeholder="https://instagram.com/..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">Facebook URL</label>
+                  <input
+                    type="text"
+                    value={globalSettings.facebook_url || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, facebook_url: e.target.value }))
+                    }
+                    placeholder="https://facebook.com/..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">LinkedIn URL</label>
+                  <input
+                    type="text"
+                    value={globalSettings.linkedin_url || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, linkedin_url: e.target.value }))
+                    }
+                    placeholder="https://linkedin.com/..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">YouTube Channel URL</label>
+                  <input
+                    type="text"
+                    value={globalSettings.youtube_url || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, youtube_url: e.target.value }))
+                    }
+                    placeholder="https://youtube.com/@..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Editorial & Copyright */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-sm text-[#141210] border-b border-[#E5DEC9] pb-2">
+                4. Footer Copy &amp; Section Visibility
+              </h4>
 
               <div>
                 <label className="font-semibold block mb-1 text-[#141210]">
-                  Studio Phone (Optional)
+                  Footer Description &amp; Studio Bio
                 </label>
-                <input
-                  type="text"
-                  value={globalSettings.phone || ""}
+                <textarea
+                  rows={2}
+                  value={globalSettings.footer_description || ""}
                   onChange={(e) =>
-                    setGlobalSettings((prev) => ({ ...prev, phone: e.target.value }))
+                    setGlobalSettings((prev) => ({ ...prev, footer_description: e.target.value }))
                   }
-                  placeholder="Leave blank if no public hotline"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="font-semibold block mb-1 text-[#141210]">Studio Location</label>
-              <input
-                type="text"
-                value={globalSettings.address || ""}
-                onChange={(e) =>
-                  setGlobalSettings((prev) => ({ ...prev, address: e.target.value }))
-                }
-                placeholder="Gulshan & Banani, Dhaka, Bangladesh"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-              <div>
-                <label className="font-semibold block mb-1 text-[#141210]">Instagram URL</label>
-                <input
-                  type="text"
-                  value={globalSettings.instagram_url || ""}
-                  onChange={(e) =>
-                    setGlobalSettings((prev) => ({ ...prev, instagram_url: e.target.value }))
-                  }
-                  placeholder="https://instagram.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  placeholder="Independent photography studio and fine-art print atelier in Dhaka, Bangladesh..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] resize-none"
                 />
               </div>
 
-              <div>
-                <label className="font-semibold block mb-1 text-[#141210]">Facebook URL</label>
-                <input
-                  type="text"
-                  value={globalSettings.facebook_url || ""}
-                  onChange={(e) =>
-                    setGlobalSettings((prev) => ({ ...prev, facebook_url: e.target.value }))
-                  }
-                  placeholder="https://facebook.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">
+                    Footer Supporting Badge Text
+                  </label>
+                  <input
+                    type="text"
+                    value={globalSettings.footer_supporting_text || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, footer_supporting_text: e.target.value }))
+                    }
+                    placeholder="Editorial Photography & Print Atelier"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold block mb-1 text-[#141210]">
+                    Footer Copyright Notice
+                  </label>
+                  <input
+                    type="text"
+                    value={globalSettings.footer_copyright || ""}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, footer_copyright: e.target.value }))
+                    }
+                    placeholder="© 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="font-semibold block mb-1 text-[#141210]">LinkedIn URL</label>
-                <input
-                  type="text"
-                  value={globalSettings.linkedin_url || ""}
-                  onChange={(e) =>
-                    setGlobalSettings((prev) => ({ ...prev, linkedin_url: e.target.value }))
-                  }
-                  placeholder="https://linkedin.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]"
-                />
+              {/* Visibility Switches */}
+              <div className="flex flex-wrap gap-4 pt-2">
+                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={globalSettings.show_booking_links ?? true}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, show_booking_links: e.target.checked }))
+                    }
+                    className="rounded accent-[#3A2008]"
+                  />
+                  <span className="font-semibold text-[#141210]">Show Booking Links in Footer</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={globalSettings.show_print_links ?? true}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, show_print_links: e.target.checked }))
+                    }
+                    className="rounded accent-[#3A2008]"
+                  />
+                  <span className="font-semibold text-[#141210]">Show Print &amp; Merch Links in Footer</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={globalSettings.show_social_links ?? true}
+                    onChange={(e) =>
+                      setGlobalSettings((prev) => ({ ...prev, show_social_links: e.target.checked }))
+                    }
+                    className="rounded accent-[#3A2008]"
+                  />
+                  <span className="font-semibold text-[#141210]">Show Social Media Links in Footer</span>
+                </label>
               </div>
             </div>
 
@@ -1832,7 +2006,7 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
                 disabled={savingGlobal}
                 className="px-6 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold cursor-pointer shadow-xs disabled:opacity-50"
               >
-                {savingGlobal ? "Saving..." : "Save Global Information"}
+                {savingGlobal ? "Saving..." : "Save Global Site Settings"}
               </button>
             </div>
           </form>

@@ -359,15 +359,22 @@ export async function PATCH(
       }
 
       const activeDeliveryUrl = (delivery_url ?? existing.delivery_url ?? "").trim();
-      const validityDays = Number(delivery_validity_days || existing.delivery_validity_days || 14);
+      const validityDays = Number(
+        delivery_validity_days ||
+          existing.delivery_validity_days ||
+          targetStage?.default_validity_days ||
+          14
+      );
 
-      if (targetStage?.is_final_delivery) {
+      const requiresPhotoLink =
+        targetStage?.is_link_required || targetStage?.is_final_delivery;
+
+      if (requiresPhotoLink) {
         if (!activeDeliveryUrl) {
           return NextResponse.json(
             {
               success: false,
-              error:
-                "A valid photo-bank gallery URL is required to advance this booking to the Final Gallery Delivered stage.",
+              error: `A valid photo-bank gallery URL is required to advance this booking to "${targetStage?.name || "Delivery Stage"}".`,
             },
             { status: 400 }
           );
@@ -378,7 +385,7 @@ export async function PATCH(
       let calculatedDeliveryStatus = existing.delivery_status || "pending";
       let deliverySentAt = existing.delivery_sent_at;
 
-      if (targetStage?.is_final_delivery && activeDeliveryUrl) {
+      if ((targetStage?.is_final_delivery || targetStage?.allow_link_delivery) && activeDeliveryUrl) {
         calculatedDeliveryStatus = "delivered";
         deliverySentAt = new Date().toISOString();
         const expDate = new Date(Date.now() + validityDays * 86_400_000);
@@ -420,12 +427,13 @@ export async function PATCH(
         });
       }
 
-      // If moved to final delivery and notification requested, trigger Gmail dispatch
-      if (
-        targetStage?.is_final_delivery &&
-        send_notification_email &&
-        activeDeliveryUrl
-      ) {
+      // If delivery link is attached and notification is permitted & requested, trigger Gmail dispatch
+      const shouldDispatchEmail =
+        activeDeliveryUrl &&
+        (send_notification_email || targetStage?.auto_send_email) &&
+        (targetStage?.is_final_delivery || targetStage?.send_email_on_delivery);
+
+      if (shouldDispatchEmail) {
         try {
           const emailRes = await sendBookingNotificationEmail({
             booking: updated,

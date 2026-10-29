@@ -43,11 +43,40 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const bookings = bookingsRes.data || [];
+      let totalSpent = 0;
+      let lastBookingAt: string | null = null;
+
+      for (const b of bookings) {
+        if (b.total_price != null && !isNaN(Number(b.total_price))) {
+          totalSpent += Number(b.total_price);
+        }
+        if (b.start_at && (!lastBookingAt || b.start_at > lastBookingAt)) {
+          lastBookingAt = b.start_at;
+        }
+      }
+
+      const raw = userRes.data;
+      const normalizedUser = {
+        id: raw.id,
+        email: raw.email || "",
+        username: raw.username || null,
+        full_name: raw.full_name || raw.username || "Client",
+        phone: raw.phone || "",
+        company_or_institution: raw.company_or_institution || null,
+        student_id: raw.student_id || null,
+        role: raw.role || "client",
+        created_at: raw.created_at || null,
+        bookings_count: bookings.length,
+        total_spent: totalSpent,
+        last_booking_at: lastBookingAt,
+      };
+
       return NextResponse.json({
         success: true,
         data: {
-          user: userRes.data,
-          bookings: bookingsRes.data || [],
+          user: normalizedUser,
+          bookings,
         },
       });
     }
@@ -118,3 +147,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

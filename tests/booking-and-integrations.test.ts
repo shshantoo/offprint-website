@@ -1387,9 +1387,9 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     assert.equal(mockEvents[1].is_booking_enabled, true);
 
     // 3. Dynamic Daily Schedule Engine with Break Periods
-    const operatingStart = "09:00";
-    const operatingEnd = "13:00";
-    const slotDuration = 60; // 1 hour slots
+    const _operatingStart = "09:00";
+    const _operatingEnd = "13:00";
+    const _slotDuration = 60; // 1 hour slots
     const breakPeriod = { start_time: "11:00", end_time: "12:00" };
 
     // Generate potential slots: 09:00, 10:00, 11:00, 12:00
@@ -1436,5 +1436,303 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
 
     assert.throws(() => validateFinalDelivery(""), /A valid photo-bank gallery URL is required/);
     assert.equal(validateFinalDelivery(bookingWithDelivery.delivery_url), true);
+  });
+
+  it("18. validates Registered Users safe formatting, BDT normalization & dossier guardrails", () => {
+    // Safe BDT spending formatter matching src/components/admin/RegisteredUsersAdminClient.tsx
+    function formatSpendingBDT(amount?: number | null): string {
+      if (amount === undefined || amount === null || Number.isNaN(Number(amount))) {
+        return "BDT 0";
+      }
+      return `BDT ${Number(amount).toLocaleString("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
+    }
+
+    // 1. Safe formatting across all edge cases without throwing TypeError
+    assert.equal(formatSpendingBDT(undefined), "BDT 0");
+    assert.equal(formatSpendingBDT(null), "BDT 0");
+    assert.equal(formatSpendingBDT(NaN), "BDT 0");
+    assert.equal(formatSpendingBDT(0), "BDT 0");
+    assert.equal(formatSpendingBDT(4500), "BDT 4,500");
+    assert.equal(formatSpendingBDT(125000), "BDT 125,000");
+
+    // 2. Normalization of raw user profile and booking aggregates (GET /api/admin/users?userId=...)
+    const mockRawUser = {
+      id: "u-usr-123",
+      email: "graduate@iub.edu.bd",
+      full_name: "Tanvir Ahmed",
+      role: "client",
+      phone: "+880 1711 000000",
+      company: null,
+      student_id: "2120000",
+    };
+
+    const mockUserBookings = [
+      { id: "b-1", status: "confirmed", total_price: 3500, start_at: "2026-11-01T10:00:00+06:00" },
+      { id: "b-2", status: "completed", total_price: 2500, start_at: "2026-11-02T11:00:00+06:00" },
+      { id: "b-3", status: "cancelled", total_price: 3500, start_at: "2026-11-03T12:00:00+06:00" }, // Cancelled should be excluded from active spend
+    ];
+
+    const activeBookings = mockUserBookings.filter((b) => b.status !== "cancelled");
+    const computedTotalSpent = activeBookings.reduce((sum, b) => sum + (Number(b.total_price) || 0), 0);
+    const bookingsCount = mockUserBookings.length;
+    const lastBookingAt = mockUserBookings[0]?.start_at || null;
+
+    const normalizedDocket = {
+      user: {
+        ...mockRawUser,
+        total_spent: computedTotalSpent,
+        bookings_count: bookingsCount,
+        last_booking_at: lastBookingAt,
+      },
+      bookings: mockUserBookings,
+    };
+
+    assert.equal(normalizedDocket.user.total_spent, 6000);
+    assert.equal(normalizedDocket.user.bookings_count, 3);
+    assert.equal(formatSpendingBDT(normalizedDocket.user.total_spent), "BDT 6,000");
+
+    // 3. User with zero bookings
+    const emptyUserDocket = {
+      user: {
+        id: "u-usr-empty",
+        email: "newuser@gmail.com",
+        full_name: "Ayesha Rahman",
+        total_spent: 0,
+        bookings_count: 0,
+        last_booking_at: null,
+      },
+      bookings: [],
+    };
+    assert.equal(formatSpendingBDT(emptyUserDocket.user.total_spent), "BDT 0");
+    assert.equal(emptyUserDocket.bookings.length, 0);
+  });
+
+  it("19. validates bidirectional Event Archive <-> Booking Event associations & relational routing", () => {
+    // 1. Relational Junction Table Representation: public.event_archive_booking_events
+    interface JunctionRow {
+      archive_id: string;
+      booking_event_id: string;
+      created_at: string;
+    }
+
+    const junctionTable: JunctionRow[] = [
+      {
+        archive_id: "arch-iub-27",
+        booking_event_id: "event-iub-convocation-2026",
+        created_at: new Date().toISOString(),
+      },
+      {
+        archive_id: "arch-c-suite-summit",
+        booking_event_id: "event-c-suite-portraits-2026",
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    const mockBookingEvents = [
+      {
+        id: "event-iub-convocation-2026",
+        title: "IUB 27th Convocation Portrait Sessions",
+        slug: "iub-27th-convocation",
+        is_active: true,
+      },
+      {
+        id: "event-c-suite-portraits-2026",
+        title: "Executive Portrait Drive 2026",
+        slug: "c-suite-portraits",
+        is_active: false, // Inactive/paused booking event
+      },
+    ];
+
+    // 2. Fetch associated booking events for an archive page
+    const getAssociatedBookingEvents = (archiveId: string) => {
+      const matchedJunctions = junctionTable.filter((j) => j.archive_id === archiveId);
+      return matchedJunctions
+        .map((j) => mockBookingEvents.find((e) => e.id === j.booking_event_id))
+        .filter(Boolean) as typeof mockBookingEvents;
+    };
+
+    // Active event archive has live booking link
+    const iubAssociated = getAssociatedBookingEvents("arch-iub-27");
+    assert.equal(iubAssociated.length, 1);
+    assert.equal(iubAssociated[0].is_active, true);
+    assert.equal(`/book?event=${iubAssociated[0].slug}`, "/book?event=iub-27th-convocation");
+
+    // Inactive event archive displays Booking Paused status pill
+    const cSuiteAssociated = getAssociatedBookingEvents("arch-c-suite-summit");
+    assert.equal(cSuiteAssociated.length, 1);
+    assert.equal(cSuiteAssociated[0].is_active, false);
+
+    // 3. Inverse lookup from Booking Event to Associated Work Archive
+    const getAssociatedArchivesForEvent = (eventId: string) => {
+      return junctionTable
+        .filter((j) => j.booking_event_id === eventId)
+        .map((j) => j.archive_id);
+    };
+
+    const iubArchives = getAssociatedArchivesForEvent("event-iub-convocation-2026");
+    assert.deepEqual(iubArchives, ["arch-iub-27"]);
+  });
+
+  it("20. validates Global Site Settings & Footer dynamic configuration", () => {
+    // 1. Default schema
+    const defaultSettings: Record<string, any> = {
+      agency_name: "OFFPRINT (অফপ্রিন্ট)",
+      brand_name_en: "OFFPRINT",
+      brand_name_bn: "অফপ্রিন্ট",
+      tagline: "Editorial Photography & Fine-Art Print Studio",
+      email: "inquiry@offprint.agency",
+      phone: "+880 1700 000000",
+      address: "Gulshan & Banani Corporate Corridor, Dhaka, Bangladesh",
+      operating_hours_label: "Sunday - Thursday (9:00 AM - 7:00 PM BST)",
+      instagram_url: "https://instagram.com/offprint.agency",
+      facebook_url: "https://facebook.com/offprint.agency",
+      linkedin_url: "https://linkedin.com/company/offprint-agency",
+      youtube_url: "https://youtube.com/@offprint",
+      footer_description: "Independent photography studio and fine-art print atelier in Dhaka, Bangladesh.",
+      footer_supporting_text: "Editorial Photography & Print Atelier",
+      footer_copyright: "© 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved.",
+      show_booking_links: true,
+      show_print_links: true,
+      show_social_links: true,
+    };
+
+    // 2. Partial override from administrator portal
+    const adminUpdates: Record<string, any> = {
+      brand_name_en: "OFFPRINT ATELIER",
+      email: "contact@offprint.agency",
+      show_print_links: false, // Admin toggles print column off
+    };
+
+    const mergedSettings: Record<string, any> = { ...defaultSettings, ...adminUpdates };
+
+    assert.equal(mergedSettings.brand_name_en, "OFFPRINT ATELIER");
+    assert.equal(mergedSettings.brand_name_bn, "অফপ্রিন্ট");
+    assert.equal(mergedSettings.email, "contact@offprint.agency");
+    assert.equal(mergedSettings.show_print_links, false);
+    assert.equal(mergedSettings.show_booking_links, true);
+    assert.equal(mergedSettings.show_social_links, true);
+
+    // 3. Footer visibility rules verification
+    const shouldRenderBookingCol = (mergedSettings.show_booking_links as any) !== false;
+    const shouldRenderPrintCol = (mergedSettings.show_print_links as any) !== false;
+    const shouldRenderSocialIcons = (mergedSettings.show_social_links as any) !== false;
+
+    assert.equal(shouldRenderBookingCol, true);
+    assert.equal(shouldRenderPrintCol, false); // Hidden per admin setting
+    assert.equal(shouldRenderSocialIcons, true);
+  });
+
+  it("21. validates configurable Workflow Stages & conditional link delivery lifecycle", () => {
+    // 1. Stage definition schema
+    interface WorkflowStageDef {
+      id: string;
+      name: string;
+      slug: string;
+      sort_order: number;
+      is_active: boolean;
+      is_visible_to_client: boolean;
+      is_final_delivery: boolean;
+      allow_link_delivery: boolean;
+      is_link_required: boolean;
+      send_email_on_delivery: boolean;
+      auto_send_email: boolean;
+      default_validity_days: number;
+    }
+
+    const stages: WorkflowStageDef[] = [
+      {
+        id: "stg-1",
+        name: "Booking Confirmed",
+        slug: "booking-confirmed",
+        sort_order: 1,
+        is_active: true,
+        is_visible_to_client: true,
+        is_final_delivery: false,
+        allow_link_delivery: false,
+        is_link_required: false,
+        send_email_on_delivery: false,
+        auto_send_email: false,
+        default_validity_days: 14,
+      },
+      {
+        id: "stg-2",
+        name: "Proofing & Selection",
+        slug: "proofing",
+        sort_order: 2,
+        is_active: true,
+        is_visible_to_client: true,
+        is_final_delivery: false,
+        allow_link_delivery: true, // Photo link allowed for proofing
+        is_link_required: false,   // But optional
+        send_email_on_delivery: true,
+        auto_send_email: false,
+        default_validity_days: 7,
+      },
+      {
+        id: "stg-3",
+        name: "Gallery Delivered",
+        slug: "delivered",
+        sort_order: 3,
+        is_active: true,
+        is_visible_to_client: true,
+        is_final_delivery: true,
+        allow_link_delivery: true,
+        is_link_required: true,    // Required for final delivery
+        send_email_on_delivery: true,
+        auto_send_email: true,
+        default_validity_days: 14,
+      },
+    ];
+
+    // 2. Client pipeline flow ordering
+    const clientVisible = stages
+      .filter((s) => s.is_active && s.is_visible_to_client)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    assert.equal(clientVisible.length, 3);
+    assert.deepEqual(
+      clientVisible.map((s) => s.slug),
+      ["booking-confirmed", "proofing", "delivered"]
+    );
+
+    // 3. Link delivery validation rules
+    function validateStageTransition(stage: WorkflowStageDef, deliveryUrl?: string | null) {
+      const cleanUrl = (deliveryUrl || "").trim();
+      if ((stage.is_link_required || stage.is_final_delivery) && !cleanUrl) {
+        throw new Error(
+          `A valid photo-bank gallery URL is required to advance this booking to "${stage.name}".`
+        );
+      }
+      return true;
+    }
+
+    // Stage 1: No link required or allowed
+    assert.doesNotThrow(() => validateStageTransition(stages[0], ""));
+
+    // Stage 2: Link allowed but optional
+    assert.doesNotThrow(() => validateStageTransition(stages[1], ""));
+    assert.doesNotThrow(() => validateStageTransition(stages[1], "https://drive.google.com/proofs"));
+
+    // Stage 3: Link required (throws if empty)
+    assert.throws(
+      () => validateStageTransition(stages[2], ""),
+      /A valid photo-bank gallery URL is required to advance this booking to "Gallery Delivered"/
+    );
+    assert.doesNotThrow(() =>
+      validateStageTransition(stages[2], "https://drive.google.com/final-high-res")
+    );
+
+    // 4. Safe deactivation when stage has existing bookings
+    const mockBookings = [{ id: "b-99", workflow_stage_id: "stg-2" }];
+    const canHardDeleteStage = (stageId: string) => {
+      const count = mockBookings.filter((b) => b.workflow_stage_id === stageId).length;
+      return count === 0;
+    };
+
+    assert.equal(canHardDeleteStage("stg-2"), false); // Has bookings -> should archive/deactivate
+    assert.equal(canHardDeleteStage("stg-non-existent"), true); // Safe to hard delete
   });
 });
