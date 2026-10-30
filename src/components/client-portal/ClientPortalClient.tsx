@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Booking, UserProfile } from "@/types/database";
 import { formatDhakaDateTime, isCutoffOpen } from "@/lib/booking/timezone";
@@ -310,6 +311,15 @@ export default function ClientPortalClient() {
     return (
       <div className="max-w-lg mx-auto">
         <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-7 sm:p-10 shadow-sm space-y-6">
+          <div className="flex justify-center pb-1">
+            <Image
+              src="/brand/offprint-black-logo.png"
+              alt="OFFPRINT"
+              width={160}
+              height={45}
+              className="h-10 w-auto object-contain"
+            />
+          </div>
           <div className="text-center space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FAF7F2] border border-[#E5DEC9] text-xs font-mono text-[#A66D35]">
               <ShieldCheck className="w-3.5 h-3.5" />

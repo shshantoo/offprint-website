@@ -27,16 +27,42 @@ interface InteractiveQuoteBuilderProps {
   defaultType?: InquiryType;
   defaultScope?: string;
   show?: boolean;
+  showPrintMerch?: boolean;
 }
 
 export default function InteractiveQuoteBuilder({
   defaultType = "event_coverage",
   defaultScope = "",
   show = true,
+  showPrintMerch = false,
 }: InteractiveQuoteBuilderProps) {
+  const [printMerchEnabled, setPrintMerchEnabled] = useState(showPrintMerch);
   const [inquiryType, setInquiryType] = useState<InquiryType>(defaultType);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedLeadId, setSubmittedLeadId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/site-settings")
+      .then((res) => res.json())
+      .then((json) => {
+        if (mounted && json.success && json.data) {
+          const enabled = Boolean(
+            json.data.show_print_merch_frontend ??
+              json.data.show_print_links ??
+              false
+          );
+          setPrintMerchEnabled(enabled);
+          if (!enabled && inquiryType === "physical_merch") {
+            setInquiryType("event_coverage");
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [inquiryType]);
 
   const {
     register,
@@ -168,34 +194,36 @@ export default function InteractiveQuoteBuilder({
         ) : (
           /* Main Interactive Form Card */
           <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] shadow-sm p-6 sm:p-10 relative overflow-hidden">
-            {/* Top Dual Wing Toggle */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8">
-              <button
-                type="button"
-                onClick={() => setInquiryType("event_coverage")}
-                className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                  inquiryType === "event_coverage"
-                    ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
-                    : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9]"
-                }`}
-              >
-                <Video className="w-4 h-4 text-[#D9A673]" />
-                <span>Media & Event Coverage Wing</span>
-              </button>
+            {/* Top Dual Wing Toggle (shown only when print merch is enabled) */}
+            {printMerchEnabled && (
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8">
+                <button
+                  type="button"
+                  onClick={() => setInquiryType("event_coverage")}
+                  className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
+                    inquiryType === "event_coverage"
+                      ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
+                      : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9]"
+                  }`}
+                >
+                  <Video className="w-4 h-4 text-[#D9A673]" />
+                  <span>Media & Event Coverage Wing</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setInquiryType("physical_merch")}
-                className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                  inquiryType === "physical_merch"
-                    ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
-                    : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9]"
-                }`}
-              >
-                <Printer className="w-4 h-4 text-[#D9A673]" />
-                <span>Physical Print & Merch Wing</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setInquiryType("physical_merch")}
+                  className={`w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
+                    inquiryType === "physical_merch"
+                      ? "bg-[#3A2008] text-[#FAF7F2] border border-[#3A2008] shadow-xs"
+                      : "bg-[#FAF7F2] text-[#5C5449] hover:text-[#141210] border border-[#E5DEC9]"
+                  }`}
+                >
+                  <Printer className="w-4 h-4 text-[#D9A673]" />
+                  <span>Physical Print & Merch Wing</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <input type="hidden" {...register("inquiry_type")} value={inquiryType} />

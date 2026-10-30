@@ -1220,6 +1220,7 @@ export interface SiteSettingsMap {
     footer_copyright?: string;
     show_booking_links?: boolean;
     show_print_links?: boolean;
+    show_print_merch_frontend?: boolean;
     show_social_links?: boolean;
     seo_meta_title?: string;
     seo_meta_description?: string;
@@ -1328,7 +1329,7 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   show_flagship: true,
   show_testimonials: true,
   show_services: true,
-  show_print_bridge: true,
+  show_print_bridge: false,
   show_quote_builder: false,
   show_closing_cta: true,
   flagship_heading: "Selected Productions & Editorial Archives",
@@ -1377,7 +1378,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettingsMap = {
     footer_supporting_text: "Editorial Photography & Print Atelier",
     footer_copyright: "© 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved. Registered under Laws of Bangladesh.",
     show_booking_links: true,
-    show_print_links: true,
+    show_print_links: false,
+    show_print_merch_frontend: false,
     show_social_links: true,
     seo_meta_title: "OFFPRINT (অফপ্রিন্ট) • Photography Studio & Print Agency",
     seo_meta_description:

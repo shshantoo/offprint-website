@@ -321,6 +321,9 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
    - Centralized slider timing, interval, transition duration, and pause-on-hover configuration across all studio sliders (`hero_slider`, `archives_carousel`, `highlighted_events`, `event_hero_slider`) within `public.site_settings` under key `'slider_settings'`.
    - Guaranteed atomic validation, boundary clamping, and admin management through `/admin-portal` under *Website Content & Leads → Slider Settings*.
    - Completely purged obsolete prototype row `The Royal Crimson Wedding Story` from `public.portfolio_projects`.
+6. **`20261030000004_print_merch_visibility.sql`**:
+   - Set default public visibility of Physical Print & Merchandise sections, promotional links, and public navbar items to false (OFF) within `public.site_settings` under keys `'homepage_config'` (`show_print_bridge: false`) and `'general'` (`show_print_links: false`, `show_print_merch_frontend: false`).
+   - Integrated dynamic brand logo marks (`offprint-colour-logo.png`, `offprint-black-logo.png`, and `offprint-white-logo.png`) respecting scene contrast without redundant text.
 
 ---
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -265,13 +266,19 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-8 shadow-lg space-y-6">
-          <div className="w-12 h-12 rounded-2xl bg-[#3A2008] text-[#FAF7F2] flex items-center justify-center mx-auto">
-            <Lock className="w-6 h-6" />
+          <div className="flex justify-center pb-1">
+            <Image
+              src="/brand/offprint-black-logo.png"
+              alt="OFFPRINT"
+              width={160}
+              height={45}
+              className="h-10 w-auto object-contain"
+            />
           </div>
 
           <div className="text-center space-y-2">
             <span className="text-[11px] font-mono uppercase tracking-widest text-[#A66D35]">
-              OFFPRINT • Executive &amp; Studio Administration
+              Executive &amp; Studio Administration
             </span>
             <h1 className="text-2xl font-extrabold text-[#141210]">
               Admin Portal Sign In
@@ -557,18 +564,17 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
       <div className="bg-[#FFFFFF] border-b border-[#E5DEC9] sticky top-0 z-40 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between py-3.5">
           <div className="flex items-center gap-4">
-            <Link href="/admin-portal" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#3A2008] text-[#FAF7F2] flex items-center justify-center font-mono font-bold text-xs">
-                OP
-              </div>
-              <div>
-                <span className="font-extrabold tracking-tight text-sm text-[#141210]">
-                  OFFPRINT
-                </span>
-                <span className="ml-2 text-[10px] font-mono uppercase bg-[#F4EFE6] text-[#3A2008] px-2 py-0.5 rounded border border-[#D5CCB4] font-semibold">
-                  Admin Operations &amp; CMS
-                </span>
-              </div>
+            <Link href="/admin-portal" className="flex items-center gap-3">
+              <Image
+                src="/brand/offprint-black-logo.png"
+                alt="OFFPRINT"
+                width={120}
+                height={32}
+                className="h-7 w-auto object-contain"
+              />
+              <span className="text-[10px] font-mono uppercase bg-[#F4EFE6] text-[#3A2008] px-2 py-0.5 rounded border border-[#D5CCB4] font-semibold">
+                Admin Operations &amp; CMS
+              </span>
             </Link>
 
             {pathname !== "/admin-portal" && (

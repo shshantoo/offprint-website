@@ -11,7 +11,6 @@ import ArchivesCarousel from "./ArchivesCarousel";
 import FeaturedEventSlider from "./FeaturedEventSlider";
 import {
   ChevronRight,
-  Camera,
   Sparkles,
   Layers,
 } from "lucide-react";
@@ -31,8 +30,8 @@ export default function FlagshipShowcase({
   featuredArchives = [],
   categories = [],
   sliderSettings,
-  heading = "Curated Milestone Archives & Signature Productions",
-  subheading = "From academic convocations to executive leadership portraiture and institutional documentary archives in Dhaka, explore our signature productions.",
+  heading: _heading,
+  subheading: _subheading,
   show = true,
 }: FlagshipShowcaseProps) {
   // In-place category filter state: "all" or category slug/name/id
@@ -73,53 +72,12 @@ export default function FlagshipShowcase({
 
   return (
     <section
-      className="py-16 sm:py-24 lg:py-32 bg-[#FAF7F2] relative border-t border-[#E5DEC9]"
+      className="py-16 sm:py-20 lg:py-24 bg-[#FAF7F2] relative border-t border-[#E5DEC9]"
       id="works"
       aria-label="Photography Works & Archives"
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16 lg:space-y-24">
-        {/* Section Header with Oversized Editorial Typography */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-[#E5DEC9] pb-8">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="font-editorial text-3xl sm:text-4xl text-[#A66D35] font-light">
-                02
-              </span>
-              <span className="h-px w-8 bg-[#E5DEC9]" />
-              <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#5C4028]">
-                CURATED VISUAL CHRONICLES
-              </span>
-            </div>
-
-            <h2 className="font-editorial text-4xl sm:text-5xl lg:text-6xl font-normal tracking-tight text-[#141210]">
-              {heading}
-            </h2>
-
-            <p className="text-sm sm:text-base text-[#5C5449] max-w-2xl leading-relaxed">
-              {subheading}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <Link
-              href="/book/convocation"
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-widest transition-all shadow-xs"
-            >
-              <Camera className="w-3.5 h-3.5 text-[#D9A673]" />
-              <span>Book a Session</span>
-            </Link>
-
-            <Link
-              href="/works"
-              className="inline-flex items-center gap-1.5 px-4 py-3 rounded-xl bg-[#FFFFFF] hover:bg-[#F4EFE6] border border-[#E5DEC9] text-xs font-semibold uppercase tracking-wider text-[#141210] transition-colors"
-            >
-              <span>View Full Works Directory</span>
-              <ChevronRight className="w-4 h-4 text-[#A66D35]" />
-            </Link>
-          </div>
-        </div>
-
-        {/* 1. ARCHIVES SECTION (ALL PUBLISHED EVENT ARCHIVES WITH IN-PLACE CATEGORY FILTERING & AUTOMATIC CAROUSEL) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16 lg:space-y-20">
+        {/* ARCHIVES SECTION (ALL PUBLISHED EVENT ARCHIVES WITH IN-PLACE CATEGORY FILTERING & AUTOMATIC CAROUSEL) */}
         <div className="space-y-8" aria-label="Archives">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E5DEC9] pb-4">
             <div className="flex items-center gap-2.5">
@@ -128,7 +86,7 @@ export default function FlagshipShowcase({
                 Archives
               </h3>
             </div>
-            <div className="flex items-center gap-3 text-xs font-mono text-[#877D70]">
+            <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-[#877D70]">
               <span className="text-[#A66D35]">
                 {archives.length} {archives.length === 1 ? "Production" : "Productions"} Documented
               </span>
@@ -136,6 +94,14 @@ export default function FlagshipShowcase({
               <span>
                 {activeCategories.length} {activeCategories.length === 1 ? "Category" : "Categories"} Active
               </span>
+              <span>•</span>
+              <Link
+                href="/works"
+                className="text-[#3A2008] hover:text-[#5C4028] font-semibold flex items-center gap-1 transition-colors"
+              >
+                <span>View Full Works Directory</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
           </div>
 

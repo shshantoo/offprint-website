@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   Menu,
@@ -12,9 +13,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export default function Header() {
+interface HeaderProps {
+  showPrintMerch?: boolean;
+}
+
+export default function Header({ showPrintMerch = false }: HeaderProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [printVisible, setPrintVisible] = useState(showPrintMerch);
   const pathname = usePathname();
   const isHome = pathname === "/";
 
@@ -26,12 +32,32 @@ export default function Header() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/site-settings")
+      .then((res) => res.json())
+      .then((json) => {
+        if (mounted && json.success && json.data) {
+          const isVisible = Boolean(
+            json.data.show_print_merch_frontend ??
+              json.data.show_print_links ??
+              false
+          );
+          setPrintVisible(isVisible);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const isTransparent = isHome && !scrolled;
 
   const navLinks = [
     { label: "Book a Session", href: "/book" },
     { label: "Works Archive", href: "/works" },
-    { label: "Print & Merch", href: "/print-solutions" },
+    ...(printVisible ? [{ label: "Print & Merch", href: "/print-solutions" }] : []),
     { label: "About", href: "/about" },
     { label: "Contact", href: "/contact" },
   ];
@@ -51,48 +77,20 @@ export default function Header() {
         )}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-          {/* Brand Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <div
-              className={cn(
-                "w-9 h-9 rounded-lg flex items-center justify-center font-bold text-lg shadow-xs transition-colors",
-                isTransparent
-                  ? "bg-white/20 border border-white/30 text-[#FAF7F2] backdrop-blur-sm group-hover:bg-white/30"
-                  : "bg-[#3A2008] border border-[#5C4028] text-[#FAF7F2] group-hover:bg-[#5C4028]"
-              )}
-            >
-              <span className="font-mono text-[#FAF7F2]">O</span>
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "font-extrabold tracking-tight text-lg transition-colors",
-                    isTransparent ? "text-[#FAF7F2] drop-shadow-xs" : "text-[#141210]"
-                  )}
-                >
-                  OFFPRINT
-                </span>
-                <span
-                  className={cn(
-                    "text-xs font-semibold tracking-wider px-1.5 py-0.5 rounded transition-colors",
-                    isTransparent
-                      ? "text-[#FAF7F2] bg-white/15 border border-white/20 backdrop-blur-xs"
-                      : "text-[#3A2008] bg-[#F4EFE6] border border-[#DED6C6]"
-                  )}
-                >
-                  অফপ্রিন্ট
-                </span>
-              </div>
-              <span
-                className={cn(
-                  "text-[10px] tracking-widest uppercase font-mono transition-colors",
-                  isTransparent ? "text-[#D5CCB4]" : "text-[#655E55]"
-                )}
-              >
-                Photography &amp; Print Studio
-              </span>
-            </div>
+          {/* Brand Logo Only */}
+          <Link
+            href="/"
+            className="flex items-center group transition-transform active:scale-95"
+            aria-label="OFFPRINT Photography & Print Studio"
+          >
+            <Image
+              src={isTransparent ? "/brand/offprint-white-logo.png" : "/brand/offprint-black-logo.png"}
+              alt="OFFPRINT Photography & Print Studio"
+              width={140}
+              height={40}
+              className="h-9 w-auto object-contain transition-opacity duration-300"
+              priority
+            />
           </Link>
 
           {/* Desktop Navigation */}

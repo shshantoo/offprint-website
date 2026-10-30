@@ -103,11 +103,7 @@ export default function ServicesBento({
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[#E5DEC9] pb-8">
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <span className="font-editorial text-3xl sm:text-4xl text-[#A66D35] font-light">
-                04
-              </span>
-              <span className="h-px w-8 bg-[#E5DEC9]" />
-              <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#5C4028]">
+              <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#A66D35] font-semibold">
                 MEDIA &amp; COVERAGE WING
               </span>
             </div>

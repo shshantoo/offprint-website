@@ -1081,8 +1081,8 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
                 },
                 {
                   key: "show_print_bridge",
-                  label: "Print & Merch Bridge",
-                  desc: "Debossed cards & frames preview",
+                  label: "Show Physical Print & Merchandise Section",
+                  desc: "Debossed cards & frames preview on homepage (Default: OFF)",
                 },
                 {
                   key: "show_quote_builder",
@@ -1095,7 +1095,10 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
                   desc: "Final appointment booking section",
                 },
               ].map((item) => {
-                const isChecked = (homepageConfig as any)?.[item.key] !== false;
+                const isChecked =
+                  item.key === "show_print_bridge" || item.key === "show_quote_builder"
+                    ? Boolean((homepageConfig as any)?.[item.key])
+                    : (homepageConfig as any)?.[item.key] !== false;
                 return (
                   <label
                     key={item.key}
@@ -2559,13 +2562,23 @@ export default function WebsiteCMSManager({ onNotify }: WebsiteCMSManagerProps) 
                 <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={globalSettings.show_print_links ?? true}
+                    checked={Boolean(
+                      globalSettings.show_print_merch_frontend ??
+                        globalSettings.show_print_links ??
+                        false
+                    )}
                     onChange={(e) =>
-                      setGlobalSettings((prev) => ({ ...prev, show_print_links: e.target.checked }))
+                      setGlobalSettings((prev) => ({
+                        ...prev,
+                        show_print_merch_frontend: e.target.checked,
+                        show_print_links: e.target.checked,
+                      }))
                     }
                     className="rounded accent-[#3A2008]"
                   />
-                  <span className="font-semibold text-[#141210]">Show Print &amp; Merch Links in Footer</span>
+                  <span className="font-semibold text-[#141210]">
+                    Show Print &amp; Merch on Public Website (Navbar, Footer, Direct Route)
+                  </span>
                 </label>
 
                 <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] cursor-pointer">

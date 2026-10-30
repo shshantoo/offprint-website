@@ -31,11 +31,7 @@ export default function PrintSolutionsBridge({ show = true }: PrintSolutionsBrid
             {/* Left Content Column */}
             <div className="lg:col-span-7 space-y-6">
               <div className="flex items-center gap-2">
-                <span className="font-editorial text-3xl sm:text-4xl text-[#A66D35] font-light">
-                  05
-                </span>
-                <span className="h-px w-8 bg-[#E5DEC9]" />
-                <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#5C4028]">
+                <span className="text-xs font-mono uppercase tracking-[0.25em] text-[#A66D35] font-semibold">
                   PHYSICAL PRINT &amp; MERCHANDISE WING
                 </span>
               </div>

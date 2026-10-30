@@ -8,7 +8,9 @@ import {
   Film,
   Printer,
   Calendar,
+  Sparkles,
 } from "lucide-react";
+import { fetchSiteSettings } from "@/lib/data-service";
 
 export const metadata: Metadata = {
   title: "About Us • OFFPRINT (অফপ্রিন্ট)",
@@ -16,7 +18,14 @@ export const metadata: Metadata = {
     "Learn about OFFPRINT, a Govt. Registered photography studio and corporate agency in Bangladesh established in Sep 2025.",
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const siteSettings = await fetchSiteSettings();
+  const showPrintMerch = Boolean(
+    siteSettings.general.show_print_merch_frontend ??
+      siteSettings.general.show_print_links ??
+      false
+  );
+
   return (
     <div className="py-16 md:py-24 bg-[#FAF7F2]">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-20">
@@ -30,7 +39,7 @@ export default function AboutPage() {
             The OFFPRINT Story
           </h1>
           <p className="text-base sm:text-lg text-[#5C5449] max-w-2xl mx-auto leading-relaxed">
-            Bridging editorial portraiture, cinematic storytelling, and tactile physical print craftsmanship for Bangladesh’s leading institutions, graduates, and executives.
+            Bridging editorial portraiture, cinematic storytelling, and tangible archival print craftsmanship for Bangladesh’s leading institutions, graduates, and executives.
           </p>
         </div>
 
@@ -57,15 +66,27 @@ export default function AboutPage() {
                   </p>
                 </div>
               </div>
-              <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-start gap-3">
-                <Printer className="w-5 h-5 text-[#A66D35] shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-bold text-[#141210]">2. Physical Print & Merch Solutions</h4>
-                  <p className="text-xs text-[#5C5449] mt-0.5">
-                    Imported 650 GSM cotton debossed cards, optical-grade acrylic frames, custom foam-fitted swag gift suites, and precision laser-engraved brass pens.
-                  </p>
+              {showPrintMerch ? (
+                <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-start gap-3">
+                  <Printer className="w-5 h-5 text-[#A66D35] shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-bold text-[#141210]">2. Physical Print & Merch Solutions</h4>
+                    <p className="text-xs text-[#5C5449] mt-0.5">
+                      Imported 650 GSM cotton debossed cards, optical-grade acrylic frames, custom foam-fitted swag gift suites, and precision laser-engraved brass pens.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-[#A66D35] shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-bold text-[#141210]">2. Fine-Art Archival Framing & Prints</h4>
+                    <p className="text-xs text-[#5C5449] mt-0.5">
+                      Museum-grade acid-free framing, optical acrylic mounts, and tangible archival print editions engineered for longevity.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ShieldCheck,
   Mail,
@@ -34,7 +35,8 @@ const INITIAL_SETTINGS: GeneralSettings = {
   footer_supporting_text: "Editorial Photography & Print Atelier",
   footer_copyright: "© 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved. Registered under Laws of Bangladesh.",
   show_booking_links: true,
-  show_print_links: true,
+  show_print_links: false,
+  show_print_merch_frontend: false,
   show_social_links: true,
 };
 
@@ -100,7 +102,11 @@ export default function Footer() {
   }, []);
 
   const showBooking = settings.show_booking_links !== false;
-  const showPrint = settings.show_print_links !== false;
+  const showPrint = Boolean(
+    settings.show_print_merch_frontend ??
+      settings.show_print_links ??
+      false
+  );
   const showSocial = settings.show_social_links !== false;
 
   return (
@@ -109,20 +115,14 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 mb-12">
           {/* Brand Info & Govt Reg */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-[#3A2008] border border-[#5C4028] flex items-center justify-center text-[#FAF7F2] font-bold text-lg font-mono">
-                <span>{(settings.brand_name_en || "OFFPRINT").charAt(0)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold tracking-tight text-xl text-[#141210]">
-                  {settings.brand_name_en || "OFFPRINT"}
-                </span>
-                {settings.brand_name_bn && (
-                  <span className="text-xs font-semibold text-[#3A2008] px-1.5 py-0.5 rounded bg-[#FAF7F2] border border-[#DED6C6]">
-                    {settings.brand_name_bn}
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center">
+              <Image
+                src="/brand/offprint-black-logo.png"
+                alt="OFFPRINT Photography & Print Studio"
+                width={150}
+                height={42}
+                className="h-10 w-auto object-contain"
+              />
             </div>
 
             <p className="text-xs text-[#655E55] leading-relaxed max-w-sm">

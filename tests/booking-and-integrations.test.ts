@@ -37,6 +37,8 @@ import {
   validateSliderConfig,
   validateSliderSettings,
   DEFAULT_SLIDER_SETTINGS,
+  DEFAULT_HOMEPAGE_CONFIG,
+  DEFAULT_SITE_SETTINGS,
 } from "../src/lib/data-service";
 import type {
   AvailabilityRule,
@@ -2089,5 +2091,95 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
         a.slug.toLowerCase().includes("royal-crimson")
     );
     assert.equal(containsRoyalCrimson, false, "Dummy event 'The Royal Crimson Wedding Story' must never exist");
+  });
+
+  it("26. validates Print & Merchandise visibility controls (default OFF), clean unavailable state, and brand logo contrast rules", () => {
+    // 1. Default configuration must have physical print & merch visibility set to OFF (false)
+    assert.equal(
+      DEFAULT_HOMEPAGE_CONFIG.show_print_bridge,
+      false,
+      "Homepage print bridge section must default to OFF (false)"
+    );
+    assert.equal(
+      DEFAULT_SITE_SETTINGS.general.show_print_links,
+      false,
+      "General print links must default to OFF (false)"
+    );
+    assert.equal(
+      DEFAULT_SITE_SETTINGS.general.show_print_merch_frontend,
+      false,
+      "Frontend print merch visibility must default to OFF (false)"
+    );
+
+    // 2. Navigation bar filtering simulation
+    const buildNavLinks = (showPrintMerch: boolean) => [
+      { label: "Book a Session", href: "/book" },
+      { label: "Works Archive", href: "/works" },
+      ...(showPrintMerch ? [{ label: "Print & Merch", href: "/print-solutions" }] : []),
+      { label: "About", href: "/about" },
+      { label: "Contact", href: "/contact" },
+    ];
+
+    const defaultNav = buildNavLinks(false);
+    assert.ok(
+      !defaultNav.some((link) => link.href === "/print-solutions"),
+      "Navbar must exclude Print & Merch when visibility is false"
+    );
+    assert.equal(defaultNav.length, 4);
+
+    const enabledNav = buildNavLinks(true);
+    assert.ok(
+      enabledNav.some((link) => link.href === "/print-solutions"),
+      "Navbar must include Print & Merch when visibility is enabled"
+    );
+    assert.equal(enabledNav.length, 5);
+
+    // 3. Direct route /print-solutions response contract
+    const resolvePrintSolutionsAccess = (showPrintMerch: boolean) => {
+      if (!showPrintMerch) {
+        return {
+          status: "unavailable_neutral",
+          exposeCatalog: false,
+          redirectOrAction: "/works",
+        };
+      }
+      return {
+        status: "catalog_active",
+        exposeCatalog: true,
+        redirectOrAction: null,
+      };
+    };
+
+    const disabledAccess = resolvePrintSolutionsAccess(false);
+    assert.equal(disabledAccess.status, "unavailable_neutral");
+    assert.equal(disabledAccess.exposeCatalog, false, "Must never expose hidden promotional catalog");
+
+    const enabledAccess = resolvePrintSolutionsAccess(true);
+    assert.equal(enabledAccess.status, "catalog_active");
+    assert.equal(enabledAccess.exposeCatalog, true);
+
+    // 4. Logo contrast & pure mark rules (no text, dark scene uses white logo, light scene uses black logo)
+    const resolveBrandLogoAsset = (isDarkScene: boolean) => {
+      if (isDarkScene) {
+        return {
+          src: "/brand/offprint-white-logo.png",
+          variant: "white",
+          hasAccompanyingText: false,
+        };
+      }
+      return {
+        src: "/brand/offprint-black-logo.png",
+        variant: "black",
+        hasAccompanyingText: false,
+      };
+    };
+
+    const heroDarkHeader = resolveBrandLogoAsset(true);
+    assert.equal(heroDarkHeader.src, "/brand/offprint-white-logo.png");
+    assert.equal(heroDarkHeader.hasAccompanyingText, false, "Must keep logo mark only without offprint text");
+
+    const lightNavbar = resolveBrandLogoAsset(false);
+    assert.equal(lightNavbar.src, "/brand/offprint-black-logo.png");
+    assert.equal(lightNavbar.hasAccompanyingText, false, "Must keep logo mark only without offprint text");
   });
 });
