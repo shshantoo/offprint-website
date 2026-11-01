@@ -152,11 +152,18 @@ export default function ConvocationBookingClient({
   }, []);
 
   const loadAvailability = useCallback(
-    async (monthStr: string = currentMonth, dateStr: string | null = selectedDate) => {
+    async (
+      monthStr: string = currentMonth,
+      dateStr: string | null = selectedDate,
+      packageIdOverride?: string
+    ) => {
       try {
         setLoading(true);
         const [yearPart, monthPart] = monthStr.split("-");
         const flowToken = getOrCreateFlowToken();
+        const activePkgId =
+          packageIdOverride !== undefined ? packageIdOverride : selectedPackageId;
+
         const params = new URLSearchParams({
           type: "special",
           slug: eventSlug,
@@ -167,6 +174,9 @@ export default function ConvocationBookingClient({
         if (dateStr) {
           params.set("date", dateStr);
         }
+        if (activePkgId) {
+          params.set("packageId", activePkgId);
+        }
 
         const res = await fetch(`/api/availability?${params.toString()}`, {
           cache: "no-store",
@@ -175,9 +185,9 @@ export default function ConvocationBookingClient({
         setData(json);
 
         const activePkgs = (json.packages || []).filter((p) => p.is_active !== false);
-        if (activePkgs.length === 1) {
+        if (activePkgs.length === 1 && !activePkgId) {
           setSelectedPackageId(activePkgs[0].id);
-        } else if (activePkgs.length > 1 && !selectedPackageId) {
+        } else if (activePkgs.length > 1 && !activePkgId && !selectedPackageId) {
           setSelectedPackageId(activePkgs[0].id);
         }
 
@@ -247,6 +257,35 @@ export default function ConvocationBookingClient({
     return () => clearInterval(timer);
   }, [holdId, holdRemainingSeconds, currentMonth, selectedDate, loadAvailability]);
 
+  const handleSelectPackage = async (pkgId: string) => {
+    if (pkgId === selectedPackageId) return;
+
+    // Release any previous slot hold before changing package
+    if (holdId) {
+      try {
+        const flowToken = getOrCreateFlowToken();
+        await fetch("/api/bookings/hold", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "release",
+            hold_id: holdId,
+            flow_token: flowToken,
+          }),
+        });
+      } catch (err) {
+        console.warn("Failed to release hold on package switch:", err);
+      }
+    }
+
+    setHoldId(null);
+    setHoldRemainingSeconds(0);
+    setHoldError(null);
+    setSelectedSlot(null);
+    setSelectedPackageId(pkgId);
+    loadAvailability(currentMonth, selectedDate, pkgId);
+  };
+
   const handleSelectDate = (dateStr: string) => {
     setSelectedDate(dateStr);
     setSelectedSlot(null);
@@ -274,6 +313,7 @@ export default function ConvocationBookingClient({
           session_id: slot.session_id,
           slot_id: slot.slot_id,
           flow_token: flowToken,
+          package_id: selectedPackage?.id || null,
           hold_duration_mins: event?.slot_hold_duration_mins || 5,
         }),
       });
@@ -340,32 +380,26 @@ export default function ConvocationBookingClient({
   const event = data?.event || null;
   const isEventBookable = event?.status === "published";
 
-  const customQuestions: CustomBookingQuestion[] = useMemo(() => {
-    return Array.isArray(event?.custom_questions) && event.custom_questions.length > 0
+  const customQuestions: CustomBookingQuestion[] =
+    Array.isArray(event?.custom_questions) && event.custom_questions.length > 0
       ? [...event.custom_questions].sort(
           (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
         )
       : IUB_CONVOCATION_DEFAULT_QUESTIONS;
-  }, [event]);
 
-  const visibleQuestions = useMemo(() => {
-    return customQuestions.filter((q) => q.is_visible !== false);
-  }, [customQuestions]);
+  const visibleQuestions = customQuestions.filter((q) => q.is_visible !== false);
 
   const frameConfig = event?.frame_printing_config || null;
-  const activeFrameTypes = useMemo(() => {
-    return (
-      event?.frame_printing_config?.frame_types?.filter(
-        (f) => f.is_active !== false
-      ) || []
-    );
-  }, [event]);
+  const activeFrameTypes =
+    event?.frame_printing_config?.frame_types?.filter(
+      (f) => f.is_active !== false
+    ) || [];
 
   useEffect(() => {
     if (activeFrameTypes.length > 0 && !selectedFrameId) {
       setSelectedFrameId(activeFrameTypes[0].id);
     }
-  }, [activeFrameTypes, selectedFrameId]);
+  }, [activeFrameTypes.length, selectedFrameId]);
 
   const isFramePrintingAvailable = Boolean(
     frameConfig?.enabled &&
@@ -922,7 +956,7 @@ export default function ConvocationBookingClient({
               return (
                 <div
                   key={pkg.id}
-                  onClick={() => setSelectedPackageId(pkg.id)}
+                  onClick={() => handleSelectPackage(pkg.id)}
                   className={`cursor-pointer rounded-3xl p-6 flex flex-col justify-between border transition-all ${
                     isSelected
                       ? "bg-[#F4EFE6] border-2 border-[#3A2008] shadow-md"

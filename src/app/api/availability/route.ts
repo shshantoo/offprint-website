@@ -18,9 +18,11 @@ export async function GET(request: NextRequest) {
     if (type === "convocation" || type === "special") {
       const slug = searchParams.get("slug") || "iub-27th-convocation";
       const eventId = searchParams.get("eventId") || undefined;
+      const packageId = searchParams.get("packageId") || searchParams.get("package_id") || undefined;
       const result = await getConvocationAvailabilityFromDb({
         slug,
         eventId,
+        packageId,
         year,
         month,
         date,

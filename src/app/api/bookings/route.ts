@@ -41,12 +41,32 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const statusFilter = searchParams.get("status");
+    const userEmail = auth.context.user.email?.toLowerCase();
+
+    // Securely backfill user_id on any bookings created with this verified email
+    if (userEmail) {
+      try {
+        await supabase
+          .from("bookings")
+          .update({ user_id: auth.context.user.id })
+          .ilike("client_email", userEmail)
+          .is("user_id", null);
+      } catch {
+        // Continue even if update encounters permission restriction
+      }
+    }
 
     let query = supabase
       .from("bookings")
-      .select("*, workflow_stage:workflow_stages(id, name, slug, sort_order, is_final_delivery, is_visible_to_client, client_facing_description)")
-      .eq("user_id", auth.context.user.id)
-      .order("start_at", { ascending: false });
+      .select("*, workflow_stage:workflow_stages(id, name, slug, sort_order, is_final_delivery, is_visible_to_client, client_facing_description)");
+
+    if (userEmail) {
+      query = query.or(`user_id.eq.${auth.context.user.id},client_email.ilike.${userEmail}`);
+    } else {
+      query = query.eq("user_id", auth.context.user.id);
+    }
+
+    query = query.order("start_at", { ascending: false });
 
     if (statusFilter && statusFilter !== "all") {
       query = query.eq("status", statusFilter);

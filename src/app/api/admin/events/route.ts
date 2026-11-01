@@ -44,6 +44,7 @@ export async function GET() {
       packagesRes,
       rulesRes,
       blocksRes,
+      sessionPackagesRes,
     ] = await Promise.all([
       supabase
         .from("booking_events")
@@ -74,7 +75,27 @@ export async function GET() {
         .from("availability_blocks")
         .select("*")
         .order("start_at", { ascending: true }),
+      Promise.resolve(
+        supabase
+          .from("event_session_packages")
+          .select("session_id, package_id")
+      ).catch(() => ({ data: [] })),
     ]);
+
+    const sessionPackagesMap = new Map<string, string[]>();
+    const spList = (sessionPackagesRes as any)?.data || [];
+    if (Array.isArray(spList)) {
+      for (const sp of spList) {
+        const list = sessionPackagesMap.get(sp.session_id) || [];
+        list.push(sp.package_id);
+        sessionPackagesMap.set(sp.session_id, list);
+      }
+    }
+
+    const sessionsWithPackages = (sessionsRes.data || []).map((sess: any) => ({
+      ...sess,
+      package_ids: sessionPackagesMap.get(sess.id) || [],
+    }));
 
     if (eventsRes.error && isMissingSchemaError(eventsRes.error)) {
       return NextResponse.json({
@@ -87,6 +108,7 @@ export async function GET() {
         packages: [],
         rules: [],
         blocks: [],
+        session_packages: [],
       });
     }
 
@@ -94,12 +116,13 @@ export async function GET() {
       success: true,
       schemaReady: true,
       events: eventsRes.data || [],
-      sessions: sessionsRes.data || [],
+      sessions: sessionsWithPackages,
       slots: slotsRes.data || [],
       services: servicesRes.data || [],
       packages: packagesRes.data || [],
       rules: rulesRes.data || [],
       blocks: blocksRes.data || [],
+      session_packages: spList,
     });
   } catch (err: any) {
     const parsed = formatAdminError(err);
@@ -455,7 +478,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const { auto_generate_slots, ...sessionRow } = parsed.data;
+      const { auto_generate_slots, package_ids: sessionPkgIds, ...sessionRow } = parsed.data;
+      const targetPackageIds: string[] = Array.isArray(body.package_ids)
+        ? body.package_ids
+        : Array.isArray(sessionPkgIds)
+        ? sessionPkgIds
+        : [];
+
       const { data: savedSession, error } = await supabase
         .from("event_sessions")
         .upsert({
@@ -467,19 +496,105 @@ export async function POST(request: NextRequest) {
 
       if (error) throw formatAdminError(error);
 
+      // Sync event_session_packages junction records
+      if (savedSession) {
+        try {
+          await supabase
+            .from("event_session_packages")
+            .delete()
+            .eq("session_id", savedSession.id);
+
+          if (targetPackageIds.length > 0) {
+            const rows = targetPackageIds.map((pkgId: string) => ({
+              session_id: savedSession.id,
+              package_id: pkgId,
+            }));
+            await supabase.from("event_session_packages").insert(rows);
+          }
+        } catch {
+          // Table may not exist yet or be empty
+        }
+      }
+
       let generatedCount = 0;
       if (auto_generate_slots !== false && savedSession) {
-        const { data: genData, error: genErr } = await supabase.rpc(
-          "generate_event_session_slots",
-          { p_session_id: savedSession.id }
-        );
-        if (genErr) throw formatAdminError(genErr);
-        generatedCount = Number(genData || 0);
+        // Fetch attached packages for multi-duration generation
+        let attachedPackages: Array<{ id: string; name: string; duration_mins: number }> = [];
+        if (targetPackageIds.length > 0) {
+          const { data: pkgs } = await supabase
+            .from("photography_packages")
+            .select("id, name, duration_mins")
+            .in("id", targetPackageIds);
+          if (pkgs && pkgs.length > 0) {
+            attachedPackages = pkgs;
+          }
+        }
+
+        if (attachedPackages.length > 0) {
+          // Multi-duration schedule generation for attached packages
+          const proposed = calculateProposedSchedule({
+            start_date: savedSession.session_date,
+            end_date: savedSession.session_date,
+            operating_days: [new Date(`${savedSession.session_date}T00:00:00Z`).getUTCDay()],
+            operating_start_time: savedSession.start_time.slice(0, 5),
+            operating_end_time: savedSession.end_time.slice(0, 5),
+            slot_duration_mins: savedSession.slot_duration_mins,
+            slot_interval_mins: savedSession.slot_duration_mins,
+            capacity_per_slot: savedSession.capacity_per_slot,
+            buffer_before_mins: savedSession.buffer_before_mins,
+            buffer_after_mins: savedSession.buffer_after_mins,
+            packages: attachedPackages,
+          });
+
+          const slotsToInsert = proposed.sessions.flatMap((s) =>
+            s.slots.map((sl) => ({
+              event_id: savedSession.event_id,
+              session_id: savedSession.id,
+              slot_date: sl.slot_date,
+              start_at: sl.start_at,
+              end_at: sl.end_at,
+              effective_start_at: sl.effective_start_at,
+              effective_end_at: sl.effective_end_at,
+              capacity: sl.capacity,
+              duration_mins: sl.duration_mins,
+              package_ids: sl.package_ids,
+              buffer_before_mins: savedSession.buffer_before_mins,
+              buffer_after_mins: savedSession.buffer_after_mins,
+              status: "available",
+              booked_count: 0,
+            }))
+          );
+
+          if (slotsToInsert.length > 0) {
+            // Remove unbooked slots on this session before re-generating
+            await supabase
+              .from("event_time_slots")
+              .delete()
+              .eq("session_id", savedSession.id)
+              .eq("booked_count", 0);
+
+            const { data: insData } = await supabase
+              .from("event_time_slots")
+              .insert(slotsToInsert)
+              .select("id");
+            generatedCount = insData?.length || slotsToInsert.length;
+          }
+        } else {
+          const { data: genData, error: genErr } = await supabase.rpc(
+            "generate_event_session_slots",
+            { p_session_id: savedSession.id }
+          );
+          if (genErr) throw formatAdminError(genErr);
+          generatedCount = Number(genData || 0);
+        }
       }
 
       return NextResponse.json({
         success: true,
-        data: savedSession,
+        data: {
+          ...savedSession,
+          package_ids: targetPackageIds,
+        },
         generatedSlotsCount: generatedCount,
       });
     }

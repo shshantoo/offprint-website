@@ -174,6 +174,8 @@ export interface BookingSlotHold {
   event_id?: string | null;
   session_id?: string | null;
   slot_id: string;
+  package_id?: string | null;
+  duration_mins?: number;
   flow_token: string;
   user_id?: string | null;
   hold_duration_mins: number;
@@ -284,8 +286,18 @@ export interface EventSession {
   capacity_per_slot: number;
   is_active: boolean;
   notes?: string | null;
+  package_ids?: string[];
+  available_packages?: PhotographyPackage[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface EventSessionPackage {
+  id: string;
+  session_id: string;
+  package_id: string;
+  created_at?: string;
+  package?: PhotographyPackage;
 }
 
 export type SlotStatus = 'available' | 'blocked' | 'closed';
@@ -297,6 +309,8 @@ export interface EventTimeSlot {
   slot_date: string; // YYYY-MM-DD
   start_at: string; // ISO timestamptz
   end_at: string; // ISO timestamptz
+  duration_mins?: number;
+  package_ids?: string[];
   buffer_before_mins: number;
   buffer_after_mins: number;
   effective_start_at: string;

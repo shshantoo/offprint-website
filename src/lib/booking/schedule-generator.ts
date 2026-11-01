@@ -11,6 +11,13 @@ export interface BreakPeriod {
   end_time: string; // "14:00"
 }
 
+export interface SchedulePackageConfig {
+  id: string;
+  name: string;
+  duration_mins: number;
+  price?: number;
+}
+
 export interface ScheduleConfig {
   start_date: string; // "YYYY-MM-DD"
   end_date: string; // "YYYY-MM-DD"
@@ -23,6 +30,7 @@ export interface ScheduleConfig {
   buffer_before_mins?: number; // e.g. 0
   buffer_after_mins?: number; // e.g. 10
   break_periods?: BreakPeriod[];
+  packages?: SchedulePackageConfig[];
 }
 
 export interface ProposedSlot {
@@ -34,6 +42,8 @@ export interface ProposedSlot {
   effective_start_at: string;
   effective_end_at: string;
   capacity: number;
+  duration_mins: number;
+  package_ids: string[];
 }
 
 export interface ProposedSession {
@@ -45,6 +55,8 @@ export interface ProposedSession {
   capacity_per_slot: number;
   buffer_before_mins: number;
   buffer_after_mins: number;
+  package_ids: string[];
+  slots_by_duration: Record<number, number>;
   slots: ProposedSlot[];
 }
 
@@ -138,6 +150,25 @@ export function calculateProposedSchedule(
     endMins: timeToMinutes(bp.end_time),
   }));
 
+  // Resolve packages and their distinct appointment durations
+  const packageConfigs = (config.packages || []).filter(
+    (p) => p && typeof p.duration_mins === "number" && p.duration_mins > 0
+  );
+
+  const durationGroups = new Map<number, string[]>();
+  if (packageConfigs.length > 0) {
+    for (const p of packageConfigs) {
+      const dur = p.duration_mins;
+      const arr = durationGroups.get(dur) || [];
+      if (!arr.includes(p.id)) arr.push(p.id);
+      durationGroups.set(dur, arr);
+    }
+  } else {
+    durationGroups.set(slotDuration, []);
+  }
+
+  const allPackageIds = packageConfigs.map((p) => p.id);
+
   const proposedSessions: ProposedSession[] = [];
   let totalSlotsCount = 0;
 
@@ -150,40 +181,62 @@ export function calculateProposedSchedule(
 
     if (operatingDays.includes(dow)) {
       const sessionSlots: ProposedSlot[] = [];
-      let cursorMins = opStartMins;
+      const slotsByDuration: Record<number, number> = {};
 
-      while (cursorMins + slotDuration <= opEndMins) {
-        const slotStartMins = cursorMins;
-        const slotEndMins = cursorMins + slotDuration;
+      // Generate slots for each distinct package duration
+      for (const [durMins, pkgIds] of durationGroups.entries()) {
+        const stepInterval = packageConfigs.length > 0
+          ? durMins
+          : slotInterval;
 
-        // Check if overlaps any break period:
-        // Slot overlaps break if slotStart < breakEnd && slotEnd > breakStart
-        const overlapsBreak = breaks.some(
-          (b) => slotStartMins < b.endMins && slotEndMins > b.startMins
-        );
+        let cursorMins = opStartMins;
+        let countForDuration = 0;
 
-        if (!overlapsBreak) {
-          const slotStartTime = minutesToHHMM(slotStartMins);
-          const slotEndTime = minutesToHHMM(slotEndMins);
-          const startIso = dhakaDateTimeToISO(ymd, slotStartTime);
-          const endIso = dhakaDateTimeToISO(ymd, slotEndTime);
-          const effStartIso = addMinutesToISO(startIso, -bufferBefore);
-          const effEndIso = addMinutesToISO(endIso, bufferAfter);
+        while (cursorMins + durMins <= opEndMins) {
+          const slotStartMins = cursorMins;
+          const slotEndMins = cursorMins + durMins;
 
-          sessionSlots.push({
-            slot_date: ymd,
-            start_time: slotStartTime,
-            end_time: slotEndTime,
-            start_at: startIso,
-            end_at: endIso,
-            effective_start_at: effStartIso,
-            effective_end_at: effEndIso,
-            capacity: slotCapacity,
-          });
+          // Check if overlaps any break period
+          const overlapsBreak = breaks.some(
+            (b) => slotStartMins < b.endMins && slotEndMins > b.startMins
+          );
+
+          if (!overlapsBreak) {
+            const slotStartTime = minutesToHHMM(slotStartMins);
+            const slotEndTime = minutesToHHMM(slotEndMins);
+            const startIso = dhakaDateTimeToISO(ymd, slotStartTime);
+            const endIso = dhakaDateTimeToISO(ymd, slotEndTime);
+            const effStartIso = addMinutesToISO(startIso, -bufferBefore);
+            const effEndIso = addMinutesToISO(endIso, bufferAfter);
+
+            sessionSlots.push({
+              slot_date: ymd,
+              start_time: slotStartTime,
+              end_time: slotEndTime,
+              start_at: startIso,
+              end_at: endIso,
+              effective_start_at: effStartIso,
+              effective_end_at: effEndIso,
+              capacity: slotCapacity,
+              duration_mins: durMins,
+              package_ids: pkgIds,
+            });
+
+            countForDuration++;
+          }
+
+          cursorMins += stepInterval;
         }
 
-        cursorMins += slotInterval;
+        slotsByDuration[durMins] = countForDuration;
       }
+
+      // Sort session slots chronologically, then by duration
+      sessionSlots.sort((a, b) => {
+        const diff = Date.parse(a.start_at) - Date.parse(b.start_at);
+        if (diff !== 0) return diff;
+        return a.duration_mins - b.duration_mins;
+      });
 
       proposedSessions.push({
         session_date: ymd,
@@ -194,6 +247,8 @@ export function calculateProposedSchedule(
         capacity_per_slot: slotCapacity,
         buffer_before_mins: bufferBefore,
         buffer_after_mins: bufferAfter,
+        package_ids: allPackageIds,
+        slots_by_duration: slotsByDuration,
         slots: sessionSlots,
       });
 

@@ -38,10 +38,12 @@ export function computeConvocationSlots(params: {
   event: BookingEvent;
   slots: EventTimeSlot[];
   sessions?: EventSession[];
-  blocks: AvailabilityBlock[];
-  busyIntervals: BusyInterval[];
-  activeHolds?: Array<{ slot_id: string; flow_token?: string }>;
+  blocks?: AvailabilityBlock[];
+  busyIntervals?: BusyInterval[];
+  activeHolds?: Array<{ slot_id: string; flow_token?: string; start_at?: string; end_at?: string; effective_start_at?: string; effective_end_at?: string }>;
   flowToken?: string;
+  selectedPackageId?: string;
+  packageDurationMins?: number;
   now?: Date;
   ignoreEventWindow?: boolean;
 }): ComputedTimeSlot[] {
@@ -49,10 +51,12 @@ export function computeConvocationSlots(params: {
     event,
     slots,
     sessions = [],
-    blocks,
-    busyIntervals,
+    blocks = [],
+    busyIntervals = [],
     activeHolds = [],
     flowToken,
+    selectedPackageId,
+    packageDurationMins,
     now = new Date(),
     ignoreEventWindow = false,
   } = params;
@@ -74,26 +78,61 @@ export function computeConvocationSlots(params: {
     .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at))
     .map((slot) => {
       const session = slot.session_id ? sessionMap.get(slot.session_id) : undefined;
-      const durationMins = Math.max(
-        1,
-        Math.round((Date.parse(slot.end_at) - Date.parse(slot.start_at)) / 60_000)
-      );
+      const durationMins = slot.duration_mins && slot.duration_mins > 0
+        ? slot.duration_mins
+        : Math.max(1, Math.round((Date.parse(slot.end_at) - Date.parse(slot.start_at)) / 60_000));
 
-      // Count active bookings referencing this slot OR use the authoritative slot.booked_count
-      const activeBookingsForSlot = busyIntervals.filter(
-        (b) => b.slot_id && b.slot_id === slot.id
+      // Overlapping bookings across this slot or any slot sharing the resource pool
+      const overlappingBookings = busyIntervals.filter(
+        (b) =>
+          b.slot_id === slot.id ||
+          intervalsOverlap(
+            slot.effective_start_at || slot.start_at,
+            slot.effective_end_at || slot.end_at,
+            b.effective_start_at || b.start_at,
+            b.effective_end_at || b.end_at
+          )
       ).length;
-      const bookedCount = Math.max(slot.booked_count, activeBookingsForSlot);
+      const bookedCount = Math.max(slot.booked_count, overlappingBookings);
 
-      // Count active unexpired holds from OTHER visitors
-      const holdsFromOthers = activeHolds.filter(
-        (h) => h.slot_id === slot.id && (!flowToken || h.flow_token !== flowToken)
-      ).length;
+      // Overlapping unexpired holds from OTHER visitors
+      const holdsFromOthers = activeHolds.filter((h) => {
+        if (flowToken && h.flow_token === flowToken) return false;
+        if (h.slot_id === slot.id) return true;
+        if (h.start_at && h.end_at) {
+          return intervalsOverlap(
+            slot.effective_start_at,
+            slot.effective_end_at,
+            h.effective_start_at || h.start_at,
+            h.effective_end_at || h.end_at
+          );
+        }
+        return false;
+      }).length;
 
       const remaining = Math.max(0, slot.capacity - bookedCount - holdsFromOthers);
 
       let state: "available" | "full" | "unavailable" = "available";
       let unavailableReason: string | undefined;
+
+      // Check package eligibility
+      const isPackageDurationMismatch =
+        typeof packageDurationMins === "number" &&
+        packageDurationMins > 0 &&
+        durationMins !== packageDurationMins;
+
+      const isSlotPackageExcluded =
+        selectedPackageId &&
+        Array.isArray(slot.package_ids) &&
+        slot.package_ids.length > 0 &&
+        !slot.package_ids.includes(selectedPackageId);
+
+      const isSessionPackageExcluded =
+        selectedPackageId &&
+        session &&
+        Array.isArray(session.package_ids) &&
+        session.package_ids.length > 0 &&
+        !session.package_ids.includes(selectedPackageId);
 
       if (!eventOpen) {
         state = "unavailable";
@@ -104,6 +143,12 @@ export function computeConvocationSlots(params: {
       } else if (session && !session.is_active) {
         state = "unavailable";
         unavailableReason = "Session paused";
+      } else if (isPackageDurationMismatch) {
+        state = "unavailable";
+        unavailableReason = "Incompatible with selected package duration";
+      } else if (isSlotPackageExcluded || isSessionPackageExcluded) {
+        state = "unavailable";
+        unavailableReason = "Package not available for this session";
       } else if (slot.status !== "available") {
         state = "unavailable";
         unavailableReason = slot.status === "blocked" ? "Slot blocked" : "Slot closed";
@@ -123,27 +168,15 @@ export function computeConvocationSlots(params: {
             )
         );
 
-        // Check cross-type traditional bookings overlapping [effective_start_at, effective_end_at]
-        const overlappingTraditional = busyIntervals.find(
-          (b) =>
-            b.booking_type === "traditional" &&
-            intervalsOverlap(
-              slot.effective_start_at,
-              slot.effective_end_at,
-              b.effective_start_at,
-              b.effective_end_at
-            )
-        );
-
         if (overlappingBlock) {
           state = "unavailable";
           unavailableReason = overlappingBlock.title || "Blocked period";
-        } else if (overlappingTraditional) {
-          state = "unavailable";
-          unavailableReason = "Resource reserved for another session";
         } else if (remaining <= 0) {
           state = "full";
-          unavailableReason = holdsFromOthers > 0 ? "Temporarily reserved by another client" : "Slot capacity reached";
+          unavailableReason =
+            holdsFromOthers > 0
+              ? "Temporarily reserved by another client"
+              : "Slot capacity reached";
         }
       }
 

@@ -540,6 +540,7 @@ export const eventSessionSchema = z.object({
   capacity_per_slot: z.coerce.number().int().min(1).max(100).default(1),
   is_active: z.boolean().default(true),
   notes: z.string().optional().nullable(),
+  package_ids: z.array(z.string().uuid()).optional().default([]),
   auto_generate_slots: z.boolean().optional().default(true),
 });
 

@@ -472,5 +472,40 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
 
 ---
 
+## 15. Release 1.6.0 — Passwordless Client Portal & Package-Linked Convocation Scheduling
+
+### 15.1 Passwordless Client Portal Access
+- **Complete Elimination of Client Passwords:**
+  - Password inputs, "Create Password", "Set New Password", password registration, and password recovery forms completely removed from `/client-portal`.
+  - Clients never need to choose, remember, or reset a password.
+  - Dedicated administrative authentication at `/admin` and `/admin-portal` remains completely separate, secure, and unaffected.
+- **Two-Step Email OTP Verification Flow:**
+  - **Step 1 (Email Submission):** Clean input field for booking email address with one-click verification code dispatch via Supabase Auth (`signInWithOtp` with `{ shouldCreateUser: true }`).
+  - **Step 2 (Passcode Entry):** 6-digit OTP code verification via `verifyOtp` with `{ type: 'email' }`.
+  - **Resend Protection & Cooldown:** Enforces a 60-second cooldown timer between resend requests and 10-minute code validity.
+  - **Single-Click Switch:** Allows switching email addresses seamlessly without page refreshes.
+- **Identity Verification & Booking Retrospection:**
+  - Once verified, the client portal displays all upcoming, completed, and cancelled bookings associated with the email address.
+  - Automatically backfills historical unlinked bookings created under the verified email (`user_id = null`) to the authenticated client account upon sign-in.
+  - Displays clean, polite empty state when a verified client has zero reservations on record, guiding them to book a session.
+
+### 15.2 Package-Linked Convocation Scheduling & Multi-Duration Slot Generation
+- **Session-to-Package Junction Association:**
+  - Deployed database junction table `public.event_session_packages (id, session_id, package_id)` with foreign key constraints, indexes, and RLS policies.
+  - Added "Available Packages for This Session" configuration in `/admin-portal` (`SpecialEventsAdminClient.tsx` session modal), allowing administrators to explicitly attach packages to sessions.
+- **Multi-Duration Schedule Generation:**
+  - Upgraded schedule generator (`src/lib/booking/schedule-generator.ts`) to group packages by distinct durations (e.g. 30m vs 60m).
+  - Automatically generates discrete time-slot grids matching each package duration, tagging slots with their duration and compatible `package_ids`.
+- **Package-First Client Booking Flow:**
+  - Client selects their preferred portrait package (or package is auto-selected if exactly 1 is configured).
+  - Public booking calendar and availability APIs filter slots strictly to those matching the selected package and its appointment duration.
+  - Switching packages immediately releases any held slot, clears slot selections, and recomputes the calendar for the new package duration.
+- **Cross-Package Resource Overlap & Concurrency Protection:**
+  - Availability engine (`computeConvocationSlots`) and reservation workflow (`executeCreateBookingWorkflow`) verify slot duration against package duration.
+  - Overlapping appointment check (`intervalsOverlap`) ensures bookings for extended sessions (e.g. 60m) automatically lock all overlapping slots across other durations on the primary studio resource pool.
+  - Slot holds acquire package association (`package_id` in `booking_slot_holds` and `acquire_slot_hold` RPC), preventing concurrent hold clashes across packages.
+
+---
+
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.5.0 (Package Corrections, Dynamic Form Decoupling, Frame Add-on Pricing, Admin Diagnostics & Mobile UX Verified)*
+*Document Version: 1.6.0 (Passwordless Client Portal & Package-Linked Scheduling Verified)*

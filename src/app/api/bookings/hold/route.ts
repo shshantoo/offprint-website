@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export async function POST(request: NextRequest) {
   try {
     const json = await request.json();
-    const { action, event_id, session_id, slot_id, flow_token, hold_id, hold_duration_mins } = json;
+    const { action, event_id, session_id, slot_id, package_id, flow_token, hold_id, hold_duration_mins } = json;
 
     if (!action || !["acquire", "release", "status"].includes(action)) {
       return NextResponse.json(
@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
           p_slot_id: slot_id,
           p_flow_token: flow_token,
           p_hold_duration_mins: typeof hold_duration_mins === "number" ? hold_duration_mins : null,
+          p_package_id: package_id || null,
         });
 
         if (!rpcErr && rpcRes) {
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
             success: true,
             hold_id: rpcRes.hold_id,
             slot_id: rpcRes.slot_id,
+            package_id: rpcRes.package_id || package_id || null,
             expires_at: rpcRes.expires_at,
             duration_mins: rpcRes.duration_mins,
             remaining_seconds: rpcRes.remaining_seconds,
@@ -67,7 +69,7 @@ export async function POST(request: NextRequest) {
       // Fallback implementation if RPC is unavailable
       const { data: slot, error: slotErr } = await supabase
         .from("event_time_slots")
-        .select("id, capacity, booked_count, status")
+        .select("id, start_at, end_at, duration_mins, capacity, booked_count, status")
         .eq("id", slot_id)
         .maybeSingle();
 
@@ -83,6 +85,36 @@ export async function POST(request: NextRequest) {
           { success: false, error: "Time slot is not currently open for bookings." },
           { status: 409 }
         );
+      }
+
+      // If package_id is provided, validate package existence and duration matching
+      if (package_id) {
+        const { data: pkg } = await supabase
+          .from("photography_packages")
+          .select("id, duration_mins, is_active")
+          .eq("id", package_id)
+          .maybeSingle();
+
+        if (pkg && pkg.is_active === false) {
+          return NextResponse.json(
+            { success: false, error: "Selected package is inactive." },
+            { status: 409 }
+          );
+        }
+
+        if (pkg && pkg.duration_mins) {
+          const slotDur = slot.duration_mins || Math.max(1, Math.round((Date.parse(slot.end_at) - Date.parse(slot.start_at)) / 60_000));
+          if (slotDur !== pkg.duration_mins) {
+            return NextResponse.json(
+              {
+                success: false,
+                code: "DURATION_MISMATCH",
+                error: `Slot duration (${slotDur}m) does not match package duration (${pkg.duration_mins}m).`,
+              },
+              { status: 409 }
+            );
+          }
+        }
       }
 
       // Check duration from event or default 5 mins
@@ -124,7 +156,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Release other slots held by this flow token
+      // Release other slots held by this flow token (or holds for different packages)
       await supabase
         .from("booking_slot_holds")
         .update({ status: "released" })
@@ -146,7 +178,11 @@ export async function POST(request: NextRequest) {
       if (activeHoldId) {
         await supabase
           .from("booking_slot_holds")
-          .update({ expires_at: expiresAt, hold_duration_mins: durationMins })
+          .update({
+            expires_at: expiresAt,
+            hold_duration_mins: durationMins,
+            package_id: package_id || null,
+          })
           .eq("id", activeHoldId);
       } else {
         const { data: newHold, error: insErr } = await supabase
@@ -155,6 +191,7 @@ export async function POST(request: NextRequest) {
             event_id: event_id || null,
             session_id: session_id || null,
             slot_id: slot_id,
+            package_id: package_id || null,
             flow_token: flow_token,
             hold_duration_mins: durationMins,
             expires_at: expiresAt,
@@ -164,11 +201,11 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (insErr || !newHold) {
-          // If inserting fails (e.g. table not installed yet), still succeed gracefully
           return NextResponse.json({
             success: true,
             hold_id: null,
             slot_id: slot_id,
+            package_id: package_id || null,
             expires_at: expiresAt,
             duration_mins: durationMins,
             remaining_seconds: durationMins * 60,
@@ -181,6 +218,7 @@ export async function POST(request: NextRequest) {
         success: true,
         hold_id: activeHoldId,
         slot_id: slot_id,
+        package_id: package_id || null,
         expires_at: expiresAt,
         duration_mins: durationMins,
         remaining_seconds: durationMins * 60,

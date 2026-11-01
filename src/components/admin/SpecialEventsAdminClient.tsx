@@ -2532,6 +2532,7 @@ export default function SpecialEventsAdminClient() {
                             <th className="py-3 px-3.5">Date</th>
                             <th className="py-3 px-3.5">Session Title</th>
                             <th className="py-3 px-3.5">Operating Window</th>
+                            <th className="py-3 px-3.5">Available Packages</th>
                             <th className="py-3 px-3.5">Slot Count</th>
                             <th className="py-3 px-3.5">Total Cap</th>
                             <th className="py-3 px-3.5">Confirmed</th>
@@ -2569,6 +2570,26 @@ export default function SpecialEventsAdminClient() {
                                 <td className="py-3 px-3.5 font-mono text-[11px] text-[#5C5449]">
                                   {sess.start_time.slice(0, 5)} –{" "}
                                   {sess.end_time.slice(0, 5)} BST
+                                </td>
+                                <td className="py-3 px-3.5">
+                                  {sess.package_ids && sess.package_ids.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1 max-w-xs">
+                                      {sess.package_ids.map((pid: string) => {
+                                        const pkg = _packages.find((p) => p.id === pid);
+                                        return (
+                                          <span
+                                            key={pid}
+                                            className="px-2 py-0.5 rounded-md bg-[#FAF7F2] border border-[#E5DEC9] text-[10px] font-mono text-[#3A2008]"
+                                            title={pkg?.name || pid}
+                                          >
+                                            {pkg?.name || "Package"} ({pkg?.duration_mins || 30}m)
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[11px] text-[#877D70] italic">All Packages</span>
+                                  )}
                                 </td>
                                 <td className="py-3 px-3.5 font-mono font-bold">
                                   {sessSlots.length}
@@ -2616,7 +2637,10 @@ export default function SpecialEventsAdminClient() {
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        setEditingSessionModal(sess)
+                                        setEditingSessionModal({
+                                          ...sess,
+                                          package_ids: Array.isArray(sess.package_ids) ? [...sess.package_ids] : [],
+                                        })
                                       }
                                       className="px-2.5 py-1 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] text-[11px] font-semibold text-[#141210] hover:bg-[#FFFFFF]"
                                     >
@@ -2850,6 +2874,7 @@ export default function SpecialEventsAdminClient() {
                             </th>
                             <th className="py-3 px-3.5">Date</th>
                             <th className="py-3 px-3.5">Time Window</th>
+                            <th className="py-3 px-3.5">Duration</th>
                             <th className="py-3 px-3.5">Capacity</th>
                             <th className="py-3 px-3.5">Booked</th>
                             <th className="py-3 px-3.5">Remaining</th>
@@ -2914,6 +2939,10 @@ export default function SpecialEventsAdminClient() {
                                       ({slot.label})
                                     </span>
                                   )}
+                                </td>
+
+                                <td className="py-2.5 px-3.5 font-mono text-[11px] text-[#A66D35]">
+                                  {slot.duration_mins ? `${slot.duration_mins}m` : "–"}
                                 </td>
 
                                 <td className="py-2.5 px-3.5 font-mono font-bold">
@@ -3328,6 +3357,84 @@ export default function SpecialEventsAdminClient() {
                       />
                     </div>
                   </div>
+
+                  {/* Available Packages for This Session */}
+                  {(() => {
+                    const sessionPkgs = _packages.filter(
+                      (p) => p.event_id === editingEvent.id && p.is_active !== false
+                    );
+                    const selectedPkgIds = new Set(editingSessionModal.package_ids || []);
+
+                    return (
+                      <div className="space-y-2 pt-2 border-t border-[#E5DEC9]">
+                        <div className="flex items-center justify-between">
+                          <label className="font-bold text-[#141210] block">
+                            Available Packages for This Session
+                          </label>
+                          <span className="text-[10px] text-[#877D70]">
+                            {selectedPkgIds.size > 0
+                              ? `${selectedPkgIds.size} assigned`
+                              : "All eligible"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#5C5449]">
+                          Select the packages compatible with this session. If no packages are selected, all event packages remain bookable.
+                        </p>
+                        {sessionPkgs.length === 0 ? (
+                          <div className="p-3 text-center text-[11px] text-[#877D70] bg-[#FAF7F2] rounded-xl border border-dashed border-[#E5DEC9]">
+                            No packages configured for this event.
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                            {sessionPkgs.map((pkg) => {
+                              const isChecked = selectedPkgIds.has(pkg.id);
+                              return (
+                                <label
+                                  key={pkg.id}
+                                  className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                                    isChecked
+                                      ? "bg-[#FAF7F2] border-[#3A2008] text-[#141210]"
+                                      : "bg-white border-[#E5DEC9] text-[#5C5449] hover:bg-[#FAF7F2]/60"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        const currentIds = Array.isArray(editingSessionModal.package_ids)
+                                          ? editingSessionModal.package_ids
+                                          : [];
+                                        const nextIds = e.target.checked
+                                          ? [...currentIds, pkg.id]
+                                          : currentIds.filter((id) => id !== pkg.id);
+                                        setEditingSessionModal({
+                                          ...editingSessionModal,
+                                          package_ids: nextIds,
+                                        });
+                                      }}
+                                      className="rounded text-[#3A2008]"
+                                    />
+                                    <span className="font-semibold text-xs text-[#141210]">
+                                      {pkg.name}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 font-mono text-[11px]">
+                                    <span className="px-1.5 py-0.5 rounded bg-[#FAF7F2] border border-[#E5DEC9] text-[#A66D35]">
+                                      {pkg.duration_mins}m
+                                    </span>
+                                    <span className="font-semibold text-[#3A2008]">
+                                      {pkg.price_label || (pkg.price_numeric ? `৳${pkg.price_numeric}` : "")}
+                                    </span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div className="pt-2">
                     <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] cursor-pointer">

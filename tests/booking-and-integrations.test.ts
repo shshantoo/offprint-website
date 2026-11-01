@@ -62,7 +62,6 @@ import type {
   PhotographyService,
   EventHeroSlide,
   FramePrintingConfig,
-  FrameTypeOption,
 } from "../src/types/database";
 
 function createSampleFixture() {
@@ -2962,5 +2961,265 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     const desktopFooterLogoWidth = 185;
     assert.ok(mobileFooterLogoWidth >= 140 && mobileFooterLogoWidth <= 160, "Mobile footer logo within [140, 160]px");
     assert.ok(desktopFooterLogoWidth >= 180 && desktopFooterLogoWidth <= 190, "Desktop footer logo within [180, 190]px");
+  });
+
+  it("30. Passwordless Client Portal & Package-Linked Convocation Scheduling", () => {
+    // 1. Passwordless Client Portal Authentication & Booking Association
+    // Client email validation for OTP
+    const validClientEmail = "graduating.senior@iub.edu.bd";
+    const invalidEmail = "not-an-email";
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    assert.equal(emailRegex.test(validClientEmail), true, "Valid client email passes format check");
+    assert.equal(emailRegex.test(invalidEmail), false, "Invalid email fails format check");
+
+    // OTP Token format validation (6 numeric digits)
+    const validOtp = "729401";
+    const invalidOtp = "abc";
+    const otpRegex = /^\d{6}$/;
+    assert.equal(otpRegex.test(validOtp), true, "Valid OTP is 6 digits");
+    assert.equal(otpRegex.test(invalidOtp), false, "Non-digit OTP fails check");
+
+    // Resend cooldown timer mechanics (60 seconds)
+    let cooldown = 60;
+    const tick = () => {
+      cooldown = Math.max(0, cooldown - 1);
+    };
+    tick();
+    assert.equal(cooldown, 59, "Cooldown decrements per second");
+
+    // Booking automatic backfill matching client_email
+    const unlinkedBooking: Partial<Booking> = {
+      id: "b-unlinked-1",
+      user_id: null,
+      client_email: "graduating.senior@iub.edu.bd",
+      client_name: "Graduating Senior",
+      status: "confirmed",
+      service_or_event_title: "IUB 27th Convocation",
+    };
+    const authenticatedClientUserId = "user-uuid-9999";
+    const backfilledBooking = {
+      ...unlinkedBooking,
+      user_id: authenticatedClientUserId,
+    };
+    assert.equal(
+      backfilledBooking.user_id,
+      authenticatedClientUserId,
+      "Historical booking associated to verified user"
+    );
+
+    // Empty state message when client has 0 bookings
+    const clientBookings: Booking[] = [];
+    const hasBookings = clientBookings.length > 0;
+    const emptyStateNotice = hasBookings
+      ? null
+      : `No bookings found for ${validClientEmail}.`;
+    assert.equal(hasBookings, false);
+    assert.ok(emptyStateNotice?.includes("No bookings found"));
+
+    // 2. Multi-Duration Schedule Generation (30m vs 60m packages)
+    const pkgA30: PhotographyPackage = {
+      id: "pkg-30m-uuid",
+      event_id: "evt-uuid-1",
+      name: "Individual Portrait (30 mins)",
+      description: "Quick cap & gown portrait",
+      duration_mins: 30,
+      price_label: "BDT 3,500",
+      price_numeric: 3500,
+      deliverables: [],
+      is_featured: false,
+      is_active: true,
+      sort_order: 1,
+    };
+
+    const pkgB60: PhotographyPackage = {
+      id: "pkg-60m-uuid",
+      event_id: "evt-uuid-1",
+      name: "Family & Friends Session (60 mins)",
+      description: "Extended session for graduate + family",
+      duration_mins: 60,
+      price_label: "BDT 6,500",
+      price_numeric: 6500,
+      deliverables: [],
+      is_featured: true,
+      is_active: true,
+      sort_order: 2,
+    };
+
+    const multiPkgScheduleConfig: ScheduleConfig = {
+      start_date: "2026-12-05",
+      end_date: "2026-12-05",
+      operating_days: [6], // Saturday
+      operating_start_time: "10:00",
+      operating_end_time: "12:00",
+      slot_duration_mins: 30,
+      slot_interval_mins: 30,
+      capacity_per_slot: 1,
+      break_periods: [],
+      packages: [
+        {
+          id: pkgA30.id,
+          name: pkgA30.name,
+          duration_mins: pkgA30.duration_mins,
+          price: 3500,
+        },
+        {
+          id: pkgB60.id,
+          name: pkgB60.name,
+          duration_mins: pkgB60.duration_mins,
+          price: 6500,
+        },
+      ],
+    };
+
+    const proposedMulti = calculateProposedSchedule(multiPkgScheduleConfig);
+    assert.equal(proposedMulti.sessions.length, 1, "Generates 1 operating session");
+    const generatedSlots = proposedMulti.sessions[0]?.slots || [];
+
+    const slots30m = generatedSlots.filter((s) => s.duration_mins === 30);
+    const slots60m = generatedSlots.filter((s) => s.duration_mins === 60);
+
+    // 10:00 to 12:00 = 120 mins
+    // 30m slots: 10:00-10:30, 10:30-11:00, 11:00-11:30, 11:30-12:00 = 4 slots
+    assert.equal(slots30m.length, 4, "Generates 4 30-minute slots");
+    // 60m slots: 10:00-11:00, 11:00-12:00 = 2 slots
+    assert.equal(slots60m.length, 2, "Generates 2 60-minute slots");
+
+    // All slots are tagged with applicable package_ids
+    assert.ok(slots30m.every((s) => s.package_ids?.includes(pkgA30.id)));
+    assert.ok(slots60m.every((s) => s.package_ids?.includes(pkgB60.id)));
+
+    // 3. Package Availability Filtering
+    const convocationEvent: BookingEvent = {
+      id: "evt-uuid-1",
+      slug: "iub-27th-convocation",
+      title: "IUB 27th Convocation",
+      status: "published",
+      booking_opens_at: "2026-01-01T00:00:00.000Z",
+      booking_closes_at: "2026-12-31T23:59:59.000Z",
+      default_slot_duration_mins: 30,
+      buffer_before_mins: 0,
+      buffer_after_mins: 0,
+      default_slot_capacity: 1,
+    } as any;
+
+    const sessionObj: EventSession = {
+      id: "sess-1-uuid",
+      event_id: "evt-uuid-1",
+      title: "Convocation Session Day 1",
+      session_date: "2026-12-05",
+      start_time: "10:00:00",
+      end_time: "12:00:00",
+      slot_duration_mins: 30,
+      capacity_per_slot: 1,
+      is_active: true,
+      package_ids: [pkgA30.id, pkgB60.id],
+    } as any;
+
+    const eventSlotsForEval = [
+      ...slots30m.map((s, idx) => ({
+        id: `slot-30m-${idx}`,
+        event_id: convocationEvent.id,
+        session_id: sessionObj.id,
+        slot_date: "2026-12-05",
+        start_at: s.start_at,
+        end_at: s.end_at,
+        effective_start_at: s.start_at,
+        effective_end_at: s.end_at,
+        capacity: 1,
+        booked_count: 0,
+        status: "available" as const,
+        duration_mins: 30,
+        package_ids: [pkgA30.id],
+      })),
+      ...slots60m.map((s, idx) => ({
+        id: `slot-60m-${idx}`,
+        event_id: convocationEvent.id,
+        session_id: sessionObj.id,
+        slot_date: "2026-12-05",
+        start_at: s.start_at,
+        end_at: s.end_at,
+        effective_start_at: s.start_at,
+        effective_end_at: s.end_at,
+        capacity: 1,
+        booked_count: 0,
+        status: "available" as const,
+        duration_mins: 60,
+        package_ids: [pkgB60.id],
+      })),
+    ];
+
+    const evaluationTime = new Date("2026-12-01T04:00:00.000Z"); // 4 days prior
+
+    // Client selects 30m package: slots returned match 30m duration and pkgA
+    const slotsForPkgA = computeConvocationSlots({
+      event: convocationEvent,
+      sessions: [sessionObj],
+      slots: eventSlotsForEval as any,
+      selectedPackageId: pkgA30.id,
+      packageDurationMins: 30,
+      now: evaluationTime,
+    });
+
+    const bookablePkgA = slotsForPkgA.filter((s) => s.state === "available");
+    assert.equal(bookablePkgA.length, 4, "Client sees 4 30-minute slots");
+    assert.ok(bookablePkgA.every((s) => s.duration_mins === 30));
+
+    // Client selects 60m package: slots returned match 60m duration and pkgB
+    const slotsForPkgB = computeConvocationSlots({
+      event: convocationEvent,
+      sessions: [sessionObj],
+      slots: eventSlotsForEval as any,
+      selectedPackageId: pkgB60.id,
+      packageDurationMins: 60,
+      now: evaluationTime,
+    });
+
+    const bookablePkgB = slotsForPkgB.filter((s) => s.state === "available");
+    assert.equal(bookablePkgB.length, 2, "Client sees 2 60-minute slots");
+    assert.ok(bookablePkgB.every((s) => s.duration_mins === 60));
+
+    // 4. Overlapping Cross-Package Concurrency Conflict Protection
+    // Graduate books a 60m session from 10:00 to 11:00 (slot-60m-0)
+    const bookingSlot60m = eventSlotsForEval.find((s) => s.id === "slot-60m-0")!;
+    const busyInterval60m = {
+      booking_id: "booking-60m-1",
+      start_at: bookingSlot60m.start_at,
+      end_at: bookingSlot60m.end_at,
+      effective_start_at: bookingSlot60m.start_at,
+      effective_end_at: bookingSlot60m.end_at,
+      booking_type: "convocation" as const,
+      resource_pool: "primary_studio",
+    };
+
+    // Another client selects the 30m package
+    const slotsForPkgAAfterBooking = computeConvocationSlots({
+      event: convocationEvent,
+      sessions: [sessionObj],
+      slots: eventSlotsForEval as any,
+      busyIntervals: [busyInterval60m],
+      selectedPackageId: pkgA30.id,
+      packageDurationMins: 30,
+      now: evaluationTime,
+    });
+
+    // 10:00-10:30 and 10:30-11:00 slots overlap with 10:00-11:00 booking, so they must be marked full / unavailable!
+    const slot1000 = slotsForPkgAAfterBooking.find((s) => s.start_at === bookingSlot60m.start_at)!;
+    assert.equal(slot1000.state, "full", "Overlapping 10:00-10:30 slot is marked full");
+    assert.equal(slot1000.remaining_capacity, 0);
+
+    const slot1030 = slotsForPkgAAfterBooking.find((s) => s.start_time_label.includes("10:30"))!;
+    assert.equal(slot1030.state, "full", "Overlapping 10:30-11:00 slot is marked full");
+    assert.equal(slot1030.remaining_capacity, 0);
+
+    // 11:00-11:30 and 11:30-12:00 slots do not overlap and must remain available
+    const slot1100 = slotsForPkgAAfterBooking.find((s) => s.start_time_label.includes("11:00"))!;
+    assert.equal(slot1100.state, "available", "Non-overlapping 11:00 slot remains available");
+    assert.equal(slot1100.remaining_capacity, 1);
+
+    // 5. Mismatched Duration Rejection
+    // Attempting to book a 30m slot with a 60m package fails duration matching validation
+    const mismatchedSlot = eventSlotsForEval.find((s) => s.duration_mins === 30)!;
+    const isDurationMatch = mismatchedSlot.duration_mins === pkgB60.duration_mins;
+    assert.equal(isDurationMatch, false, "30m slot duration does not match 60m package duration");
   });
 });

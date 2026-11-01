@@ -111,6 +111,7 @@ export async function fetchBusyIntervalsFromDb(
 export async function getConvocationAvailabilityFromDb(params: {
   slug?: string;
   eventId?: string;
+  packageId?: string;
   year: number;
   month: number; // 1..12
   date?: string; // YYYY-MM-DD
@@ -209,6 +210,82 @@ export async function getConvocationAvailabilityFromDb(params: {
     const slots = (slotRes.data || []) as EventTimeSlot[];
     const blocks = (blockRes.data || []) as AvailabilityBlock[];
 
+    // Fetch package associations from event_session_packages if available
+    const sessionPackagesMap = new Map<string, string[]>();
+    try {
+      const { data: spRows } = await supabase
+        .from("event_session_packages")
+        .select("session_id, package_id");
+      if (spRows && Array.isArray(spRows)) {
+        for (const row of spRows) {
+          const list = sessionPackagesMap.get(row.session_id) || [];
+          list.push(row.package_id);
+          sessionPackagesMap.set(row.session_id, list);
+        }
+      }
+    } catch {
+      // Table may not exist yet or be empty
+    }
+
+    // Attach package_ids and available_packages to sessions
+    for (const sess of sessions) {
+      const attachedIds = sessionPackagesMap.get(sess.id);
+      if (attachedIds && attachedIds.length > 0) {
+        sess.package_ids = attachedIds;
+        sess.available_packages = packages.filter((p) => attachedIds.includes(p.id));
+      } else {
+        // Default to all active packages for backward compatibility
+        sess.package_ids = packages.map((p) => p.id);
+        sess.available_packages = packages;
+      }
+    }
+
+    // Resolve selected package details if packageId is supplied
+    const selectedPkg = params.packageId
+      ? packages.find((p) => p.id === params.packageId)
+      : null;
+    const packageDuration = selectedPkg?.duration_mins;
+
+    // Filter sessions if packageId is supplied: only sessions that include this package
+    const eligibleSessions = params.packageId
+      ? sessions.filter(
+          (s) =>
+            !s.package_ids ||
+            s.package_ids.length === 0 ||
+            s.package_ids.includes(params.packageId!)
+        )
+      : sessions;
+    const eligibleSessionIds = new Set(eligibleSessions.map((s) => s.id));
+
+    // Filter slots: must belong to an eligible session, and if packageId provided, duration must match
+    const eligibleSlots = slots.filter((slot) => {
+      if (slot.session_id && !eligibleSessionIds.has(slot.session_id)) {
+        return false;
+      }
+      if (selectedPkg && packageDuration) {
+        const slotDuration =
+          slot.duration_mins && slot.duration_mins > 0
+            ? slot.duration_mins
+            : Math.max(
+                1,
+                Math.round(
+                  (Date.parse(slot.end_at) - Date.parse(slot.start_at)) / 60_000
+                )
+              );
+        if (slotDuration !== packageDuration) {
+          return false;
+        }
+        if (
+          Array.isArray(slot.package_ids) &&
+          slot.package_ids.length > 0 &&
+          !slot.package_ids.includes(selectedPkg.id)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+
     const rangeStart = new Date(Date.UTC(params.year, params.month - 1, 1, 0, 0, 0)).toISOString();
     const rangeEnd = new Date(Date.UTC(params.year, params.month, 2, 23, 59, 59)).toISOString();
 
@@ -220,18 +297,36 @@ export async function getConvocationAvailabilityFromDb(params: {
       params.excludeBookingId
     );
 
-    // Fetch active unexpired holds to protect concurrent checkouts
-    let activeHolds: Array<{ slot_id: string; flow_token?: string }> = [];
+    // Fetch active unexpired holds to protect concurrent checkouts across durations
+    let activeHolds: Array<{
+      slot_id: string;
+      flow_token?: string;
+      start_at?: string;
+      end_at?: string;
+      effective_start_at?: string;
+      effective_end_at?: string;
+    }> = [];
     try {
       const { data: holdsData } = await supabase
         .from("booking_slot_holds")
-        .select("slot_id, flow_token")
+        .select("slot_id, flow_token, package_id, duration_mins")
         .eq("event_id", event.id)
         .eq("status", "active")
         .gt("expires_at", new Date().toISOString());
 
       if (holdsData) {
-        activeHolds = holdsData as Array<{ slot_id: string; flow_token?: string }>;
+        const slotTimingMap = new Map(slots.map((s) => [s.id, s]));
+        activeHolds = holdsData.map((h: any) => {
+          const matchedSlot = slotTimingMap.get(h.slot_id);
+          return {
+            slot_id: h.slot_id,
+            flow_token: h.flow_token,
+            start_at: matchedSlot?.start_at,
+            end_at: matchedSlot?.end_at,
+            effective_start_at: matchedSlot?.effective_start_at,
+            effective_end_at: matchedSlot?.effective_end_at,
+          };
+        });
       }
     } catch {
       // Ignore if table not yet created
@@ -239,12 +334,14 @@ export async function getConvocationAvailabilityFromDb(params: {
 
     const allComputed = computeConvocationSlots({
       event,
-      slots,
-      sessions,
+      slots: eligibleSlots,
+      sessions: eligibleSessions,
       blocks,
       busyIntervals,
       activeHolds,
       flowToken: params.flowToken,
+      selectedPackageId: params.packageId,
+      packageDurationMins: packageDuration,
     });
 
     const monthSummary = summarizeMonthAvailability({
@@ -261,7 +358,7 @@ export async function getConvocationAvailabilityFromDb(params: {
       schemaReady: true,
       event,
       packages,
-      sessions,
+      sessions: eligibleSessions,
       monthSummary,
       slotsForDate,
       allEventSlots: allComputed,
@@ -554,8 +651,75 @@ export async function executeCreateBookingWorkflow(params: {
       .select("*")
       .eq("id", input.package_id)
       .maybeSingle();
+
     if (pkgRow) {
+      if (pkgRow.is_active === false && actorRole !== "admin") {
+        throw new BookingSystemError(
+          "PACKAGE_INACTIVE",
+          "The selected package is no longer active for booking.",
+          400
+        );
+      }
+      if (input.event_id && pkgRow.event_id && pkgRow.event_id !== input.event_id) {
+        throw new BookingSystemError(
+          "PACKAGE_MISMATCH",
+          "The selected package does not belong to this event.",
+          400
+        );
+      }
       selectedPkg = pkgRow as PhotographyPackage;
+    }
+  }
+
+  // Verify session package eligibility if session_id is provided
+  if (input.session_id && input.package_id) {
+    try {
+      const { data: spRows } = await supabase
+        .from("event_session_packages")
+        .select("package_id")
+        .eq("session_id", input.session_id);
+
+      if (spRows && Array.isArray(spRows) && spRows.length > 0) {
+        const isAllowed = spRows.some((r) => r.package_id === input.package_id);
+        if (!isAllowed) {
+          throw new BookingSystemError(
+            "PACKAGE_NOT_AVAILABLE_FOR_SESSION",
+            "The selected package is not available for this scheduled session.",
+            400
+          );
+        }
+      }
+    } catch (err: any) {
+      if (err instanceof BookingSystemError) throw err;
+    }
+  }
+
+  // Verify slot duration matches package duration
+  if (input.slot_id && selectedPkg && selectedPkg.duration_mins) {
+    const { data: slotRow } = await supabase
+      .from("event_time_slots")
+      .select("id, duration_mins, start_at, end_at, package_ids")
+      .eq("id", input.slot_id)
+      .maybeSingle();
+
+    if (slotRow) {
+      const slotDur =
+        slotRow.duration_mins && slotRow.duration_mins > 0
+          ? slotRow.duration_mins
+          : Math.max(
+              1,
+              Math.round(
+                (Date.parse(slotRow.end_at) - Date.parse(slotRow.start_at)) /
+                  60_000
+              )
+            );
+      if (slotDur !== selectedPkg.duration_mins) {
+        throw new BookingSystemError(
+          "DURATION_MISMATCH",
+          `Selected slot duration (${slotDur}m) does not match package duration (${selectedPkg.duration_mins}m).`,
+          400
+        );
+      }
     }
   }
 
@@ -581,21 +745,35 @@ export async function executeCreateBookingWorkflow(params: {
 
   const effectiveDuration = selectedPkg?.duration_mins || input.duration_mins || 30;
 
-  // If a hold_id was provided, verify it has not expired prior to final booking commitment
+  // If a hold_id was provided, verify it has not expired and matches package prior to booking commitment
   if (input.hold_id) {
     try {
       const { data: holdRow } = await supabase
         .from("booking_slot_holds")
-        .select("id, status, expires_at, slot_id, flow_token")
+        .select("id, status, expires_at, slot_id, flow_token, package_id")
         .eq("id", input.hold_id)
         .maybeSingle();
 
       if (holdRow) {
-        if (holdRow.status !== "active" || new Date(holdRow.expires_at).getTime() < Date.now()) {
+        if (
+          holdRow.status !== "active" ||
+          new Date(holdRow.expires_at).getTime() < Date.now()
+        ) {
           throw new BookingSystemError(
             "SLOT_HOLD_EXPIRED",
             "Your temporary reservation on this time slot has expired. Please select a time slot again.",
             409
+          );
+        }
+        if (
+          input.package_id &&
+          holdRow.package_id &&
+          holdRow.package_id !== input.package_id
+        ) {
+          throw new BookingSystemError(
+            "HOLD_PACKAGE_MISMATCH",
+            "Your reserved slot hold was acquired for a different package. Please select an available slot for this package.",
+            400
           );
         }
       }

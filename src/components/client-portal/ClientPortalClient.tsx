@@ -7,12 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Booking, UserProfile } from "@/types/database";
 import { formatDhakaDateTime, isCutoffOpen } from "@/lib/booking/timezone";
 import {
-  User,
   Mail,
-  Lock,
-  Phone,
-  Building,
-  BookOpen,
   Calendar,
   Clock,
   MapPin,
@@ -27,23 +22,19 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-type AuthMode = "signin" | "signup" | "forgot_password" | "update_password";
+type AuthStep = "enter_email" | "enter_otp";
 type PortalTab = "upcoming" | "completed" | "cancelled" | "profile";
 
 export default function ClientPortalClient() {
   const [authChecking, setAuthChecking] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("signin");
+  const [authStep, setAuthStep] = useState<AuthStep>("enter_email");
   const [activeTab, setActiveTab] = useState<PortalTab>("upcoming");
 
-  // Auth form fields
+  // Passwordless Auth fields
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("+880 ");
-  const [company, setCompany] = useState("");
-  const [studentId, setStudentId] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [otpToken, setOtpToken] = useState("");
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
@@ -63,6 +54,15 @@ export default function ClientPortalClient() {
   const [profStudentId, setProfStudentId] = useState("");
   const [profSaving, setProfSaving] = useState(false);
   const [profSavedMessage, setProfSavedMessage] = useState<string | null>(null);
+
+  // Cooldown countdown
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
 
   const loadPortalData = useCallback(async () => {
     try {
@@ -122,10 +122,7 @@ export default function ClientPortalClient() {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (event: string, session: any) => {
-        if (event === "PASSWORD_RECOVERY") {
-          setAuthMode("update_password");
-        }
+      (_event: string, session: any) => {
         if (session?.user) {
           setUserEmail(session.user.email || null);
           loadPortalData();
@@ -142,10 +139,16 @@ export default function ClientPortalClient() {
     };
   }, [loadPortalData]);
 
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setAuthError(null);
     setAuthMessage(null);
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setAuthError("Please enter a valid email address.");
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       setAuthError("Authentication service is temporarily unavailable. Please try again shortly.");
@@ -154,107 +157,69 @@ export default function ClientPortalClient() {
 
     try {
       setAuthLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        setAuthError(error.message);
-        return;
-      }
-    } catch (err: any) {
-      setAuthError(err?.message || "Sign in failed.");
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthMessage(null);
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
-      setAuthError("Authentication service is temporarily unavailable. Please try again shortly.");
-      return;
-    }
-
-    try {
-      setAuthLoading(true);
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
         options: {
-          data: {
-            full_name: fullName.trim(),
-            phone: phone.trim(),
-            company_or_institution: company.trim() || null,
-            student_id: studentId.trim() || null,
-          },
+          shouldCreateUser: true,
         },
       });
+
       if (error) {
         setAuthError(error.message);
         return;
       }
 
-      if (data.session) {
-        setAuthMessage("Account registered and signed in.");
-      } else {
-        setAuthMessage(
-          "Registration submitted! Please check your email inbox for a confirmation link, or sign in directly if email confirmation is disabled."
-        );
-      }
+      setAuthStep("enter_otp");
+      setCooldownSeconds(60);
+      setAuthMessage(
+        `We have dispatched a 6-digit verification code to ${cleanEmail}. Please enter the code below to access your client portal.`
+      );
     } catch (err: any) {
-      setAuthError(err?.message || "Registration failed.");
+      setAuthError(err?.message || "Failed to send verification code. Please try again.");
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setAuthMessage(null);
+    const cleanOtp = otpToken.trim().replace(/\s+/g, "");
+    if (!cleanOtp) {
+      setAuthError("Please enter the 6-digit verification code sent to your email.");
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
+    if (!supabase) {
+      setAuthError("Authentication service is temporarily unavailable. Please try again shortly.");
+      return;
+    }
 
     try {
       setAuthLoading(true);
-      const redirectTo = `${window.location.origin}/client-portal`;
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo,
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: cleanOtp,
+        type: "email",
       });
+
       if (error) {
-        setAuthError(error.message);
+        setAuthError(
+          error.message.includes("expired")
+            ? "Your verification code has expired. Please request a new one."
+            : error.message || "Invalid verification code. Please check and try again."
+        );
         return;
       }
-      setAuthMessage("Password reset instructions have been sent to your email address.");
-    } catch (err: any) {
-      setAuthError(err?.message || "Password recovery request failed.");
-    } finally {
-      setAuthLoading(false);
-    }
-  };
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthMessage(null);
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
-
-    try {
-      setAuthLoading(true);
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        setAuthError(error.message);
-        return;
+      if (data?.user) {
+        setUserEmail(data.user.email || email.trim().toLowerCase());
+        loadPortalData();
       }
-      setAuthMessage("Your password has been updated.");
-      setAuthMode("signin");
     } catch (err: any) {
-      setAuthError(err?.message || "Failed to update password.");
+      setAuthError(err?.message || "Verification failed. Please try again.");
     } finally {
       setAuthLoading(false);
     }
@@ -266,6 +231,12 @@ export default function ClientPortalClient() {
       await supabase.auth.signOut();
     }
     setUserEmail(null);
+    setBookings([]);
+    setProfile(null);
+    setAuthStep("enter_email");
+    setOtpToken("");
+    setAuthError(null);
+    setAuthMessage(null);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -306,8 +277,8 @@ export default function ClientPortalClient() {
     );
   }
 
-  // Unauthenticated View (Sign In / Sign Up / Password Recovery)
-  if (!userEmail || authMode === "update_password") {
+  // Unauthenticated View: Passwordless OTP Access
+  if (!userEmail) {
     return (
       <div className="max-w-lg mx-auto">
         <div className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-7 sm:p-10 shadow-sm space-y-6">
@@ -320,64 +291,21 @@ export default function ClientPortalClient() {
               className="w-[170px] sm:w-[190px] h-auto object-contain shrink-0"
             />
           </div>
+
           <div className="text-center space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FAF7F2] border border-[#E5DEC9] text-xs font-mono text-[#A66D35]">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>OFFPRINT Client Portal</span>
+              <span>OFFPRINT Passwordless Client Portal</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#141210]">
-              {authMode === "signin"
-                ? "Sign In to Manage Bookings"
-                : authMode === "signup"
-                ? "Create Your Client Account"
-                : authMode === "forgot_password"
-                ? "Recover Your Password"
-                : "Set New Password"}
+              {authStep === "enter_email" ? "Client Portal Sign In" : "Enter Verification Code"}
             </h1>
-            <p className="text-xs sm:text-sm text-[#5C5449]">
-              {authMode === "signin"
-                ? "Access your upcoming convocation and studio sessions, reschedule slots, or review booking references."
-                : authMode === "signup"
-                ? "Register with the same email address used on your booking to automatically link your reservations."
-                : "Enter your account email to receive a secure password reset link."}
+            <p className="text-xs sm:text-sm text-[#5C5449] leading-relaxed">
+              {authStep === "enter_email"
+                ? "Access your upcoming convocation and photography bookings using only your email address. No password required."
+                : `Enter the 6-digit one-time passcode sent to ${email}.`}
             </p>
           </div>
-
-          {/* Mode Switch Tabs */}
-          {authMode !== "update_password" && (
-            <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9]">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("signin");
-                  setAuthError(null);
-                  setAuthMessage(null);
-                }}
-                className={`py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                  authMode === "signin"
-                    ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
-                    : "text-[#5C5449] hover:text-[#141210]"
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("signup");
-                  setAuthError(null);
-                  setAuthMessage(null);
-                }}
-                className={`py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                  authMode === "signup"
-                    ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
-                    : "text-[#5C5449] hover:text-[#141210]"
-                }`}
-              >
-                Register Account
-              </button>
-            </div>
-          )}
 
           {authError && (
             <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5">
@@ -393,45 +321,25 @@ export default function ClientPortalClient() {
             </div>
           )}
 
-          {authMode === "signin" && (
-            <form onSubmit={handleSignIn} className="space-y-4">
+          {/* STEP 1: Email Input */}
+          {authStep === "enter_email" && (
+            <form onSubmit={handleSendOtp} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Email Address</span>
+                  <span>Booking Email Address</span>
                 </label>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                  placeholder="name@domain.com"
+                  className="w-full px-4 py-3 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-[#A66D35]" />
-                    <span>Password</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode("forgot_password")}
-                    className="text-xs text-[#3A2008] hover:text-[#A66D35] underline"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                />
+                <p className="text-[11px] text-[#877D70]">
+                  Enter the email address used during your photography reservation. We will send a secure one-time verification code.
+                </p>
               </div>
 
               <button
@@ -439,176 +347,68 @@ export default function ClientPortalClient() {
                 disabled={authLoading}
                 className="w-full py-3.5 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] transition-colors disabled:opacity-50"
               >
-                {authLoading ? "Signing In..." : "Sign In to Client Portal"}
+                {authLoading ? "Sending Code..." : "Continue with Email"}
               </button>
             </form>
           )}
 
-          {authMode === "signup" && (
-            <form onSubmit={handleSignUp} className="space-y-4">
+          {/* STEP 2: OTP Code Verification */}
+          {authStep === "enter_otp" && (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Full Name *</span>
+                <label className="text-xs font-semibold text-[#141210] flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-[#A66D35]" />
+                    <span>6-Digit Verification Code</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthStep("enter_email");
+                      setOtpToken("");
+                      setAuthError(null);
+                      setAuthMessage(null);
+                    }}
+                    className="text-xs text-[#A66D35] hover:underline"
+                  >
+                    Change Email
+                  </button>
                 </label>
                 <input
                   type="text"
                   required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Nafisa Rahman"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                  autoFocus
+                  maxLength={8}
+                  value={otpToken}
+                  onChange={(e) => setOtpToken(e.target.value)}
+                  placeholder="000000"
+                  className="w-full px-4 py-3.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-center font-mono text-xl tracking-widest text-[#141210] focus:outline-none focus:border-[#3A2008]"
                 />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-[#A66D35]" />
-                    <span>Email Address *</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-[#A66D35]" />
-                    <span>Mobile Number *</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+880 1711-000000"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                    <Building className="w-3.5 h-3.5 text-[#A66D35]" />
-                    <span>Institution / Company</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder="e.g. IUB"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-[#A66D35]" />
-                    <span>Student ID (if applicable)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value)}
-                    placeholder="e.g. 2021456"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Create Password (min. 6 characters) *</span>
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                />
+                <p className="text-[11px] text-[#877D70] text-center">
+                  Verification codes expire after 10 minutes.
+                </p>
               </div>
 
               <button
                 type="submit"
-                disabled={authLoading}
+                disabled={authLoading || !otpToken.trim()}
                 className="w-full py-3.5 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] transition-colors disabled:opacity-50"
               >
-                {authLoading ? "Creating Account..." : "Register Client Account"}
+                {authLoading ? "Verifying..." : "Verify & Enter Portal"}
               </button>
-            </form>
-          )}
 
-          {authMode === "forgot_password" && (
-            <form onSubmit={handleForgotPassword} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Account Email Address</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                />
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  disabled={cooldownSeconds > 0 || authLoading}
+                  onClick={() => handleSendOtp()}
+                  className="text-xs font-semibold text-[#3A2008] hover:text-[#A66D35] disabled:opacity-50 disabled:hover:text-[#3A2008]"
+                >
+                  {cooldownSeconds > 0
+                    ? `Resend code in ${cooldownSeconds}s`
+                    : "Did not receive code? Resend"}
+                </button>
               </div>
-
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-3.5 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] transition-colors"
-              >
-                {authLoading ? "Sending Recovery Email..." : "Send Password Reset Link"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAuthMode("signin")}
-                className="w-full text-xs text-[#5C5449] hover:text-[#141210] underline"
-              >
-                Return to Sign In
-              </button>
-            </form>
-          )}
-
-          {authMode === "update_password" && (
-            <form onSubmit={handleUpdatePassword} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>New Password</span>
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-3.5 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] transition-colors"
-              >
-                {authLoading ? "Updating..." : "Save New Password"}
-              </button>
             </form>
           )}
         </div>
