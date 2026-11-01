@@ -86,9 +86,9 @@ export default function Header({ showPrintMerch = false }: HeaderProps) {
             <Image
               src={isTransparent ? "/brand/offprint-white-logo.png" : "/brand/offprint-black-logo.png"}
               alt="OFFPRINT Photography & Print Studio"
-              width={140}
-              height={40}
-              className="h-9 w-auto object-contain transition-opacity duration-300"
+              width={155}
+              height={53}
+              className="h-10 sm:h-11 md:h-12 w-auto object-contain transition-opacity duration-300"
               priority
             />
           </Link>

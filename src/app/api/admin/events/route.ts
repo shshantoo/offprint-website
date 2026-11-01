@@ -9,6 +9,11 @@ import { parseDatabaseBookingError } from "@/lib/booking/booking-service";
 import { isMissingSchemaError, requireAdminAuth } from "@/lib/supabase/auth-helpers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { addMinutesToISO, dhakaDateTimeToISO } from "@/lib/booking/timezone";
+import {
+  calculateProposedSchedule,
+  compareScheduleWithExisting,
+  ScheduleConfig,
+} from "@/lib/booking/schedule-generator";
 
 export async function GET() {
   const auth = await requireAdminAuth();
@@ -376,6 +381,105 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (entity === "preview_schedule") {
+      const eventId = String(body.event_id || "");
+      if (!eventId) {
+        return NextResponse.json(
+          { success: false, error: "event_id is required." },
+          { status: 400 }
+        );
+      }
+
+      const { data: event, error: evErr } = await supabase
+        .from("booking_events")
+        .select("*")
+        .eq("id", eventId)
+        .single();
+
+      if (evErr || !event) {
+        return NextResponse.json(
+          { success: false, error: "Event not found." },
+          { status: 404 }
+        );
+      }
+
+      const scheduleConfig: ScheduleConfig = {
+        start_date: body.start_date || event.event_start_date,
+        end_date:
+          body.end_date ||
+          event.event_end_date ||
+          body.start_date ||
+          event.event_start_date,
+        operating_days: Array.isArray(body.operating_days)
+          ? body.operating_days
+          : Array.isArray(event.operating_days)
+          ? event.operating_days
+          : [0, 1, 2, 3, 4, 5, 6],
+        operating_start_time:
+          body.operating_start_time || event.operating_start_time || "09:00",
+        operating_end_time:
+          body.operating_end_time || event.operating_end_time || "18:00",
+        slot_duration_mins: Number(
+          body.slot_duration_mins || event.default_slot_duration_mins || 30
+        ),
+        slot_interval_mins: Number(
+          body.slot_interval_mins ||
+            event.slot_interval_mins ||
+            event.default_slot_duration_mins ||
+            30
+        ),
+        capacity_per_slot: Number(
+          body.capacity_per_slot || event.default_slot_capacity || 1
+        ),
+        buffer_before_mins: Number(
+          body.buffer_before_mins || event.buffer_before_mins || 0
+        ),
+        buffer_after_mins: Number(
+          body.buffer_after_mins || event.buffer_after_mins || 10
+        ),
+        break_periods: Array.isArray(body.break_periods)
+          ? body.break_periods
+          : Array.isArray(event.break_periods)
+          ? event.break_periods
+          : [],
+      };
+
+      if (!scheduleConfig.start_date || !scheduleConfig.end_date) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Start date and End date are required to preview schedule.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const proposed = calculateProposedSchedule(scheduleConfig);
+
+      const [sessionsRes, slotsRes, bookingsRes] = await Promise.all([
+        supabase.from("event_sessions").select("*").eq("event_id", eventId),
+        supabase.from("event_time_slots").select("*").eq("event_id", eventId),
+        supabase
+          .from("bookings")
+          .select("id, booking_ref, client_name, booking_date, start_at, status")
+          .eq("event_id", eventId)
+          .in("status", ["pending", "confirmed", "rescheduled"]),
+      ]);
+
+      const preview = compareScheduleWithExisting(
+        scheduleConfig,
+        proposed,
+        sessionsRes.data || [],
+        slotsRes.data || [],
+        bookingsRes.data || []
+      );
+
+      return NextResponse.json({
+        success: true,
+        preview,
+      });
+    }
+
     if (entity === "rebuild_event_schedule") {
       const eventId = String(body.event_id || "");
       if (!eventId) {
@@ -398,142 +502,335 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const startDateStr = body.start_date || event.event_start_date;
-      const endDateStr = body.end_date || event.event_end_date || startDateStr;
+      const scheduleConfig: ScheduleConfig = {
+        start_date: body.start_date || event.event_start_date,
+        end_date:
+          body.end_date ||
+          event.event_end_date ||
+          body.start_date ||
+          event.event_start_date,
+        operating_days: Array.isArray(body.operating_days)
+          ? body.operating_days
+          : Array.isArray(event.operating_days)
+          ? event.operating_days
+          : [0, 1, 2, 3, 4, 5, 6],
+        operating_start_time:
+          body.operating_start_time || event.operating_start_time || "09:00",
+        operating_end_time:
+          body.operating_end_time || event.operating_end_time || "18:00",
+        slot_duration_mins: Number(
+          body.slot_duration_mins || event.default_slot_duration_mins || 30
+        ),
+        slot_interval_mins: Number(
+          body.slot_interval_mins ||
+            event.slot_interval_mins ||
+            event.default_slot_duration_mins ||
+            30
+        ),
+        capacity_per_slot: Number(
+          body.capacity_per_slot || event.default_slot_capacity || 1
+        ),
+        buffer_before_mins: Number(
+          body.buffer_before_mins || event.buffer_before_mins || 0
+        ),
+        buffer_after_mins: Number(
+          body.buffer_after_mins || event.buffer_after_mins || 10
+        ),
+        break_periods: Array.isArray(body.break_periods)
+          ? body.break_periods
+          : Array.isArray(event.break_periods)
+          ? event.break_periods
+          : [],
+      };
 
-      if (!startDateStr || !endDateStr) {
+      if (!scheduleConfig.start_date || !scheduleConfig.end_date) {
         return NextResponse.json(
           {
             success: false,
-            error: "Event Start Date and End Date are required to generate sessions.",
+            error:
+              "Event Start Date and End Date are required to generate sessions.",
           },
           { status: 400 }
         );
       }
 
-      const operatingDays: number[] = Array.isArray(body.operating_days)
-        ? body.operating_days
-        : Array.isArray(event.operating_days)
-        ? event.operating_days
-        : [0, 1, 2, 3, 4, 5, 6];
+      // 1. Persist schedule configuration onto booking_events
+      await supabase
+        .from("booking_events")
+        .update({
+          event_start_date: scheduleConfig.start_date,
+          event_end_date: scheduleConfig.end_date,
+          operating_days: scheduleConfig.operating_days,
+          operating_start_time: scheduleConfig.operating_start_time,
+          operating_end_time: scheduleConfig.operating_end_time,
+          default_slot_duration_mins: scheduleConfig.slot_duration_mins,
+          slot_interval_mins: scheduleConfig.slot_interval_mins,
+          default_slot_capacity: scheduleConfig.capacity_per_slot,
+          buffer_before_mins: scheduleConfig.buffer_before_mins,
+          buffer_after_mins: scheduleConfig.buffer_after_mins,
+          break_periods: scheduleConfig.break_periods,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId);
 
-      const opStartTime = body.operating_start_time || event.operating_start_time || "09:00";
-      const opEndTime = body.operating_end_time || event.operating_end_time || "18:00";
-      const slotDuration = Number(body.slot_duration_mins || event.default_slot_duration_mins || 30);
-      const slotCapacity = Number(body.capacity_per_slot || event.default_slot_capacity || 1);
-      const bufferBefore = Number(body.buffer_before_mins || event.buffer_before_mins || 0);
-      const bufferAfter = Number(body.buffer_after_mins || event.buffer_after_mins || 10);
-      const breakPeriods: Array<{ name: string; start_time: string; end_time: string }> =
-        Array.isArray(body.break_periods)
-          ? body.break_periods
-          : Array.isArray(event.break_periods)
-          ? event.break_periods
-          : [];
+      // 2. Calculate proposed sessions & slots
+      const proposed = calculateProposedSchedule(scheduleConfig);
 
-      let totalSessions = 0;
-      let totalSlots = 0;
-
-      const curDate = new Date(`${startDateStr}T00:00:00Z`);
-      const stopDate = new Date(`${endDateStr}T00:00:00Z`);
-
-      while (curDate <= stopDate) {
-        const ymd = curDate.toISOString().split("T")[0];
-        const dayOfWeek = curDate.getUTCDay();
-
-        if (operatingDays.includes(dayOfWeek)) {
-          // Check if session already exists for this event and date
-          const { data: existingSess } = await supabase
-            .from("event_sessions")
-            .select("id")
+      // 3. Fetch existing sessions, slots, and active bookings
+      const [existingSessionsRes, existingSlotsRes, activeBookingsRes] =
+        await Promise.all([
+          supabase.from("event_sessions").select("*").eq("event_id", eventId),
+          supabase.from("event_time_slots").select("*").eq("event_id", eventId),
+          supabase
+            .from("bookings")
+            .select("id, booking_ref, client_name, booking_date, start_at, status")
             .eq("event_id", eventId)
-            .eq("session_date", ymd)
-            .maybeSingle();
+            .in("status", ["pending", "confirmed", "rescheduled"]),
+        ]);
 
-          let sessionId = existingSess?.id;
+      const existingSessions = existingSessionsRes.data || [];
+      const existingSlots = existingSlotsRes.data || [];
+      const activeBookings = activeBookingsRes.data || [];
 
-          if (!sessionId) {
-            const { data: newSess, error: newSessErr } = await supabase
-              .from("event_sessions")
-              .insert({
-                event_id: eventId,
-                session_date: ymd,
-                title: `${event.title} - ${ymd}`,
-                start_time: `${opStartTime.slice(0, 5)}:00`,
-                end_time: `${opEndTime.slice(0, 5)}:00`,
-                slot_duration_mins: slotDuration,
-                buffer_before_mins: bufferBefore,
-                buffer_after_mins: bufferAfter,
-                capacity_per_slot: slotCapacity,
-                is_active: true,
-              })
-              .select("id")
-              .single();
+      // 4. Upsert sessions
+      const sessionMap = new Map<string, string>(); // session_date -> session_id
+      for (const proposedSess of proposed.sessions) {
+        const existingSess = existingSessions.find(
+          (s) => s.session_date === proposedSess.session_date
+        );
+        if (existingSess) {
+          sessionMap.set(proposedSess.session_date, existingSess.id);
+          await supabase
+            .from("event_sessions")
+            .update({
+              start_time: proposedSess.start_time,
+              end_time: proposedSess.end_time,
+              slot_duration_mins: proposedSess.slot_duration_mins,
+              capacity_per_slot: proposedSess.capacity_per_slot,
+              buffer_before_mins: proposedSess.buffer_before_mins,
+              buffer_after_mins: proposedSess.buffer_after_mins,
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingSess.id);
+        } else {
+          const { data: newSess, error: newSessErr } = await supabase
+            .from("event_sessions")
+            .insert({
+              event_id: eventId,
+              session_date: proposedSess.session_date,
+              title: `${event.title} - ${proposedSess.session_date}`,
+              start_time: proposedSess.start_time,
+              end_time: proposedSess.end_time,
+              slot_duration_mins: proposedSess.slot_duration_mins,
+              capacity_per_slot: proposedSess.capacity_per_slot,
+              buffer_before_mins: proposedSess.buffer_before_mins,
+              buffer_after_mins: proposedSess.buffer_after_mins,
+              is_active: true,
+            })
+            .select("id")
+            .single();
 
-            if (newSessErr) throw parseDatabaseBookingError(newSessErr);
-            sessionId = newSess?.id;
-          } else {
+          if (newSessErr) throw parseDatabaseBookingError(newSessErr);
+          if (newSess) sessionMap.set(proposedSess.session_date, newSess.id);
+        }
+      }
+
+      // 5. Upsert slots
+      let createdSlotsCount = 0;
+      let retainedSlotsCount = 0;
+
+      const existingSlotMap = new Map<string, any>();
+      for (const es of existingSlots) {
+        existingSlotMap.set(`${es.slot_date}_${es.start_at}_${es.end_at}`, es);
+      }
+
+      const activeProposedKeys = new Set<string>();
+
+      for (const proposedSess of proposed.sessions) {
+        const sessionId = sessionMap.get(proposedSess.session_date);
+        for (const ps of proposedSess.slots) {
+          const key = `${ps.slot_date}_${ps.start_at}_${ps.end_at}`;
+          activeProposedKeys.add(key);
+
+          const matchedExisting = existingSlotMap.get(key);
+          if (matchedExisting) {
+            retainedSlotsCount++;
+            const safeCap = Math.max(
+              matchedExisting.booked_count || 0,
+              ps.capacity
+            );
             await supabase
-              .from("event_sessions")
+              .from("event_time_slots")
               .update({
-                start_time: `${opStartTime.slice(0, 5)}:00`,
-                end_time: `${opEndTime.slice(0, 5)}:00`,
-                slot_duration_mins: slotDuration,
-                buffer_before_mins: bufferBefore,
-                buffer_after_mins: bufferAfter,
-                capacity_per_slot: slotCapacity,
-                is_active: true,
+                session_id: sessionId || matchedExisting.session_id,
+                capacity: safeCap,
+                buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
+                buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
                 updated_at: new Date().toISOString(),
               })
-              .eq("id", sessionId);
-          }
-
-          if (sessionId) {
-            totalSessions++;
-
-            // Auto-generate slots
-            const { data: genCount } = await supabase.rpc(
-              "generate_event_session_slots",
-              { p_session_id: sessionId }
-            );
-
-            // Filter out slots overlapping break periods (only if unbooked)
-            if (breakPeriods.length > 0) {
-              for (const bp of breakPeriods) {
-                if (bp.start_time && bp.end_time) {
-                  const bStart = `${ymd}T${bp.start_time.slice(0, 5)}:00+06:00`;
-                  const bEnd = `${ymd}T${bp.end_time.slice(0, 5)}:00+06:00`;
-                  await supabase
-                    .from("event_time_slots")
-                    .delete()
-                    .eq("session_id", sessionId)
-                    .eq("booked_count", 0)
-                    .lt("start_at", bEnd)
-                    .gt("end_at", bStart);
-                }
-              }
-            }
-
-            // Count final slots
-            const { count } = await supabase
-              .from("event_time_slots")
-              .select("*", { count: "exact", head: true })
-              .eq("session_id", sessionId);
-
-            totalSlots += count || Number(genCount || 0);
+              .eq("id", matchedExisting.id);
+          } else {
+            createdSlotsCount++;
+            await supabase.from("event_time_slots").insert({
+              event_id: eventId,
+              session_id: sessionId || null,
+              slot_date: ps.slot_date,
+              start_at: ps.start_at,
+              end_at: ps.end_at,
+              buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
+              buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
+              effective_start_at: ps.effective_start_at,
+              effective_end_at: ps.effective_end_at,
+              capacity: ps.capacity,
+              booked_count: 0,
+              status: "available",
+              label: `${ps.start_time} - ${ps.end_time}`,
+            });
           }
         }
+      }
 
-        curDate.setUTCDate(curDate.getUTCDate() + 1);
+      // 6. Prune unbooked slots outside new schedule (strict preservation of booked slots)
+      let prunedSlotsCount = 0;
+      for (const es of existingSlots) {
+        const key = `${es.slot_date}_${es.start_at}_${es.end_at}`;
+        if (!activeProposedKeys.has(key)) {
+          if ((es.booked_count || 0) === 0) {
+            await supabase.from("event_time_slots").delete().eq("id", es.id);
+            prunedSlotsCount++;
+          }
+        }
       }
 
       return NextResponse.json({
         success: true,
-        message: `Successfully generated ${totalSessions} sessions and ${totalSlots} available slots.`,
+        message: `Successfully synchronized schedule: ${proposed.sessions.length} sessions, ${createdSlotsCount} new slots created, ${retainedSlotsCount} slots updated/retained, ${prunedSlotsCount} unused slots pruned. All ${activeBookings.length} confirmed bookings preserved.`,
         data: {
-          sessions_count: totalSessions,
-          slots_count: totalSlots,
+          sessions_count: proposed.sessions.length,
+          slots_created: createdSlotsCount,
+          slots_retained: retainedSlotsCount,
+          slots_pruned: prunedSlotsCount,
+          bookings_preserved: activeBookings.length,
         },
       });
+    }
+
+    if (entity === "bulk_slots") {
+      const action = String(body.action || "").trim();
+      const slotIds: string[] = Array.isArray(body.slot_ids) ? body.slot_ids : [];
+
+      if (!action || slotIds.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Action and slot_ids array are required." },
+          { status: 400 }
+        );
+      }
+
+      if (action === "block") {
+        const { error } = await supabase
+          .from("event_time_slots")
+          .update({ status: "blocked", updated_at: new Date().toISOString() })
+          .in("id", slotIds);
+
+        if (error) throw parseDatabaseBookingError(error);
+        return NextResponse.json({
+          success: true,
+          message: `Blocked ${slotIds.length} slot(s) from public booking.`,
+          affected: slotIds.length,
+        });
+      }
+
+      if (action === "restore") {
+        const { error } = await supabase
+          .from("event_time_slots")
+          .update({ status: "available", updated_at: new Date().toISOString() })
+          .in("id", slotIds);
+
+        if (error) throw parseDatabaseBookingError(error);
+        return NextResponse.json({
+          success: true,
+          message: `Restored ${slotIds.length} slot(s) to available status.`,
+          affected: slotIds.length,
+        });
+      }
+
+      if (action === "set_capacity") {
+        const newCap = Math.max(1, Number(body.capacity || 1));
+        const { data: targetSlots } = await supabase
+          .from("event_time_slots")
+          .select("id, booked_count")
+          .in("id", slotIds);
+
+        let updatedCount = 0;
+        let skippedCount = 0;
+
+        for (const slot of targetSlots || []) {
+          if ((slot.booked_count || 0) <= newCap) {
+            await supabase
+              .from("event_time_slots")
+              .update({ capacity: newCap, updated_at: new Date().toISOString() })
+              .eq("id", slot.id);
+            updatedCount++;
+          } else {
+            skippedCount++;
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Updated capacity to ${newCap} for ${updatedCount} slot(s).${
+            skippedCount > 0
+              ? ` Skipped ${skippedCount} slot(s) where existing bookings exceed ${newCap}.`
+              : ""
+          }`,
+          updated: updatedCount,
+          skipped: skippedCount,
+        });
+      }
+
+      if (action === "delete") {
+        const { data: targetSlots } = await supabase
+          .from("event_time_slots")
+          .select("id, booked_count")
+          .in("id", slotIds);
+
+        const safeIdsToDelete: string[] = [];
+        let bookedSlotsSkipped = 0;
+
+        for (const slot of targetSlots || []) {
+          if ((slot.booked_count || 0) === 0) {
+            safeIdsToDelete.push(slot.id);
+          } else {
+            bookedSlotsSkipped++;
+          }
+        }
+
+        if (safeIdsToDelete.length > 0) {
+          const { error } = await supabase
+            .from("event_time_slots")
+            .delete()
+            .in("id", safeIdsToDelete);
+
+          if (error) throw parseDatabaseBookingError(error);
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Safely deleted ${safeIdsToDelete.length} unbooked slot(s).${
+            bookedSlotsSkipped > 0
+              ? ` Preserved ${bookedSlotsSkipped} slot(s) with active bookings. Use 'Block' if you wish to close them.`
+              : ""
+          }`,
+          deleted: safeIdsToDelete.length,
+          skipped: bookedSlotsSkipped,
+        });
+      }
+
+      return NextResponse.json(
+        { success: false, error: `Unsupported bulk action: ${action}` },
+        { status: 400 }
+      );
     }
 
     if (entity === "slot") {
@@ -573,14 +870,38 @@ export async function POST(request: NextRequest) {
           ? Math.max(existingSlot.booked_count, Number(capacity))
           : Number(capacity);
 
+        const updatePayload: any = {
+          capacity: safeCapacity,
+          status,
+          label: label ?? existingSlot?.label,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (start_time && end_time) {
+          const targetDate = slot_date || existingSlot?.slot_date;
+          const startIso = dhakaDateTimeToISO(targetDate, start_time);
+          const endIso = dhakaDateTimeToISO(targetDate, end_time);
+          if (Date.parse(endIso) <= Date.parse(startIso)) {
+            return NextResponse.json(
+              { success: false, error: "End time must be after start time." },
+              { status: 400 }
+            );
+          }
+          updatePayload.start_at = startIso;
+          updatePayload.end_at = endIso;
+          updatePayload.effective_start_at = addMinutesToISO(
+            startIso,
+            -Number(buffer_before_mins ?? existingSlot?.buffer_before_mins ?? 0)
+          );
+          updatePayload.effective_end_at = addMinutesToISO(
+            endIso,
+            Number(buffer_after_mins ?? existingSlot?.buffer_after_mins ?? 10)
+          );
+        }
+
         const { data: updated, error } = await supabase
           .from("event_time_slots")
-          .update({
-            capacity: safeCapacity,
-            status,
-            label: label ?? existingSlot?.label,
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq("id", id)
           .select("*")
           .single();
@@ -608,7 +929,7 @@ export async function POST(request: NextRequest) {
             capacity: Math.max(1, Number(capacity)),
             booked_count: 0,
             status,
-            label: label || "Custom Slot",
+            label: label || `${start_time} - ${end_time}`,
           })
           .select("*")
           .single();

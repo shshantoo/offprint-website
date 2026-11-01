@@ -119,9 +119,9 @@ export default function Footer() {
               <Image
                 src="/brand/offprint-black-logo.png"
                 alt="OFFPRINT Photography & Print Studio"
-                width={150}
-                height={42}
-                className="h-10 w-auto object-contain"
+                width={155}
+                height={53}
+                className="h-11 sm:h-12 w-auto object-contain"
               />
             </div>
 

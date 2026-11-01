@@ -316,8 +316,8 @@ export default function ClientPortalClient() {
               src="/brand/offprint-black-logo.png"
               alt="OFFPRINT"
               width={160}
-              height={45}
-              className="h-10 w-auto object-contain"
+              height={55}
+              className="h-12 w-auto object-contain"
             />
           </div>
           <div className="text-center space-y-2">

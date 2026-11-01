@@ -342,5 +342,59 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
 
 ---
 
+## 12. Scheduled Sessions & Time Slots Control Center + Brand Logo Correction
+
+### 12.1 Unified Schedule Configuration & Generation Mechanics
+- **Location:** Admin Portal → *Special Events & Services → Select Event → 2. Schedule Configuration & Generator* tab.
+- **Form Controls:**
+  - `From Date` & `End Date (To)`
+  - `Operating Days of Week` (`Sun` through `Sat` toggle buttons)
+  - `Daily Operating Hours` (`Daily Start Time`, `Daily End Time`)
+  - `Booking Slot Settings`:
+    - **Duration:** Appointment time occupied by each client (`Slot End = Slot Start + Duration`).
+    - **Interval:** Frequency of appointment start times (`Next Start = Prev Start + Interval`).
+    - **Default Capacity:** Number of concurrent clients permitted per slot.
+    - **Buffer After:** Studio turnaround buffer added to effective reservation block.
+  - `Break Periods Builder:` Custom periods (e.g. Lunch Break, Staff Changeover) with start & end times. Any slot overlapping `[break_start, break_end]` is never generated.
+  - `Studio Timezone Notice:` Displays `Asia/Dhaka (+06:00)` explicitly.
+- **Interactive Schedule Preview Modal:**
+  - Diff calculation comparing proposed schedule with live Supabase database.
+  - Displays proposed sessions, fresh slots to create (`+X`), existing retained slots (`=X`), unbooked slots to prune (`-X`), and guaranteed active confirmed bookings preserved (`✓ X`).
+  - Strict preservation: Active confirmed bookings are never deleted or orphaned during schedule regeneration.
+
+### 12.2 Scheduled Sessions Management
+- Searchable and filterable table of generated sessions for each operating date.
+- Columns: Date (formatted in Dhaka locale), Session Title, Operating Window, Slot Count, Total Capacity, Confirmed Bookings, Remaining Availability, Status (`Active` / `Inactive`).
+- Actions:
+  - **View Slots:** One-click filtering of the individual slots management table to the selected session date.
+  - **Edit:** Override session date, title, operating hours, capacity, and active status.
+  - **Delete:** Safe deletion check prevents removing sessions with active confirmed bookings with human-readable conflict errors.
+
+### 12.3 Individual Bookable Time Slots Management
+- Granular control over every generated slot with session dropdown filter, status filter (`Available`, `Fully Booked`, `Blocked`, `Past`), and search.
+- Columns: Checkbox, Date, Time Window (`10:00 AM – 10:30 AM BST`), Capacity, Booked Count, Remaining, Status Badge.
+- Slot Actions:
+  - **Modify Capacity:** Instant capacity adjustment enforcing `capacity >= booked_count`.
+  - **Modify Time:** Adjust slot start and end times within session bounds.
+  - **Block / Restore:** 1-click toggle to exclude a slot from public booking without deleting client records.
+  - **Safe Delete:** Deletes unbooked slots; prevents deleting slots with active bookings and suggests blocking instead.
+- **Bulk Management Toolbar:** Checkbox selection for multiple slots to bulk Block, Restore, Set Capacity, or Delete Unused unbooked slots.
+
+### 12.4 Brand Logo Visibility & Aspect Ratio Standardization
+- **Original Asset Microscopic Margin Problem:** Original 3000x2400 PNGs contained 78% transparent margin vertically and 46% horizontally (visible logo was only 1615x551), making rendered height ~8px when styled with `h-9` or `h-10`.
+- **Trimmed Derivative Assets:** Trimmed all three variants in `public/brand/` to crisp, lossless 1615x551 dimensions (~2.93:1 aspect ratio):
+  - `public/brand/offprint-colour-logo.png`
+  - `public/brand/offprint-black-logo.png`
+  - `public/brand/offprint-white-logo.png`
+- **Standardized Display Dimensions:**
+  - Desktop Header: `width={155}` `height={53}` (`h-10 sm:h-11 md:h-12 w-auto`)
+  - Mobile Header: `h-10 w-auto` (~117px width)
+  - Admin Header: `width={135}` `height={46}` (`h-9 sm:h-10 w-auto`)
+  - Admin Sign-in & Client Portal: `width={160}` `height={55}` (`h-12 w-auto`)
+  - Footer: `width={155}` `height={53}` (`h-11 sm:h-12 w-auto`)
+- **Contrast Adaptation:** White logo mark on dark hero/background, Black logo mark on light scrolled headers and admin cards. Pure logo mark without text.
+
+---
+
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.2.0 (Slider Timing CMS & Dynamic Homepage Ready)*
+*Document Version: 1.3.0 (Complete Schedule & Time Slot Management + Brand Logo Visibility Ready)*

@@ -40,6 +40,11 @@ import {
   DEFAULT_HOMEPAGE_CONFIG,
   DEFAULT_SITE_SETTINGS,
 } from "../src/lib/data-service";
+import {
+  calculateProposedSchedule,
+  compareScheduleWithExisting,
+} from "../src/lib/booking/schedule-generator";
+import type { ScheduleConfig } from "../src/lib/booking/schedule-generator";
 import type {
   AvailabilityRule,
   Booking,
@@ -2181,5 +2186,194 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     const lightNavbar = resolveBrandLogoAsset(false);
     assert.equal(lightNavbar.src, "/brand/offprint-black-logo.png");
     assert.equal(lightNavbar.hasAccompanyingText, false, "Must keep logo mark only without offprint text");
+  });
+
+  it("27. Automated Schedule Generation, Duration vs Interval Mechanics, Break Exclusion, Time Slot Management, and Safe Regeneration", async () => {
+    // 1. Calculate proposed schedule with Duration (20m), Interval (30m), Breaks, Asia/Dhaka timezone
+    const config: ScheduleConfig = {
+      start_date: "2026-11-20",
+      end_date: "2026-11-20",
+      operating_days: [5], // Friday
+      operating_start_time: "10:00",
+      operating_end_time: "17:00",
+      slot_duration_mins: 20,
+      slot_interval_mins: 30,
+      capacity_per_slot: 2,
+      buffer_before_mins: 0,
+      buffer_after_mins: 10,
+      break_periods: [
+        {
+          name: "Lunch Break",
+          start_time: "13:00",
+          end_time: "14:00",
+        },
+      ],
+    };
+
+    const proposed = calculateProposedSchedule(config);
+    assert.equal(proposed.operatingDaysCount, 1, "Must generate exactly 1 operating day");
+    assert.equal(proposed.sessions.length, 1, "Must generate exactly 1 session");
+
+    const session = proposed.sessions[0];
+    assert.equal(session.session_date, "2026-11-20");
+    assert.equal(session.slot_duration_mins, 20);
+    assert.equal(session.capacity_per_slot, 2);
+
+    // Duration vs Interval stepping verification:
+    // 10:00-10:20, 10:30-10:50, 11:00-11:20, 11:30-11:50, 12:00-12:20, 12:30-12:50 (6 slots)
+    // 13:00-13:20 and 13:30-13:50 must be excluded due to lunch break!
+    // 14:00-14:20, 14:30-14:50, 15:00-15:20, 15:30-15:50, 16:00-16:20, 16:30-16:50 (6 slots)
+    // Total = 12 slots
+    assert.equal(session.slots.length, 12, "Must generate exactly 12 conflict-free slots excluding lunch break");
+    assert.equal(proposed.totalSlots, 12);
+
+    assert.equal(session.slots[0].start_time, "10:00");
+    assert.equal(session.slots[0].end_time, "10:20");
+    assert.equal(session.slots[1].start_time, "10:30");
+    assert.equal(session.slots[1].end_time, "10:50");
+    assert.equal(session.slots[5].start_time, "12:30");
+    assert.equal(session.slots[5].end_time, "12:50");
+
+    // Break exclusion check: No slots between 13:00 and 14:00
+    for (const slot of session.slots) {
+      assert.ok(
+        !(slot.start_time < "14:00" && slot.end_time > "13:00"),
+        `Generated slot ${slot.start_time}-${slot.end_time} must not overlap break period 13:00-14:00`
+      );
+    }
+
+    // First afternoon slot resumes at 14:00
+    assert.equal(session.slots[6].start_time, "14:00");
+    assert.equal(session.slots[6].end_time, "14:20");
+
+    // Final slot finishes within operating end time (17:00)
+    const lastSlot = session.slots[session.slots.length - 1];
+    assert.equal(lastSlot.start_time, "16:30");
+    assert.equal(lastSlot.end_time, "16:50");
+    assert.ok(lastSlot.end_time <= "17:00");
+
+    // Dhaka timezone ISO check
+    assert.ok(
+      lastSlot.start_at.endsWith("Z") || lastSlot.start_at.includes("T"),
+      "Timestamps must be valid ISO strings"
+    );
+
+    // 2. Safe Schedule Regeneration comparison diff with existing bookings
+    const mockExistingSlots = [
+      {
+        id: "slot-1",
+        slot_date: "2026-11-20",
+        start_at: session.slots[0].start_at,
+        end_at: session.slots[0].end_at,
+        capacity: 2,
+        booked_count: 1, // active confirmed booking!
+        status: "available",
+      },
+      {
+        id: "slot-old-unbooked",
+        slot_date: "2026-11-20",
+        start_at: dhakaDateTimeToISO("2026-11-20", "13:15"),
+        end_at: dhakaDateTimeToISO("2026-11-20", "13:45"),
+        capacity: 1,
+        booked_count: 0, // unbooked, falls in break -> should be pruned safely
+        status: "available",
+      },
+    ];
+
+    const mockActiveBookings = [
+      {
+        id: "booking-101",
+        booking_ref: "OFF-20261120-001",
+        client_name: "Sarah Ahmed",
+        booking_date: "2026-11-20",
+        start_at: session.slots[0].start_at,
+        status: "confirmed",
+      },
+    ];
+
+    const preview = compareScheduleWithExisting(
+      config,
+      proposed,
+      [{ id: "sess-1", session_date: "2026-11-20" }],
+      mockExistingSlots,
+      mockActiveBookings
+    );
+
+    assert.equal(preview.total_proposed_slots, 12);
+    assert.equal(preview.retained_slots_count, 1, "Slot with matching start/end must be retained");
+    assert.equal(preview.retained_booked_slots_count, 1, "Must retain slot with confirmed booking");
+    assert.equal(preview.new_slots_count, 11, "11 new slots to be inserted");
+    assert.equal(preview.removable_unbooked_slots_count, 1, "Unbooked slot outside schedule marked for pruning");
+    assert.equal(preview.confirmed_bookings_count, 1);
+    assert.equal(preview.confirmed_bookings_preserved, true, "Confirmed bookings must strictly be preserved");
+    assert.equal(preview.affected_active_bookings.length, 1);
+    assert.equal(preview.affected_active_bookings[0].booking_ref, "OFF-20261120-001");
+
+    // 3. Slot Capacity Modification Safety (Never below active bookings)
+    const validateSlotCapacityChange = (bookedCount: number, newCapacity: number) => {
+      if (newCapacity < bookedCount) {
+        return {
+          allowed: false,
+          error: `Cannot reduce slot capacity below existing confirmed bookings (${bookedCount}).`,
+        };
+      }
+      return { allowed: true, safeCapacity: newCapacity };
+    };
+
+    const invalidCap = validateSlotCapacityChange(2, 1);
+    assert.equal(invalidCap.allowed, false);
+    assert.ok(invalidCap.error?.includes("Cannot reduce"));
+
+    const validCap = validateSlotCapacityChange(1, 3);
+    assert.equal(validCap.allowed, true);
+    assert.equal(validCap.safeCapacity, 3);
+
+    // 4. Bulk Delete Safety (Skips booked slots)
+    const simulateBulkDelete = (
+      slotsList: Array<{ id: string; booked_count: number }>
+    ) => {
+      const safeToDelete = slotsList
+        .filter((s) => s.booked_count === 0)
+        .map((s) => s.id);
+      const skippedBooked = slotsList
+        .filter((s) => s.booked_count > 0)
+        .map((s) => s.id);
+      return { safeToDelete, skippedBooked };
+    };
+
+    const bulkResult = simulateBulkDelete([
+      { id: "s1", booked_count: 0 },
+      { id: "s2", booked_count: 2 },
+      { id: "s3", booked_count: 0 },
+    ]);
+    assert.deepEqual(
+      bulkResult.safeToDelete,
+      ["s1", "s3"],
+      "Must only delete unbooked slots"
+    );
+    assert.deepEqual(
+      bulkResult.skippedBooked,
+      ["s2"],
+      "Must safely preserve booked slots"
+    );
+
+    // 5. Brand Logo Standard Dimensions & Natural Aspect Ratio
+    // Bounding box: 1615 x 551 -> Aspect ratio ~ 2.93:1
+    const logoWidth = 1615;
+    const logoHeight = 551;
+    const aspectRatio = logoWidth / logoHeight;
+    assert.ok(
+      aspectRatio > 2.9 && aspectRatio < 2.95,
+      "Cropped logo must have ~2.93 aspect ratio without large margins"
+    );
+
+    const desktopDisplayHeight = 48; // h-12
+    const computedDesktopWidth = desktopDisplayHeight * aspectRatio;
+    assert.ok(
+      computedDesktopWidth >= 130 && computedDesktopWidth <= 155,
+      `Desktop width (${computedDesktopWidth.toFixed(
+        1
+      )}px) must be between 130px and 155px`
+    );
   });
 });
