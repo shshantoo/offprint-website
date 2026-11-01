@@ -80,15 +80,15 @@ export default function Header({ showPrintMerch = false }: HeaderProps) {
           {/* Brand Logo Only */}
           <Link
             href="/"
-            className="flex items-center group transition-transform active:scale-95"
+            className="flex items-center shrink-0 group transition-transform active:scale-95"
             aria-label="OFFPRINT Photography & Print Studio"
           >
             <Image
               src={isTransparent ? "/brand/offprint-white-logo.png" : "/brand/offprint-black-logo.png"}
               alt="OFFPRINT Photography & Print Studio"
-              width={155}
-              height={53}
-              className="h-10 sm:h-11 md:h-12 w-auto object-contain transition-opacity duration-300"
+              width={205}
+              height={70}
+              className="w-[155px] sm:w-[170px] md:w-[195px] lg:w-[205px] h-auto max-h-[72px] shrink-0 object-contain transition-opacity duration-300"
               priority
             />
           </Link>

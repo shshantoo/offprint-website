@@ -487,10 +487,9 @@ export default function TraditionalBookingClient() {
 
               {activeService && (
                 <div className="flex justify-between gap-4">
-                  <span className="text-[#5C5449]">Notice & Buffer Policy:</span>
+                  <span className="text-[#5C5449]">Booking Notice:</span>
                   <span className="font-mono text-[#141210] text-right">
-                    {activeService.min_notice_hours}h notice •{" "}
-                    {activeService.buffer_after_mins}m buffer
+                    {activeService.min_notice_hours}h advance notice
                   </span>
                 </div>
               )}

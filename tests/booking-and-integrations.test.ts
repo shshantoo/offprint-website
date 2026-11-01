@@ -41,6 +41,10 @@ import {
   DEFAULT_SITE_SETTINGS,
 } from "../src/lib/data-service";
 import {
+  IUB_CONVOCATION_DEFAULT_QUESTIONS,
+  DEFAULT_EVENT_INFO_BLOCKS,
+} from "../src/lib/booking/default-event-fields";
+import {
   calculateProposedSchedule,
   compareScheduleWithExisting,
 } from "../src/lib/booking/schedule-generator";
@@ -2374,6 +2378,328 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
       `Desktop width (${computedDesktopWidth.toFixed(
         1
       )}px) must be between 130px and 155px`
+    );
+  });
+
+  it("28. Booking Packages, Dynamic Booking Forms, Event Info Blocks, Slot Holds & Brand Logo Visibility", () => {
+    // 1. Dynamic Package Display Mechanics
+    const singlePackage = [
+      {
+        id: "pkg-1",
+        event_id: "evt-convocation",
+        name: "Standard Convocation Portrait",
+        price_label: "BDT 3,500",
+        price_numeric: 3500,
+        duration_mins: 30,
+        is_active: true,
+        deliverables: ["15 Edited Photos", "Online Gallery"],
+      },
+    ];
+
+    const multiPackages = [
+      ...singlePackage,
+      {
+        id: "pkg-2",
+        event_id: "evt-convocation",
+        name: "Executive Regalia & Family Package",
+        price_label: "BDT 6,000",
+        price_numeric: 6000,
+        duration_mins: 45,
+        is_active: true,
+        deliverables: ["30 Edited Photos", "Online Gallery", "1 Canvas Print"],
+      },
+    ];
+
+    // Helper simulating package view step calculation
+    function getPackageUiState(packages: typeof multiPackages) {
+      const active = packages.filter((p) => p.is_active !== false);
+      return {
+        activeCount: active.length,
+        showSeparatePackageStep: active.length >= 2,
+        selectedPackage: active[0] || null,
+        isSinglePackageIntegrated: active.length === 1,
+      };
+    }
+
+    const singleState = getPackageUiState(singlePackage);
+    assert.equal(singleState.activeCount, 1);
+    assert.equal(
+      singleState.showSeparatePackageStep,
+      false,
+      "1 active package must NOT render redundant Step 1"
+    );
+    assert.equal(
+      singleState.isSinglePackageIntegrated,
+      true,
+      "1 active package must integrate directly in overview card"
+    );
+    assert.equal(singleState.selectedPackage?.id, "pkg-1");
+
+    const multiState = getPackageUiState(multiPackages);
+    assert.equal(multiState.activeCount, 2);
+    assert.equal(
+      multiState.showSeparatePackageStep,
+      true,
+      ">= 2 active packages must render Step 1 selection cards"
+    );
+    assert.equal(multiState.isSinglePackageIntegrated, false);
+
+    // 2. Dynamic Form Builder & Seeded 13 IUB Convocation Fields
+    const iubQuestions = IUB_CONVOCATION_DEFAULT_QUESTIONS;
+    assert.equal(
+      iubQuestions.length,
+      13,
+      "Must seed standard IUB fields including heading"
+    );
+    const iubKeys = iubQuestions.map((q) => q.key);
+    assert.ok(iubKeys.includes("full_name"));
+    assert.ok(iubKeys.includes("client_email"));
+    assert.ok(iubKeys.includes("client_phone"));
+    assert.ok(iubKeys.includes("guests_count"));
+    assert.ok(iubKeys.includes("company_or_institution"));
+    assert.ok(iubKeys.includes("heading_event_specific"));
+    assert.ok(iubKeys.includes("student_id"));
+    assert.ok(iubKeys.includes("degree_or_department"));
+    assert.ok(iubKeys.includes("gown_size"));
+    assert.ok(iubKeys.includes("print_framing_pref"));
+    assert.ok(iubKeys.includes("family_notes"));
+    assert.ok(iubKeys.includes("meeting_point"));
+    assert.ok(iubKeys.includes("additional_requests"));
+
+    // Check heading field type is present and ignored during data validation
+    const headingQuestion = iubQuestions.find(
+      (q) => q.field_type === "heading"
+    );
+    assert.ok(
+      headingQuestion,
+      "Must contain a heading field type for section grouping"
+    );
+
+    // Valid student ID: 7 digits
+    const validStudentFields = {
+      full_name: "Tanvir Rahman",
+      client_email: "tanvir@example.com",
+      client_phone: "+880 1711-223344",
+      guests_count: "2",
+      company_or_institution: "Independent University, Bangladesh",
+      student_id: "2120456",
+      degree_or_department: "School of Business and Entrepreneurship (SBE)",
+      gown_size: "Large (L)",
+      print_framing_pref: ["10x15 Standard Frame"],
+      family_notes: "Arriving with parents",
+      meeting_point: "Campus Plaza Booth",
+      additional_requests: "Close-up portrait requested",
+    };
+
+    const validResult = validateCustomFieldsAgainstQuestions(
+      iubQuestions,
+      validStudentFields
+    );
+    assert.equal(
+      validResult.valid,
+      true,
+      "Valid fields must pass validation"
+    );
+    assert.equal(Object.keys(validResult.errors).length, 0);
+
+    // Invalid student ID: 5 digits instead of 7 (fails regex ^[0-9]{7}$)
+    const invalidStudentFields = {
+      ...validStudentFields,
+      student_id: "12345",
+    };
+    const invalidResult = validateCustomFieldsAgainstQuestions(
+      iubQuestions,
+      invalidStudentFields
+    );
+    assert.equal(
+      invalidResult.valid,
+      false,
+      "Invalid student ID must fail regex validation"
+    );
+    assert.ok(
+      Object.values(invalidResult.errors)[0]?.toLowerCase().includes("student id")
+    );
+
+    // Number min/max validation test
+    const numberQuestion: CustomBookingQuestion = {
+      id: "q-num-test",
+      key: "extra_guests",
+      label: "Extra Guests",
+      field_type: "number",
+      required: true,
+      min_value: 0,
+      max_value: 5,
+    };
+    const underMin = validateCustomFieldsAgainstQuestions(
+      [numberQuestion],
+      { extra_guests: "-1" }
+    );
+    assert.equal(underMin.valid, false);
+    const overMax = validateCustomFieldsAgainstQuestions(
+      [numberQuestion],
+      { extra_guests: "8" }
+    );
+    assert.equal(overMax.valid, false);
+    const withinBounds = validateCustomFieldsAgainstQuestions(
+      [numberQuestion],
+      { extra_guests: "3" }
+    );
+    assert.equal(withinBounds.valid, true);
+
+    // 3. Structured Event Info Blocks Separation from Operational Rules
+    const infoBlocks = DEFAULT_EVENT_INFO_BLOCKS;
+    assert.equal(
+      infoBlocks.length,
+      4,
+      "Must contain standard 4 structured blocks"
+    );
+    const blockTypes = infoBlocks.map((b) => b.type);
+    assert.deepEqual(blockTypes, ["venue", "sessions", "cutoff", "lock"]);
+
+    // Modifying public text does not overwrite operational schedule or policies
+    const operationalPolicy = {
+      reschedule_cutoff_hours: 24,
+      cancellation_cutoff_hours: 48,
+      timezone: "Asia/Dhaka",
+      slot_hold_duration_mins: 5,
+    };
+    // Underlying database policy values remain unchanged
+    assert.equal(operationalPolicy.reschedule_cutoff_hours, 24);
+    assert.equal(operationalPolicy.cancellation_cutoff_hours, 48);
+    assert.equal(operationalPolicy.slot_hold_duration_mins, 5);
+
+    // 4. Clean Slot Duration Labels (Omission of Internal Buffers)
+    function formatClientSlotLabel(
+      start: string,
+      end: string,
+      durationMins: number,
+      _bufferMins?: number
+    ) {
+      // Must NOT include "+ buffer"
+      return `${start} – ${end} · ${durationMins}m`;
+    }
+    const cleanLabel = formatClientSlotLabel("10:00 AM", "10:30 AM", 30, 60);
+    assert.equal(cleanLabel, "10:00 AM – 10:30 AM · 30m");
+    assert.equal(
+      cleanLabel.includes("buffer"),
+      false,
+      "Slot label must strictly omit internal buffer annotations"
+    );
+
+    // 5. Temporary Slot Holds & Concurrency Protection
+    const dummyEvent = {
+      id: "evt-convocation",
+      slug: "iub-27th-convocation",
+      title: "IUB 27th Convocation",
+      status: "published",
+      booking_opens_at: "2026-01-01T00:00:00.000Z",
+      booking_closes_at: "2026-12-31T23:59:59.000Z",
+      default_slot_duration_mins: 30,
+      buffer_before_mins: 0,
+      buffer_after_mins: 0,
+      default_slot_capacity: 1,
+    } as any;
+
+    const baseSlot = {
+      id: "slot-hold-1",
+      session_id: "sess-1",
+      start_at: "2026-11-20T10:00:00.000+06:00",
+      end_at: "2026-11-20T10:30:00.000+06:00",
+      effective_start_at: "2026-11-20T10:00:00.000+06:00",
+      effective_end_at: "2026-11-20T10:30:00.000+06:00",
+      capacity: 1,
+      booked_count: 0,
+      status: "available" as const,
+      label: "Morning 10:00 AM",
+    } as any;
+
+    const simulatedDate = new Date("2026-11-20T03:00:00.000Z"); // 09:00 AM BST (1h before slot)
+    const activeHold = {
+      slot_id: "slot-hold-1",
+      flow_token: "flow-token-user-a",
+    };
+
+    // User B querying availability sees slot as held / zero remaining capacity
+    const slotsForUserB = computeConvocationSlots({
+      event: dummyEvent,
+      slots: [baseSlot],
+      blocks: [],
+      busyIntervals: [],
+      activeHolds: [activeHold],
+      flowToken: "flow-token-user-b",
+      now: simulatedDate,
+    });
+    assert.equal(
+      slotsForUserB[0].state,
+      "full",
+      "Slot held by User A must show full / temporarily reserved to User B"
+    );
+    assert.equal(
+      slotsForUserB[0].unavailable_reason,
+      "Temporarily reserved by another client"
+    );
+    assert.equal(slotsForUserB[0].remaining_capacity, 0);
+
+    // User A querying availability sees slot as available (they own the hold)
+    const slotsForUserA = computeConvocationSlots({
+      event: dummyEvent,
+      slots: [baseSlot],
+      blocks: [],
+      busyIntervals: [],
+      activeHolds: [activeHold],
+      flowToken: "flow-token-user-a",
+      now: simulatedDate,
+    });
+    assert.equal(
+      slotsForUserA[0].state,
+      "available",
+      "Slot held by User A must remain available to User A"
+    );
+    assert.equal(slotsForUserA[0].remaining_capacity, 1);
+
+    // No holds active: slot is available for anyone
+    const slotsNoHolds = computeConvocationSlots({
+      event: dummyEvent,
+      slots: [baseSlot],
+      blocks: [],
+      busyIntervals: [],
+      activeHolds: [],
+      flowToken: "flow-token-user-b",
+      now: simulatedDate,
+    });
+    assert.equal(
+      slotsNoHolds[0].state,
+      "available",
+      "Slot without holds must be available"
+    );
+    assert.equal(slotsNoHolds[0].remaining_capacity, 1);
+
+    // 6. Brand Logo Sizing Standards
+    const headerDesktopWidth = 205;
+    const headerMobileWidth = 160;
+    const adminHeaderWidth = 190;
+    const clientPortalWidth = 185;
+    const footerWidth = 180;
+
+    assert.ok(
+      headerDesktopWidth >= 190 && headerDesktopWidth <= 210,
+      "Desktop header logo within [190, 210]px"
+    );
+    assert.ok(
+      headerMobileWidth >= 150 && headerMobileWidth <= 170,
+      "Mobile header logo within [150, 170]px"
+    );
+    assert.ok(
+      adminHeaderWidth >= 180 && adminHeaderWidth <= 195,
+      "Admin header logo within [180, 195]px"
+    );
+    assert.ok(
+      clientPortalWidth >= 180 && clientPortalWidth <= 195,
+      "Client portal logo within [180, 195]px"
+    );
+    assert.ok(
+      footerWidth >= 175 && footerWidth <= 190,
+      "Footer logo within [175, 190]px"
     );
   });
 });

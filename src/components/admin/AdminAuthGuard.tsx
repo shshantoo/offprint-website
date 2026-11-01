@@ -270,9 +270,9 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
             <Image
               src="/brand/offprint-black-logo.png"
               alt="OFFPRINT"
-              width={160}
-              height={55}
-              className="h-12 w-auto object-contain"
+              width={195}
+              height={67}
+              className="w-[180px] sm:w-[195px] h-auto object-contain shrink-0"
             />
           </div>
 
@@ -568,9 +568,9 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
               <Image
                 src="/brand/offprint-black-logo.png"
                 alt="OFFPRINT"
-                width={135}
-                height={46}
-                className="h-9 sm:h-10 w-auto object-contain"
+                width={190}
+                height={65}
+                className="w-[160px] sm:w-[185px] md:w-[190px] h-auto object-contain shrink-0"
                 priority
               />
               <span className="text-[10px] font-mono uppercase bg-[#F4EFE6] text-[#3A2008] px-2 py-0.5 rounded border border-[#D5CCB4] font-semibold">

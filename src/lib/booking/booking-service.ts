@@ -115,6 +115,7 @@ export async function getConvocationAvailabilityFromDb(params: {
   month: number; // 1..12
   date?: string; // YYYY-MM-DD
   excludeBookingId?: string;
+  flowToken?: string;
 }): Promise<{
   schemaReady: boolean;
   error?: string;
@@ -219,12 +220,31 @@ export async function getConvocationAvailabilityFromDb(params: {
       params.excludeBookingId
     );
 
+    // Fetch active unexpired holds to protect concurrent checkouts
+    let activeHolds: Array<{ slot_id: string; flow_token?: string }> = [];
+    try {
+      const { data: holdsData } = await supabase
+        .from("booking_slot_holds")
+        .select("slot_id, flow_token")
+        .eq("event_id", event.id)
+        .eq("status", "active")
+        .gt("expires_at", new Date().toISOString());
+
+      if (holdsData) {
+        activeHolds = holdsData as Array<{ slot_id: string; flow_token?: string }>;
+      }
+    } catch {
+      // Ignore if table not yet created
+    }
+
     const allComputed = computeConvocationSlots({
       event,
       slots,
       sessions,
       blocks,
       busyIntervals,
+      activeHolds,
+      flowToken: params.flowToken,
     });
 
     const monthSummary = summarizeMonthAvailability({
@@ -561,6 +581,30 @@ export async function executeCreateBookingWorkflow(params: {
 
   const effectiveDuration = selectedPkg?.duration_mins || input.duration_mins || 30;
 
+  // If a hold_id was provided, verify it has not expired prior to final booking commitment
+  if (input.hold_id) {
+    try {
+      const { data: holdRow } = await supabase
+        .from("booking_slot_holds")
+        .select("id, status, expires_at, slot_id, flow_token")
+        .eq("id", input.hold_id)
+        .maybeSingle();
+
+      if (holdRow) {
+        if (holdRow.status !== "active" || new Date(holdRow.expires_at).getTime() < Date.now()) {
+          throw new BookingSystemError(
+            "SLOT_HOLD_EXPIRED",
+            "Your temporary reservation on this time slot has expired. Please select a time slot again.",
+            409
+          );
+        }
+      }
+    } catch (err: any) {
+      if (err instanceof BookingSystemError) throw err;
+      // Non-fatal if holds table is optional in offline tests
+    }
+  }
+
   const { data: createdRow, error: rpcErr } = await supabase.rpc(
     "create_booking_atomic",
     {
@@ -604,6 +648,31 @@ export async function executeCreateBookingWorkflow(params: {
   }
 
   const booking = createdRow as Booking;
+
+  // Atomically mark any associated temporary slot hold as consumed
+  if (input.hold_id) {
+    try {
+      await supabase.rpc("consume_slot_hold", {
+        p_hold_id: input.hold_id,
+        p_flow_token: input.flow_token || "",
+        p_booking_id: booking.id,
+        p_booking_ref: booking.booking_ref,
+      });
+    } catch {
+      try {
+        await supabase
+          .from("booking_slot_holds")
+          .update({
+            status: "consumed",
+            consumed_booking_id: booking.id,
+            consumed_booking_ref: booking.booking_ref,
+          })
+          .eq("id", input.hold_id);
+      } catch {
+        // Non-critical background status update
+      }
+    }
+  }
 
   // Dispatch Google Calendar sync & Gmail confirmation email safely outside the DB lock
   const [calRes, emailRes] = await Promise.all([

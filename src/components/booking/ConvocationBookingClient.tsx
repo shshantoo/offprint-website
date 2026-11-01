@@ -48,6 +48,23 @@ interface ConvocationBookingClientProps {
   eventSlug?: string;
 }
 
+function getOrCreateFlowToken(): string {
+  if (typeof window === "undefined") return "server-flow-token";
+  try {
+    let token = window.sessionStorage.getItem("offprint_booking_flow_token");
+    if (!token) {
+      token =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `flow_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      window.sessionStorage.setItem("offprint_booking_flow_token", token);
+    }
+    return token;
+  } catch {
+    return "session-token";
+  }
+}
+
 export default function ConvocationBookingClient({
   eventSlug = "iub-27th-convocation",
 }: ConvocationBookingClientProps) {
@@ -63,6 +80,11 @@ export default function ConvocationBookingClient({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<ComputedTimeSlot | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
+
+  // Temporary Slot Hold State
+  const [holdId, setHoldId] = useState<string | null>(null);
+  const [holdRemainingSeconds, setHoldRemainingSeconds] = useState<number>(0);
+  const [holdError, setHoldError] = useState<string | null>(null);
 
   // Optional Frame Printing State
   const [framePrintingSelected, setFramePrintingSelected] = useState<boolean>(false);
@@ -91,11 +113,13 @@ export default function ConvocationBookingClient({
       try {
         setLoading(true);
         const [yearPart, monthPart] = monthStr.split("-");
+        const flowToken = getOrCreateFlowToken();
         const params = new URLSearchParams({
           type: "special",
           slug: eventSlug,
           year: yearPart,
           month: String(Number(monthPart)),
+          flow_token: flowToken,
         });
         if (dateStr) {
           params.set("date", dateStr);
@@ -107,8 +131,11 @@ export default function ConvocationBookingClient({
         const json = (await res.json()) as ConvocationAvailabilityPayload;
         setData(json);
 
-        if (json.packages && json.packages.length > 0 && !selectedPackageId) {
-          setSelectedPackageId(json.packages[0].id);
+        const activePkgs = (json.packages || []).filter((p) => p.is_active !== false);
+        if (activePkgs.length === 1) {
+          setSelectedPackageId(activePkgs[0].id);
+        } else if (activePkgs.length > 1 && !selectedPackageId) {
+          setSelectedPackageId(activePkgs[0].id);
         }
 
         if (json.event?.venue && !locationPreference) {
@@ -160,9 +187,76 @@ export default function ConvocationBookingClient({
     });
   }, [data]);
 
+  // Hold Countdown Timer Effect
+  useEffect(() => {
+    if (!holdId || holdRemainingSeconds <= 0) return;
+
+    const timer = setInterval(() => {
+      setHoldRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setSelectedSlot(null);
+          setHoldId(null);
+          setHoldError("Your temporary time-slot reservation has expired. Please select a time slot again.");
+          loadAvailability(currentMonth, selectedDate);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [holdId, holdRemainingSeconds, currentMonth, selectedDate, loadAvailability]);
+
   const handleSelectDate = (dateStr: string) => {
     setSelectedDate(dateStr);
     setSelectedSlot(null);
+    setHoldId(null);
+    setHoldRemainingSeconds(0);
+    setHoldError(null);
+  };
+
+  const handleSelectSlot = async (slot: ComputedTimeSlot) => {
+    if (!slot || !slot.slot_id) return;
+    if (selectedSlot?.slot_id === slot.slot_id && holdId && holdRemainingSeconds > 0) {
+      return;
+    }
+
+    setHoldError(null);
+    const flowToken = getOrCreateFlowToken();
+
+    try {
+      const res = await fetch("/api/bookings/hold", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "acquire",
+          event_id: event?.id,
+          session_id: slot.session_id,
+          slot_id: slot.slot_id,
+          flow_token: flowToken,
+          hold_duration_mins: event?.slot_hold_duration_mins || 5,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setHoldError(
+          json.error ||
+            "This time slot is temporarily held or fully booked by another visitor. Please select a different slot."
+        );
+        loadAvailability(currentMonth, selectedDate);
+        return;
+      }
+
+      setSelectedSlot(slot);
+      setHoldId(json.hold_id || null);
+      setHoldRemainingSeconds(
+        json.remaining_seconds || (event?.slot_hold_duration_mins || 5) * 60
+      );
+    } catch {
+      setSelectedSlot(slot);
+    }
   };
 
   const handleCustomFieldChange = (key: string, value: string | string[]) => {
@@ -186,18 +280,24 @@ export default function ConvocationBookingClient({
     (s) => s.date === selectedDate
   );
 
+  const activePackages = useMemo(() => {
+    return (data?.packages || []).filter((p) => p.is_active !== false);
+  }, [data?.packages]);
+
   const selectedPackage =
-    (data?.packages || []).find((p) => p.id === selectedPackageId) || null;
+    activePackages.find((p) => p.id === selectedPackageId) ||
+    activePackages[0] ||
+    null;
   const event = data?.event || null;
   const isEventBookable = event?.status === "published";
 
-  const customQuestions: CustomBookingQuestion[] = Array.isArray(
-    event?.custom_questions
-  )
-    ? [...event.custom_questions].sort(
-        (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
-      )
-    : [];
+  const customQuestions: CustomBookingQuestion[] = useMemo(() => {
+    return Array.isArray(event?.custom_questions)
+      ? [...event.custom_questions].sort(
+          (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
+        )
+      : [];
+  }, [event]);
 
   const hasCustomStudentIdQuestion = customQuestions.some(
     (q) => q.key === "student_id"
@@ -206,12 +306,32 @@ export default function ConvocationBookingClient({
     (q) => q.key === "degree_or_department"
   );
 
+  const displayCustomQuestions = customQuestions.filter((q) => {
+    if (q.is_visible === false) return false;
+    const key = q.key || q.id;
+    if (
+      key &&
+      [
+        "full_name",
+        "client_email",
+        "client_phone",
+        "guests_count",
+        "company_or_institution",
+      ].includes(key)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   const frameConfig = event?.frame_printing_config || null;
   const activeFrameTypes = useMemo(() => {
     return (
-      frameConfig?.frame_types?.filter((f) => f.is_active !== false) || []
+      event?.frame_printing_config?.frame_types?.filter(
+        (f) => f.is_active !== false
+      ) || []
     );
-  }, [frameConfig]);
+  }, [event]);
 
   useEffect(() => {
     if (activeFrameTypes.length > 0 && !selectedFrameId) {
@@ -271,21 +391,51 @@ export default function ConvocationBookingClient({
 
     // Client-side validation for required custom questions
     for (const q of customQuestions) {
+      if (q.is_visible === false) continue;
       const qKey = q.key || q.id;
       if (!qKey) continue;
       const qType = q.field_type || q.type;
+      if (qType === "heading") continue;
+
+      if (
+        [
+          "full_name",
+          "client_email",
+          "client_phone",
+          "guests_count",
+          "company_or_institution",
+        ].includes(qKey)
+      ) {
+        continue;
+      }
+
+      const val = customFields[qKey];
       if (q.required) {
-        const val = customFields[qKey];
-        if (qType === "multiple_choice") {
+        if (qType === "multiple_choice" || qType === "checkbox") {
           if (!Array.isArray(val) || val.length === 0) {
             setSubmitError(`Please select at least one option for "${q.label}".`);
             return;
           }
         } else {
-          if (!val || String(val).trim() === "") {
+          if (val === undefined || val === null || String(val).trim() === "") {
             setSubmitError(`"${q.label}" is required.`);
             return;
           }
+        }
+      }
+
+      if (q.validation_regex && typeof val === "string" && val.trim() !== "") {
+        try {
+          const reg = new RegExp(q.validation_regex);
+          if (!reg.test(val.trim())) {
+            setSubmitError(
+              q.validation_message ||
+                `"${q.label}" does not match the required format.`
+            );
+            return;
+          }
+        } catch {
+          // ignore invalid regex
         }
       }
     }
@@ -317,6 +467,8 @@ export default function ConvocationBookingClient({
           event_id: event.id,
           session_id: selectedSlot.session_id || null,
           slot_id: selectedSlot.slot_id,
+          hold_id: holdId || null,
+          flow_token: getOrCreateFlowToken(),
           package_id: selectedPackage?.id || null,
           booking_date: selectedSlot.date,
           start_at: selectedSlot.start_at,
@@ -338,7 +490,16 @@ export default function ConvocationBookingClient({
             event.venue ||
             "OFFPRINT Studio, Dhaka",
           client_notes: clientNotes.trim() || null,
-          custom_fields: customFields,
+          custom_fields: {
+            ...customFields,
+            full_name: clientName.trim(),
+            client_email: clientEmail.trim(),
+            client_phone: clientPhone.trim(),
+            guests_count: Number(guestsCount) || 1,
+            company_or_institution: companyOrInstitution.trim() || null,
+            student_id: resolvedStudentId,
+            degree_or_department: resolvedDept,
+          },
         }),
       });
 
@@ -351,6 +512,9 @@ export default function ConvocationBookingClient({
         await loadAvailability(currentMonth, selectedDate);
         return;
       }
+
+      setHoldId(null);
+      setHoldRemainingSeconds(0);
 
       const booking = result.data || result.booking;
       router.push(
@@ -488,54 +652,162 @@ export default function ConvocationBookingClient({
             </div>
           </div>
 
-          {/* Event Key Info Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-1">
-              <div className="flex items-center gap-1.5 text-xs font-mono uppercase text-[#877D70]">
-                <MapPin className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Venue &amp; Location</span>
-              </div>
-              <div className="text-sm font-bold text-[#141210]">
-                {event?.venue || "OFFPRINT Studio, Dhaka"}
-              </div>
-            </div>
+          {/* Structured Event Info Blocks (Configurable & Dynamic) */}
+          {(() => {
+            const rawBlocks =
+              Array.isArray(event?.info_blocks) && event.info_blocks.length > 0
+                ? event.info_blocks
+                : [
+                    {
+                      id: "venue",
+                      type: "venue",
+                      heading: "Venue & Location",
+                      value: event?.venue || "OFFPRINT Studio, Dhaka",
+                      is_visible: true,
+                    },
+                    {
+                      id: "sessions",
+                      type: "sessions",
+                      heading: "Configured Sessions",
+                      value:
+                        data?.sessions && data.sessions.length > 0
+                          ? `${data.sessions.length} Active Session Date${
+                              data.sessions.length > 1 ? "s" : ""
+                            }`
+                          : "Dates Announced Soon",
+                      is_visible: true,
+                    },
+                    {
+                      id: "cutoff",
+                      type: "cutoff",
+                      heading: "Reschedule / Cancel Cutoff",
+                      value: event
+                        ? `${event.reschedule_cutoff_hours}h Reschedule / ${event.cancellation_cutoff_hours}h Cancel`
+                        : "48h Prior Notice",
+                      is_visible: true,
+                    },
+                    {
+                      id: "lock",
+                      type: "lock",
+                      heading: "Timezone & Slot Lock",
+                      value: `${event?.timezone || "Asia/Dhaka"} (BST) · ${
+                        event?.slot_hold_duration_mins || 5
+                      }m Hold Lock`,
+                      is_visible: true,
+                    },
+                  ];
 
-            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-1">
-              <div className="flex items-center gap-1.5 text-xs font-mono uppercase text-[#877D70]">
-                <Calendar className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Configured Sessions</span>
-              </div>
-              <div className="text-sm font-bold text-[#141210]">
-                {data?.sessions && data.sessions.length > 0
-                  ? `${data.sessions.length} Active Session${
-                      data.sessions.length > 1 ? "s" : ""
-                    }`
-                  : "Dates Announced Soon"}
-              </div>
-            </div>
+            const visibleBlocks = rawBlocks.filter(
+              (b) => (b as any).is_visible !== false
+            );
 
-            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-1">
-              <div className="flex items-center gap-1.5 text-xs font-mono uppercase text-[#877D70]">
-                <Clock className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Reschedule / Cancel Cutoff</span>
-              </div>
-              <div className="text-sm font-bold text-[#141210]">
-                {event
-                  ? `${event.reschedule_cutoff_hours}h Reschedule / ${event.cancellation_cutoff_hours}h Cancel`
-                  : "48h Prior Notice"}
-              </div>
-            </div>
+            if (visibleBlocks.length === 0) return null;
 
-            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-1">
-              <div className="flex items-center gap-1.5 text-xs font-mono uppercase text-[#877D70]">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Timezone &amp; Slot Lock</span>
+            return (
+              <div
+                className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(
+                  4,
+                  visibleBlocks.length
+                )} gap-4`}
+              >
+                {visibleBlocks.map((b: any, idx: number) => {
+                  let liveValue = b.value;
+                  let IconComp = Sparkles;
+                  if (b.type === "venue") {
+                    IconComp = MapPin;
+                    liveValue = b.value || event?.venue || "OFFPRINT Studio, Dhaka";
+                  } else if (b.type === "sessions") {
+                    IconComp = Calendar;
+                    liveValue =
+                      data?.sessions && data.sessions.length > 0
+                        ? `${data.sessions.length} Active Session Date${
+                            data.sessions.length > 1 ? "s" : ""
+                          }`
+                        : "Dates Announced Soon";
+                  } else if (b.type === "cutoff") {
+                    IconComp = Clock;
+                    liveValue =
+                      b.value ||
+                      (event
+                        ? `${event.reschedule_cutoff_hours}h Reschedule / ${event.cancellation_cutoff_hours}h Cancel`
+                        : "24h Notice");
+                  } else if (b.type === "lock") {
+                    IconComp = ShieldCheck;
+                    liveValue =
+                      b.value ||
+                      `${event?.timezone || "Asia/Dhaka"} (BST) · ${
+                        event?.slot_hold_duration_mins || 5
+                      }m Hold Lock`;
+                  }
+
+                  return (
+                    <div
+                      key={b.id || idx}
+                      className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-1"
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-mono uppercase text-[#877D70]">
+                        <IconComp className="w-3.5 h-3.5 text-[#A66D35]" />
+                        <span>{b.heading}</span>
+                      </div>
+                      <div className="text-sm font-bold text-[#141210]">
+                        {liveValue}
+                      </div>
+                      {b.description && (
+                        <p className="text-[11px] text-[#5C5449] leading-relaxed">
+                          {b.description}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="text-sm font-bold text-[#141210]">
-                {event?.timezone || "Asia/Dhaka"} (BST)
+            );
+          })()}
+
+          {/* Integrated Single Package Display (When Exactly 1 Package is Configured) */}
+          {activePackages.length === 1 && (
+            <div className="p-6 rounded-3xl bg-[#F4EFE6] border border-[#3A2008]/20 space-y-3.5 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#D5CCB4] pb-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35] font-semibold">
+                    Included Photography Package
+                  </span>
+                  <h3 className="text-xl font-bold text-[#141210]">
+                    {activePackages[0].name}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono text-[#5C5449] bg-[#FAF7F2] px-2.5 py-1 rounded-lg border border-[#E5DEC9]">
+                    {activePackages[0].duration_mins} mins session
+                  </span>
+                  <span className="text-2xl font-extrabold text-[#3A2008] font-mono">
+                    {activePackages[0].price_label}
+                  </span>
+                </div>
               </div>
+
+              {activePackages[0].description && (
+                <p className="text-xs sm:text-sm text-[#5C5449] leading-relaxed">
+                  {activePackages[0].description}
+                </p>
+              )}
+
+              {activePackages[0].deliverables &&
+                activePackages[0].deliverables.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {activePackages[0].deliverables.map((item, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs text-[#141210] font-medium"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#A66D35] shrink-0" />
+                        <span>{item}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
             </div>
-          </div>
+          )}
 
           {event?.instructions && (
             <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs text-[#5C5449] space-y-1">
@@ -562,7 +834,7 @@ export default function ConvocationBookingClient({
                     : `This event is currently marked as "${event.status}" and is not accepting public reservations.`}
                 </p>
                 <p>
-                  You can review the event details and packages below or{" "}
+                  You can review the event details below or{" "}
                   <Link
                     href="/book/traditional"
                     className="text-[#3A2008] font-semibold underline"
@@ -577,8 +849,8 @@ export default function ConvocationBookingClient({
         </div>
       </div>
 
-      {/* Step 1: Event Packages */}
-      {data?.packages && data.packages.length > 0 && (
+      {/* Step 1: Event Packages (Only rendered when 2 or more packages are configured) */}
+      {activePackages.length >= 2 && (
         <div className="space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
             <div>
@@ -595,7 +867,7 @@ export default function ConvocationBookingClient({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {data.packages.map((pkg) => {
+            {activePackages.map((pkg) => {
               const isSelected = selectedPackageId === pkg.id;
               return (
                 <div
@@ -882,12 +1154,53 @@ export default function ConvocationBookingClient({
         <div className="lg:col-span-7 space-y-4">
           <div>
             <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
-              Step 2 • Date &amp; Time Slot Selection
+              {activePackages.length >= 2
+                ? "Step 2 • Date & Time Slot Selection"
+                : "Step 1 • Date & Time Slot Selection"}
             </span>
             <h2 className="text-2xl font-bold text-[#141210]">
               Choose Your Event Date &amp; Time Slot
             </h2>
           </div>
+
+          {/* Temporary Slot Reservation Countdown Banner */}
+          {selectedSlot && holdRemainingSeconds > 0 && (
+            <div className="p-4 rounded-2xl bg-[#3A2008] text-[#FAF7F2] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm border border-[#5C4028] animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#5C4028] flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5 text-[#D9A673] animate-pulse" />
+                </div>
+                <div>
+                  <div className="text-xs sm:text-sm font-bold flex items-center gap-2">
+                    <span>Time Slot Temporarily Reserved</span>
+                    <span className="inline-block w-2 h-2 rounded-full bg-[#34D399] animate-ping" />
+                  </div>
+                  <p className="text-[11px] text-[#E5DEC9]">
+                    Reserved for you ({selectedSlot.start_time_label} – {selectedSlot.end_time_label}). Please complete your details before the timer runs out.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-[#141210]/60 px-3.5 py-2 rounded-xl border border-[#D9A673]/30 shrink-0 self-start sm:self-auto">
+                <span className="text-[10px] uppercase font-mono text-[#D9A673] font-semibold tracking-wider">
+                  Time Left:
+                </span>
+                <span className="font-mono text-base font-extrabold text-[#FAF7F2]">
+                  {String(Math.floor(holdRemainingSeconds / 60)).padStart(2, "0")}:
+                  {String(holdRemainingSeconds % 60).padStart(2, "0")}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {holdError && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-bold">Slot Hold Notice</p>
+                <p>{holdError}</p>
+              </div>
+            </div>
+          )}
 
           <InteractiveBookingCalendar
             currentMonth={currentMonth}
@@ -897,7 +1210,7 @@ export default function ConvocationBookingClient({
             monthSummary={data?.monthSummary || []}
             slotsForSelectedDate={slotsForSelectedDate}
             selectedSlot={selectedSlot}
-            onSelectSlot={setSelectedSlot}
+            onSelectSlot={handleSelectSlot}
             loading={loading}
           />
         </div>
@@ -905,7 +1218,9 @@ export default function ConvocationBookingClient({
         <div className="lg:col-span-5 space-y-6">
           <div>
             <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
-              Step 3 • Participant Details &amp; Confirmation
+              {activePackages.length >= 2
+                ? "Step 3 • Participant Details & Confirmation"
+                : "Step 2 • Participant Details & Confirmation"}
             </span>
             <h2 className="text-2xl font-bold text-[#141210]">
               Complete Your Reservation
@@ -1127,17 +1442,36 @@ export default function ConvocationBookingClient({
               )}
 
             {/* Dynamic Custom Questions Configured by Administrator */}
-            {customQuestions.length > 0 && (
+            {displayCustomQuestions.length > 0 && (
               <div className="pt-2 border-t border-[#E5DEC9] space-y-4">
                 <div className="text-[11px] font-mono uppercase tracking-wider text-[#A66D35] font-semibold">
                   Event-Specific Questions
                 </div>
 
-                {customQuestions.map((q) => {
+                {displayCustomQuestions.map((q) => {
                   const qKey = q.key || q.id;
                   if (!qKey) return null;
                   const qType = q.field_type || q.type || "short_text";
                   const val = customFields[qKey];
+
+                  if (qType === "heading") {
+                    return (
+                      <div
+                        key={q.id || qKey}
+                        className="pt-3 pb-1 border-t border-[#E5DEC9] first:border-t-0 first:pt-0"
+                      >
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-[#A66D35]">
+                          {q.label}
+                        </h4>
+                        {q.description && (
+                          <p className="text-[11px] text-[#5C5449] mt-0.5">
+                            {q.description}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }
+
                   return (
                     <div key={q.id || qKey} className="space-y-1.5">
                       <label className="text-xs font-semibold text-[#141210] block">
@@ -1151,9 +1485,62 @@ export default function ConvocationBookingClient({
                         <input
                           type="text"
                           required={q.required}
-                          minLength={q.min_length || undefined}
-                          maxLength={q.max_length || undefined}
+                          minLength={q.min_length ?? undefined}
+                          maxLength={q.max_length ?? undefined}
                           placeholder={q.placeholder || ""}
+                          value={typeof val === "string" ? val : ""}
+                          onChange={(e) =>
+                            handleCustomFieldChange(qKey, e.target.value)
+                          }
+                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                        />
+                      )}
+
+                      {qType === "email" && (
+                        <input
+                          type="email"
+                          required={q.required}
+                          placeholder={q.placeholder || "you@example.com"}
+                          value={typeof val === "string" ? val : ""}
+                          onChange={(e) =>
+                            handleCustomFieldChange(qKey, e.target.value)
+                          }
+                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                        />
+                      )}
+
+                      {qType === "phone" && (
+                        <input
+                          type="tel"
+                          required={q.required}
+                          placeholder={q.placeholder || "+880 1711-000000"}
+                          value={typeof val === "string" ? val : ""}
+                          onChange={(e) =>
+                            handleCustomFieldChange(qKey, e.target.value)
+                          }
+                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
+                        />
+                      )}
+
+                      {qType === "number" && (
+                        <input
+                          type="number"
+                          required={q.required}
+                          min={q.min_value ?? undefined}
+                          max={q.max_value ?? undefined}
+                          placeholder={q.placeholder || ""}
+                          value={val !== undefined ? String(val) : ""}
+                          onChange={(e) =>
+                            handleCustomFieldChange(qKey, e.target.value)
+                          }
+                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
+                        />
+                      )}
+
+                      {qType === "date" && (
+                        <input
+                          type="date"
+                          required={q.required}
                           value={typeof val === "string" ? val : ""}
                           onChange={(e) =>
                             handleCustomFieldChange(qKey, e.target.value)
@@ -1195,7 +1582,7 @@ export default function ConvocationBookingClient({
                         </select>
                       )}
 
-                      {qType === "single_choice" && (
+                      {(qType === "single_choice" || qType === "radio") && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                           {(q.options || []).map((opt) => {
                             const selected = val === opt;
@@ -1217,7 +1604,7 @@ export default function ConvocationBookingClient({
                         </div>
                       )}
 
-                      {qType === "multiple_choice" && (
+                      {(qType === "multiple_choice" || qType === "checkbox") && (
                         <div className="grid grid-cols-1 gap-2 pt-1">
                           {(q.options || []).map((opt) => {
                             const checked =

@@ -273,7 +273,6 @@ export default function InteractiveBookingCalendar({
                 (selectedSlot?.slot_id === slot.slot_id || !slot.slot_id);
               const isAvailable = slot.state === "available" && slot.remaining_capacity > 0;
               const slotLabel = `${slot.start_time_label} – ${slot.end_time_label}`;
-              const totalBuffer = (slot.buffer_before_mins || 0) + (slot.buffer_after_mins || 0);
 
               return (
                 <button
@@ -313,7 +312,6 @@ export default function InteractiveBookingCalendar({
                   <div className="flex items-center justify-between text-[11px] pt-1 border-t border-current/10">
                     <span className="font-mono">
                       {slot.duration_mins}m
-                      {totalBuffer > 0 ? ` + ${totalBuffer}m buffer` : ""}
                     </span>
                     <span
                       className={`inline-flex items-center gap-1 font-semibold ${

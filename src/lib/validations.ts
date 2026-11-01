@@ -75,9 +75,16 @@ export type ProductFormData = z.infer<typeof productFormSchema>;
 export const customQuestionFieldTypeSchema = z.enum([
   "short_text",
   "long_text",
+  "email",
+  "phone",
+  "number",
   "dropdown",
   "single_choice",
   "multiple_choice",
+  "radio",
+  "checkbox",
+  "date",
+  "heading",
 ]);
 
 export const customQuestionSchema = z
@@ -90,19 +97,23 @@ export const customQuestionSchema = z
       .max(64)
       .regex(/^[a-z0-9_]+$/, "Question key must contain lowercase letters, numbers, and underscores")
       .optional(),
-    label: z.string().trim().min(2, "Question label is required").max(160),
+    label: z.string().trim().min(1, "Question label is required").max(160),
     description: z.string().trim().max(400).optional().nullable(),
     help_text: z.string().trim().max(400).optional().nullable(),
     placeholder: z.string().trim().max(160).optional().nullable(),
     field_type: customQuestionFieldTypeSchema.optional(),
     type: customQuestionFieldTypeSchema.optional(),
     required: z.boolean().default(false),
-    options: z.array(z.string().trim().min(1)).optional().default([]),
+    options: z.array(z.string().trim()).optional().default([]),
     min_length: z.coerce.number().int().min(0).max(2000).optional().nullable(),
     max_length: z.coerce.number().int().min(1).max(5000).optional().nullable(),
+    min_value: z.coerce.number().optional().nullable(),
+    max_value: z.coerce.number().optional().nullable(),
     validation_regex: z.string().trim().max(240).optional().nullable(),
     validation_message: z.string().trim().max(240).optional().nullable(),
     sort_order: z.coerce.number().int().default(0),
+    is_visible: z.boolean().default(true),
+    section: z.string().trim().optional().default("general"),
   })
   .transform((val) => {
     const resolvedKey = (val.key || val.id)
@@ -121,8 +132,9 @@ export const customQuestionSchema = z
     if (
       (val.field_type === "dropdown" ||
         val.field_type === "single_choice" ||
+        val.field_type === "radio" ||
         val.field_type === "multiple_choice") &&
-      (!val.options || val.options.length === 0)
+      (!val.options || val.options.filter((o) => Boolean(o && o.trim())).length === 0)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -135,7 +147,7 @@ export const customQuestionSchema = z
 export type CustomQuestionInput = z.infer<typeof customQuestionSchema>;
 
 export function validateCustomFieldsAgainstQuestions(
-  questions: Array<Partial<CustomQuestionInput> & { id?: string; key?: string; label: string; type?: string; field_type?: string }> | undefined | null,
+  questions: Array<Partial<CustomQuestionInput> & { id?: string; key?: string; label: string; type?: string; field_type?: string; is_visible?: boolean; min_value?: number | null; max_value?: number | null }> | undefined | null,
   customFields: Record<string, string | string[]> | undefined | null
 ): {
   valid: boolean;
@@ -163,6 +175,17 @@ export function validateCustomFieldsAgainstQuestions(
     const qKey = (q.key || q.id || "").trim();
     if (!qKey) continue;
     const qType = q.field_type || q.type || "short_text";
+
+    // Section headings are purely visual separators
+    if (qType === "heading") {
+      continue;
+    }
+
+    // Skip hidden fields if they are explicitly hidden and no value provided
+    if (q.is_visible === false && raw[qKey] === undefined && (!q.id || raw[q.id] === undefined)) {
+      continue;
+    }
+
     const val = raw[qKey] ?? (q.id ? raw[q.id] : undefined);
 
     if (qType === "multiple_choice") {
@@ -194,7 +217,30 @@ export function validateCustomFieldsAgainstQuestions(
       continue;
     }
 
-    const strVal = Array.isArray(val) ? val.join(", ").trim() : typeof val === "string" ? val.trim() : "";
+    if (qType === "checkbox") {
+      if (Array.isArray(val)) {
+        const cleaned = val.map((item) => String(item).trim()).filter(Boolean);
+        if (q.required && cleaned.length === 0) {
+          errors[qKey] = `${q.label} is required`;
+          continue;
+        }
+        if (cleaned.length > 0) {
+          sanitized[qKey] = cleaned;
+        }
+      } else {
+        const str = String(val ?? "").trim();
+        if (q.required && (!str || str === "false")) {
+          errors[qKey] = `${q.label} is required`;
+          continue;
+        }
+        if (str && str !== "false") {
+          sanitized[qKey] = str;
+        }
+      }
+      continue;
+    }
+
+    const strVal = Array.isArray(val) ? val.join(", ").trim() : typeof val === "string" ? val.trim() : typeof val === "number" ? String(val) : "";
 
     if (!strVal) {
       if (q.required) {
@@ -203,9 +249,32 @@ export function validateCustomFieldsAgainstQuestions(
       continue;
     }
 
-    if (qType === "dropdown" || qType === "single_choice") {
+    if (qType === "dropdown" || qType === "single_choice" || qType === "radio") {
       if (q.options && q.options.length > 0 && !q.options.includes(strVal)) {
         errors[qKey] = `Please select a valid option for ${q.label}`;
+        continue;
+      }
+    }
+
+    if (qType === "email") {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(strVal)) {
+        errors[qKey] = `Please enter a valid email address for ${q.label}`;
+        continue;
+      }
+    }
+
+    if (qType === "number") {
+      const numVal = Number(strVal);
+      if (Number.isNaN(numVal)) {
+        errors[qKey] = `${q.label} must be a valid number`;
+        continue;
+      }
+      if (typeof q.min_value === "number" && numVal < q.min_value) {
+        errors[qKey] = `${q.label} must be at least ${q.min_value}`;
+        continue;
+      }
+      if (typeof q.max_value === "number" && numVal > q.max_value) {
+        errors[qKey] = `${q.label} must be at most ${q.max_value}`;
         continue;
       }
     }
@@ -249,6 +318,8 @@ export const createBookingSchema = z
     event_id: z.string().uuid().optional().nullable(),
     session_id: z.string().uuid().optional().nullable(),
     slot_id: z.string().uuid().optional().nullable(),
+    hold_id: z.string().uuid().optional().nullable(),
+    flow_token: z.string().optional().nullable(),
     service_id: z.string().uuid().optional().nullable(),
     package_id: z.string().uuid().optional().nullable(),
     booking_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Valid YYYY-MM-DD date is required"),
@@ -410,6 +481,21 @@ export const bookingEventSchema = z.object({
   instructions: z.string().trim().optional().nullable(),
   custom_questions: z.array(customQuestionSchema).optional().default([]),
   frame_printing_config: framePrintingConfigSchema.optional(),
+  slot_hold_duration_mins: z.coerce.number().int().min(1).max(60).optional().default(5),
+  info_blocks: z
+    .array(
+      z.object({
+        id: z.string(),
+        type: z.enum(["venue", "sessions", "cutoff", "lock", "custom"]).or(z.string()),
+        heading: z.string().trim().min(1),
+        description: z.string().optional().nullable(),
+        value: z.string().optional().nullable(),
+        is_visible: z.boolean().default(true),
+        sort_order: z.coerce.number().int().default(0),
+      })
+    )
+    .optional()
+    .default([]),
   is_featured_on_home: z.boolean().optional().default(false),
   is_booking_enabled: z.boolean().optional().default(true),
   is_visible_on_booking_page: z.boolean().optional().default(true),
@@ -478,7 +564,7 @@ export const photographyPackageSchema = z.object({
   price_label: z.string().trim().min(1),
   price_numeric: z.coerce.number().min(0).default(0),
   currency: z.string().trim().default("BDT"),
-  deliverables: z.array(z.string().trim().min(1)),
+  deliverables: z.array(z.string().trim()).optional().default([]),
   inclusions: z.array(z.string().trim()).optional().default([]),
   restrictions: z.string().trim().optional().nullable(),
   frame_printing_enabled: z.boolean().optional().default(true),

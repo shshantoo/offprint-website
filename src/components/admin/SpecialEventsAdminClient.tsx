@@ -31,7 +31,16 @@ import {
   Unlock,
   Users,
   Info,
+  Package,
+  ListFilter,
 } from "lucide-react";
+import EventPackagesEditor from "./special-events/EventPackagesEditor";
+import EventFormBuilder from "./special-events/EventFormBuilder";
+import EventInfoBlocksEditor from "./special-events/EventInfoBlocksEditor";
+import {
+  IUB_CONVOCATION_DEFAULT_QUESTIONS,
+  DEFAULT_EVENT_INFO_BLOCKS,
+} from "@/lib/booking/default-event-fields";
 import {
   formatDhakaDate,
   formatDhakaTime,
@@ -69,7 +78,9 @@ function calculateSlotEndSample(startHHMM: string, durationMins: number): string
 
 export default function SpecialEventsAdminClient() {
   const [viewMode, setViewMode] = useState<"list" | "editor">("list");
-  const [editorTab, setEditorTab] = useState<"details" | "scheduling" | "sessions_slots">("details");
+  const [editorTab, setEditorTab] = useState<
+    "details" | "packages" | "form_builder" | "scheduling" | "sessions_slots"
+  >("details");
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<BookingEvent[]>([]);
   const [sessions, setSessions] = useState<EventSession[]>([]);
@@ -185,7 +196,9 @@ export default function SpecialEventsAdminClient() {
       break_periods: [
         { name: "Lunch Break", start_time: "13:00", end_time: "14:00" },
       ],
-      custom_questions: [],
+      slot_hold_duration_mins: 5,
+      info_blocks: DEFAULT_EVENT_INFO_BLOCKS,
+      custom_questions: IUB_CONVOCATION_DEFAULT_QUESTIONS,
       frame_printing_config: {
         enabled: false,
         title: "Archival Frame Printing",
@@ -204,7 +217,7 @@ export default function SpecialEventsAdminClient() {
 
   const handleEditEvent = (
     ev: BookingEvent,
-    tab: "details" | "scheduling" | "sessions_slots" = "details"
+    tab: "details" | "packages" | "form_builder" | "scheduling" | "sessions_slots" = "details"
   ) => {
     setEditingEvent({
       ...ev,
@@ -216,6 +229,17 @@ export default function SpecialEventsAdminClient() {
       slot_interval_mins:
         ev.slot_interval_mins || ev.default_slot_duration_mins || 30,
       break_periods: Array.isArray(ev.break_periods) ? ev.break_periods : [],
+      slot_hold_duration_mins: ev.slot_hold_duration_mins || 5,
+      info_blocks:
+        Array.isArray(ev.info_blocks) && ev.info_blocks.length > 0
+          ? ev.info_blocks
+          : DEFAULT_EVENT_INFO_BLOCKS,
+      custom_questions:
+        Array.isArray(ev.custom_questions) && ev.custom_questions.length > 0
+          ? ev.custom_questions
+          : ev.slug === "iub-27th-convocation" || ev.category === "convocation"
+          ? IUB_CONVOCATION_DEFAULT_QUESTIONS
+          : [],
     });
     setRelatedArchiveIds([]);
     setSelectedSlotIds([]);
@@ -1246,7 +1270,51 @@ export default function SpecialEventsAdminClient() {
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
-              <span>1. Event Identity &amp; Rules</span>
+              <span>1. Event Info &amp; Blocks</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEditorTab("packages")}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                editorTab === "packages"
+                  ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                  : "bg-[#FFFFFF] text-[#5C5449] border border-[#E5DEC9] hover:bg-[#FAF7F2]"
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>2. Packages &amp; Pricing</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                  editorTab === "packages"
+                    ? "bg-[#5C4028] text-[#FAF7F2]"
+                    : "bg-[#FAF7F2] text-[#3A2008]"
+                }`}
+              >
+                {_packages.filter((p) => p.event_id === editingEvent.id).length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEditorTab("form_builder")}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                editorTab === "form_builder"
+                  ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                  : "bg-[#FFFFFF] text-[#5C5449] border border-[#E5DEC9] hover:bg-[#FAF7F2]"
+              }`}
+            >
+              <ListFilter className="w-3.5 h-3.5" />
+              <span>3. Booking Form Builder</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                  editorTab === "form_builder"
+                    ? "bg-[#5C4028] text-[#FAF7F2]"
+                    : "bg-[#FAF7F2] text-[#3A2008]"
+                }`}
+              >
+                {(editingEvent.custom_questions || []).length} fields
+              </span>
             </button>
 
             <button
@@ -1259,7 +1327,7 @@ export default function SpecialEventsAdminClient() {
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
-              <span>2. Schedule Configuration &amp; Generator</span>
+              <span>4. Schedule &amp; Hold Lock</span>
             </button>
 
             <button
@@ -1272,7 +1340,7 @@ export default function SpecialEventsAdminClient() {
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>3. Sessions &amp; Time Slots</span>
+              <span>5. Sessions &amp; Time Slots</span>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
                   editorTab === "sessions_slots"
@@ -1819,11 +1887,59 @@ export default function SpecialEventsAdminClient() {
                   </div>
                 </div>
               </div>
+
+              {/* Section 3: Structured Event Info Blocks */}
+              <EventInfoBlocksEditor
+                infoBlocks={editingEvent.info_blocks}
+                venue={editingEvent.venue}
+                sessionsCount={eventSessions.length}
+                rescheduleCutoffHours={editingEvent.reschedule_cutoff_hours || 24}
+                cancellationCutoffHours={editingEvent.cancellation_cutoff_hours || 24}
+                timezone={editingEvent.timezone || "Asia/Dhaka"}
+                slotHoldMins={editingEvent.slot_hold_duration_mins || 5}
+                onChange={(updated) => {
+                  setEditingEvent({
+                    ...editingEvent,
+                    info_blocks: updated,
+                  });
+                  setIsFormDirty(true);
+                }}
+                onFeedback={setFeedback}
+              />
             </div>
           )}
 
           {/* =================================================================== */}
-          {/* TAB 2: SCHEDULE CONFIGURATION & GENERATOR */}
+          {/* TAB 2: PACKAGES & PRICING */}
+          {/* =================================================================== */}
+          {editorTab === "packages" && (
+            <EventPackagesEditor
+              eventId={editingEvent.id}
+              packages={_packages}
+              onRefresh={loadData}
+              onFeedback={setFeedback}
+            />
+          )}
+
+          {/* =================================================================== */}
+          {/* TAB 3: BOOKING FORM BUILDER */}
+          {/* =================================================================== */}
+          {editorTab === "form_builder" && (
+            <EventFormBuilder
+              questions={editingEvent.custom_questions || []}
+              onChange={(updated) => {
+                setEditingEvent({
+                  ...editingEvent,
+                  custom_questions: updated,
+                });
+                setIsFormDirty(true);
+              }}
+              onFeedback={setFeedback}
+            />
+          )}
+
+          {/* =================================================================== */}
+          {/* TAB 4: SCHEDULE CONFIGURATION & GENERATOR */}
           {/* =================================================================== */}
           {editorTab === "scheduling" && (
             <div className="space-y-6">
@@ -2043,7 +2159,7 @@ export default function SpecialEventsAdminClient() {
                 </div>
 
                 {/* Slot Setting Inputs */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs pt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs pt-2">
                   <div>
                     <label className="font-semibold block mb-1">
                       Duration (mins) *
@@ -2133,6 +2249,29 @@ export default function SpecialEventsAdminClient() {
                     />
                     <span className="text-[10px] text-[#877D70]">
                       Studio teardown buffer
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1">
+                      Slot Hold Lock (mins) *
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={editingEvent.slot_hold_duration_mins || 5}
+                      onChange={(e) => {
+                        setEditingEvent({
+                          ...editingEvent,
+                          slot_hold_duration_mins: Math.max(1, Math.min(60, Number(e.target.value) || 5)),
+                        });
+                        setIsFormDirty(true);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono text-[#141210]"
+                    />
+                    <span className="text-[10px] text-[#877D70]">
+                      Temporary reservation lock
                     </span>
                   </div>
                 </div>

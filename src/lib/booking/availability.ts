@@ -40,6 +40,8 @@ export function computeConvocationSlots(params: {
   sessions?: EventSession[];
   blocks: AvailabilityBlock[];
   busyIntervals: BusyInterval[];
+  activeHolds?: Array<{ slot_id: string; flow_token?: string }>;
+  flowToken?: string;
   now?: Date;
   ignoreEventWindow?: boolean;
 }): ComputedTimeSlot[] {
@@ -49,6 +51,8 @@ export function computeConvocationSlots(params: {
     sessions = [],
     blocks,
     busyIntervals,
+    activeHolds = [],
+    flowToken,
     now = new Date(),
     ignoreEventWindow = false,
   } = params;
@@ -80,7 +84,13 @@ export function computeConvocationSlots(params: {
         (b) => b.slot_id && b.slot_id === slot.id
       ).length;
       const bookedCount = Math.max(slot.booked_count, activeBookingsForSlot);
-      const remaining = Math.max(0, slot.capacity - bookedCount);
+
+      // Count active unexpired holds from OTHER visitors
+      const holdsFromOthers = activeHolds.filter(
+        (h) => h.slot_id === slot.id && (!flowToken || h.flow_token !== flowToken)
+      ).length;
+
+      const remaining = Math.max(0, slot.capacity - bookedCount - holdsFromOthers);
 
       let state: "available" | "full" | "unavailable" = "available";
       let unavailableReason: string | undefined;
@@ -133,7 +143,7 @@ export function computeConvocationSlots(params: {
           unavailableReason = "Resource reserved for another session";
         } else if (remaining <= 0) {
           state = "full";
-          unavailableReason = "Slot capacity reached";
+          unavailableReason = holdsFromOthers > 0 ? "Temporarily reserved by another client" : "Slot capacity reached";
         }
       }
 

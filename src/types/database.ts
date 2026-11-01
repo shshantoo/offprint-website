@@ -121,9 +121,16 @@ export type SpecialEventCategory =
 export type CustomQuestionFieldType =
   | 'short_text'
   | 'long_text'
+  | 'email'
+  | 'phone'
+  | 'number'
   | 'dropdown'
   | 'single_choice'
-  | 'multiple_choice';
+  | 'multiple_choice'
+  | 'radio'
+  | 'checkbox'
+  | 'date'
+  | 'heading';
 
 export interface CustomBookingQuestion {
   id: string;
@@ -138,9 +145,40 @@ export interface CustomBookingQuestion {
   options?: string[];
   min_length?: number | null;
   max_length?: number | null;
+  min_value?: number | null;
+  max_value?: number | null;
   validation_regex?: string | null;
   validation_message?: string | null;
   sort_order?: number;
+  is_visible?: boolean;
+  section?: string;
+}
+
+export interface BookingEventInfoBlock {
+  id: string;
+  type: 'venue' | 'sessions' | 'cutoff' | 'lock' | 'custom' | string;
+  heading: string;
+  description?: string | null;
+  value?: string | null;
+  is_visible: boolean;
+  sort_order: number;
+}
+
+export type SlotHoldStatus = 'active' | 'consumed' | 'released' | 'expired';
+
+export interface BookingSlotHold {
+  id: string;
+  event_id?: string | null;
+  session_id?: string | null;
+  slot_id: string;
+  flow_token: string;
+  user_id?: string | null;
+  hold_duration_mins: number;
+  created_at: string;
+  expires_at: string;
+  status: SlotHoldStatus;
+  consumed_booking_id?: string | null;
+  consumed_booking_ref?: string | null;
 }
 
 export interface FrameTypeOption {
@@ -210,6 +248,8 @@ export interface BookingEvent {
   instructions?: string | null;
   custom_questions?: CustomBookingQuestion[];
   frame_printing_config?: FramePrintingConfig;
+  slot_hold_duration_mins?: number;
+  info_blocks?: BookingEventInfoBlock[];
   is_featured_on_home?: boolean;
   is_booking_enabled?: boolean;
   is_visible_on_booking_page?: boolean;

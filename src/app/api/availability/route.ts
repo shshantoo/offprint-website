@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const month = Number(searchParams.get("month") || now.getUTCMonth() + 1);
     const date = searchParams.get("date") || undefined;
     const excludeBookingId = searchParams.get("excludeBookingId") || undefined;
+    const flowToken = searchParams.get("flow_token") || request.headers.get("x-flow-token") || undefined;
 
     if (type === "convocation" || type === "special") {
       const slug = searchParams.get("slug") || "iub-27th-convocation";
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
         month,
         date,
         excludeBookingId,
+        flowToken,
       });
 
       return NextResponse.json({

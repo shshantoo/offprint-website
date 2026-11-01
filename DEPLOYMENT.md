@@ -387,14 +387,48 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
   - `public/brand/offprint-black-logo.png`
   - `public/brand/offprint-white-logo.png`
 - **Standardized Display Dimensions:**
-  - Desktop Header: `width={155}` `height={53}` (`h-10 sm:h-11 md:h-12 w-auto`)
-  - Mobile Header: `h-10 w-auto` (~117px width)
-  - Admin Header: `width={135}` `height={46}` (`h-9 sm:h-10 w-auto`)
-  - Admin Sign-in & Client Portal: `width={160}` `height={55}` (`h-12 w-auto`)
-  - Footer: `width={155}` `height={53}` (`h-11 sm:h-12 w-auto`)
+  - Desktop Header: `w-[155px] sm:w-[170px] md:w-[195px] lg:w-[205px] max-h-[72px] shrink-0 object-contain` (~190–205px wide on desktop).
+  - Mobile Header: `w-[155px] sm:w-[170px]` (~155–170px wide).
+  - Admin Header & Login: `w-[180px] sm:w-[195px]`.
+  - Client Portal: `w-[170px] sm:w-[190px]`.
+  - Footer: `w-[165px] sm:w-[180px] md:w-[185px]`.
 - **Contrast Adaptation:** White logo mark on dark hero/background, Black logo mark on light scrolled headers and admin cards. Pure logo mark without text.
 
 ---
 
+## 13. Release 1.4.0 — Dynamic Booking Packages, Form Builder, Event CMS & Slot Holds
+
+### 13.1 Package Management & Pricing Snapshots
+- **Dedicated Admin Tab:** "Packages & Pricing" sub-navigation inside Special Events management (`/admin-portal`).
+- **Complete Package CRUD:** Add, edit, reorder, active/inactive toggles, and safe delete (`delete_or_archive_package` RPC preserves historical bookings).
+- **Inline Editing:** Quick in-place price and description editing without opening modal dialogs.
+- **Server-Verified Pricing:** Client-submitted prices are verified server-side against database snapshots before reservation.
+- **Dynamic Client Presentation:**
+  - **1 Active Package:** Integrated directly into event overview without redundant Step 1.
+  - **≥ 2 Active Packages:** Step 1 comparison cards for package selection.
+  - **0 Active Packages:** Clean event overview without placeholder or demo records.
+
+### 13.2 Dynamic Booking Form Builder
+- **Admin Form Builder:** Dedicated "Booking Form" tab to configure custom questions per event.
+- **Supported Field Types:** `short_text`, `long_text`, `email`, `phone`, `number`, `dropdown`, `radio` (single choice), `checkbox` (multiple choice), `date`, and `heading` (section dividers).
+- **1-Click Seed:** "Seed Standard IUB Convocation Fields" button instantly sets up the 13 standard convocation questions (Contact, Academic, Preferences, and Notes).
+- **Live Form Preview:** Interactive client form preview modal in the admin panel to test inputs before publishing.
+
+### 13.3 Structured Event Information Blocks
+- **Separation of Presentation from Policies:** Admin "Event Highlights & Info" tab manages highlighted cards (Venue, Configured Sessions count, Reschedule/Cancellation Cutoff, Timezone & Hold Duration, and Custom Blocks).
+- **Operational Policy Integrity:** Editing display blocks changes only public presentation; operational cutoff rules and hold timers in the database remain authoritative.
+
+### 13.4 Clean Slot Duration Labels
+- Public booking calendars display clean time ranges (e.g., `10:00 AM – 10:30 AM · 30m`), completely omitting internal buffer labels (`+ 60m buffer`).
+
+### 13.5 Temporary Slot Hold & Concurrency Protection
+- **Configurable Hold Duration:** 1 to 60 minutes (default 5 minutes) per event (`booking_events.slot_hold_duration_mins`).
+- **Atomic Holds:** Table `booking_slot_holds` with atomic RPCs (`acquire_slot_hold`, `release_slot_hold`, `consume_slot_hold`).
+- **Client Reservation Banner:** Real-time countdown timer banner (`"Your selected time slot is temporarily reserved while you complete your booking. Time remaining: MM:SS"`).
+- **Automatic Expiration & Release:** Held slots expire automatically and return to available capacity for other visitors.
+- **Refresh Resilience:** Flow tokens stored in client `sessionStorage` preserve holds across page refreshes.
+
+---
+
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.3.0 (Complete Schedule & Time Slot Management + Brand Logo Visibility Ready)*
+*Document Version: 1.4.0 (Dynamic Packages, Form Builder, Event CMS, Slot Holds & Standard Logo Visibility Ready)*
