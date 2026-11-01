@@ -125,6 +125,7 @@ export type CustomQuestionFieldType =
   | 'phone'
   | 'number'
   | 'dropdown'
+  | 'select_box'
   | 'single_choice'
   | 'multiple_choice'
   | 'radio'
@@ -149,6 +150,8 @@ export interface CustomBookingQuestion {
   max_value?: number | null;
   validation_regex?: string | null;
   validation_message?: string | null;
+  select_mode?: 'single' | 'multiple';
+  layout?: 'horizontal' | 'vertical';
   sort_order?: number;
   is_visible?: boolean;
   section?: string;
@@ -184,10 +187,12 @@ export interface BookingSlotHold {
 export interface FrameTypeOption {
   id: string;
   name: string;
-  dimensions: string; // e.g. "12\" x 18\""
+  dimensions?: string | null; // e.g. "12\" x 18\""
   price: number; // numeric price in BDT
-  description?: string;
+  description?: string | null;
   is_active?: boolean;
+  sort_order?: number;
+  allow_quantity?: boolean;
 }
 
 export interface FramePrintingConfig {

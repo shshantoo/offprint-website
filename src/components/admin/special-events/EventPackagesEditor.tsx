@@ -36,7 +36,6 @@ export default function EventPackagesEditor({
 
   const [editingModal, setEditingModal] = useState<Partial<PhotographyPackage> | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deliverablesText, setDeliverablesText] = useState("");
 
   // In-line quick edits state
   const [inlinePrice, setInlinePrice] = useState<Record<string, number>>({});
@@ -48,7 +47,6 @@ export default function EventPackagesEditor({
       alert("Please save the event first before adding packages.");
       return;
     }
-    setDeliverablesText("Full gallery digital color-graded delivery\nOnline client portal download & proofing");
     setEditingModal({
       event_id: eventId,
       name: "",
@@ -68,7 +66,6 @@ export default function EventPackagesEditor({
   };
 
   const handleOpenEdit = (pkg: PhotographyPackage) => {
-    setDeliverablesText((pkg.deliverables || []).join("\n"));
     setEditingModal({ ...pkg });
   };
 
@@ -82,11 +79,6 @@ export default function EventPackagesEditor({
 
     try {
       setSaving(true);
-      const deliverables = deliverablesText
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
       const numPrice = Number(editingModal.price_numeric) || 0;
       const formattedPrice = editingModal.price_label?.trim()
         ? editingModal.price_label.trim()
@@ -101,7 +93,7 @@ export default function EventPackagesEditor({
             ...editingModal,
             price_numeric: numPrice,
             price_label: formattedPrice,
-            deliverables,
+            deliverables: [],
           },
         }),
       });
@@ -501,21 +493,6 @@ export default function EventPackagesEditor({
                   </div>
                 </div>
 
-                {/* Deliverables Tags */}
-                {pkg.deliverables && pkg.deliverables.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {pkg.deliverables.map((d, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] text-[11px] text-[#5C5449]"
-                      >
-                        <CheckCircle2 className="w-3 h-3 text-[#A66D35] shrink-0" />
-                        <span>{d}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
                 {/* In-Line Save Trigger Banner */}
                 {isDirtyInline && (
                   <div className="pt-2 border-t border-[#E5DEC9] flex items-center justify-between gap-3 bg-[#F4EFE6]/70 -mx-6 -mb-6 p-4 rounded-b-3xl">
@@ -643,25 +620,17 @@ export default function EventPackagesEditor({
               </div>
 
               <div>
-                <label className="font-semibold block mb-1">Description / Summary</label>
-                <textarea
-                  rows={3}
-                  value={editingModal.description || ""}
-                  onChange={(e) => setEditingModal({ ...editingModal, description: e.target.value })}
-                  placeholder="Describe who this package is best suited for..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-[#141210]"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold block mb-1">Deliverables &amp; Inclusions (One per line)</label>
+                <label className="font-semibold block mb-1">Package Description</label>
                 <textarea
                   rows={4}
-                  value={deliverablesText}
-                  onChange={(e) => setDeliverablesText(e.target.value)}
-                  placeholder="30 Minutes Studio Portraiture&#10;5 High-Resolution Color-Graded Digital Copies&#10;Private Client Portal Gallery Access"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-[#141210] font-mono"
+                  value={editingModal.description || ""}
+                  onChange={(e) => setEditingModal({ ...editingModal, description: e.target.value })}
+                  placeholder="Enter full package description visible to clients (e.g. details, styling, what clients should expect)..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-[#141210]"
                 />
+                <p className="text-xs text-[#5C5449] mt-1">
+                  This description is displayed cleanly under the package name and price on the client booking page.
+                </p>
               </div>
 
               <div className="pt-3 border-t border-[#E5DEC9] flex items-center justify-end gap-2.5">

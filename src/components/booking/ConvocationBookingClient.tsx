@@ -20,17 +20,12 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
-  User,
-  Mail,
-  Phone,
-  BookOpen,
-  Users,
-  FileText,
   ArrowRight,
   RefreshCw,
   Info,
   Sparkles,
 } from "lucide-react";
+import { IUB_CONVOCATION_DEFAULT_QUESTIONS } from "@/lib/booking/default-event-fields";
 
 interface ConvocationAvailabilityPayload {
   success?: boolean;
@@ -91,22 +86,70 @@ export default function ConvocationBookingClient({
   const [selectedFrameId, setSelectedFrameId] = useState<string>("");
   const [frameQuantity, setFrameQuantity] = useState<number>(1);
 
-  // Client Form State
-  const [clientName, setClientName] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
-  const [clientPhone, setClientPhone] = useState("+880 ");
-  const [companyOrInstitution, setCompanyOrInstitution] = useState("");
-  const [studentId, setStudentId] = useState("");
-  const [degreeOrDepartment, setDegreeOrDepartment] = useState("");
-  const [guestsCount, setGuestsCount] = useState<number>(2);
-  const [locationPreference, setLocationPreference] = useState("");
-  const [clientNotes, setClientNotes] = useState("");
+  // Authenticated Profile State & Custom Fields
+  const [userProfile, setUserProfile] = useState<{
+    full_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    company_or_institution?: string | null;
+    student_id?: string | null;
+  } | null>(null);
+
   const [customFields, setCustomFields] = useState<
     Record<string, string | string[]>
   >({});
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Prefill authenticated profile if signed in
+  useEffect(() => {
+    let isMounted = true;
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/client/profile");
+        if (res.ok) {
+          const json = await res.json();
+          const profile = json?.data?.profile;
+          const user = json?.data?.user;
+          if ((profile || user) && isMounted) {
+            setUserProfile({
+              full_name: profile?.full_name || null,
+              email: user?.email || profile?.email || null,
+              phone: profile?.phone || null,
+              company_or_institution: profile?.company_or_institution || null,
+              student_id: profile?.student_id || null,
+            });
+            setCustomFields((prev) => {
+              const next = { ...prev };
+              if (!next["full_name"] && !next["client_name"] && profile?.full_name) {
+                next["full_name"] = profile.full_name;
+              }
+              if (!next["client_email"] && !next["email"] && (user?.email || profile?.email)) {
+                next["client_email"] = user?.email || profile?.email;
+              }
+              if (!next["client_phone"] && !next["phone"] && profile?.phone) {
+                next["client_phone"] = profile.phone;
+              }
+              if (!next["company_or_institution"] && profile?.company_or_institution) {
+                next["company_or_institution"] = profile.company_or_institution;
+              }
+              if (!next["student_id"] && profile?.student_id) {
+                next["student_id"] = profile.student_id;
+              }
+              return next;
+            });
+          }
+        }
+      } catch {
+        // Non-authenticated visitors can fill the form normally
+      }
+    }
+    loadProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const loadAvailability = useCallback(
     async (monthStr: string = currentMonth, dateStr: string | null = selectedDate) => {
@@ -138,10 +181,6 @@ export default function ConvocationBookingClient({
           setSelectedPackageId(activePkgs[0].id);
         }
 
-        if (json.event?.venue && !locationPreference) {
-          setLocationPreference(json.event.venue);
-        }
-
         const allOpenSlots = (json.allEventSlots || []).filter(
           (s) => s.state === "available" && s.remaining_capacity > 0
         );
@@ -165,7 +204,7 @@ export default function ConvocationBookingClient({
         setLoading(false);
       }
     },
-    [currentMonth, selectedDate, selectedPackageId, eventSlug, locationPreference]
+    [currentMonth, selectedDate, selectedPackageId, eventSlug]
   );
 
   useEffect(() => {
@@ -254,6 +293,16 @@ export default function ConvocationBookingClient({
       setHoldRemainingSeconds(
         json.remaining_seconds || (event?.slot_hold_duration_mins || 5) * 60
       );
+
+      // Smooth scroll to reservation details on mobile upon successful slot hold
+      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+        setTimeout(() => {
+          const target = document.getElementById("booking-reservation-details");
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 150);
+      }
     } catch {
       setSelectedSlot(slot);
     }
@@ -292,37 +341,16 @@ export default function ConvocationBookingClient({
   const isEventBookable = event?.status === "published";
 
   const customQuestions: CustomBookingQuestion[] = useMemo(() => {
-    return Array.isArray(event?.custom_questions)
+    return Array.isArray(event?.custom_questions) && event.custom_questions.length > 0
       ? [...event.custom_questions].sort(
           (a, b) => (a.sort_order || 0) - (b.sort_order || 0)
         )
-      : [];
+      : IUB_CONVOCATION_DEFAULT_QUESTIONS;
   }, [event]);
 
-  const hasCustomStudentIdQuestion = customQuestions.some(
-    (q) => q.key === "student_id"
-  );
-  const hasCustomDepartmentQuestion = customQuestions.some(
-    (q) => q.key === "degree_or_department"
-  );
-
-  const displayCustomQuestions = customQuestions.filter((q) => {
-    if (q.is_visible === false) return false;
-    const key = q.key || q.id;
-    if (
-      key &&
-      [
-        "full_name",
-        "client_email",
-        "client_phone",
-        "guests_count",
-        "company_or_institution",
-      ].includes(key)
-    ) {
-      return false;
-    }
-    return true;
-  });
+  const visibleQuestions = useMemo(() => {
+    return customQuestions.filter((q) => q.is_visible !== false);
+  }, [customQuestions]);
 
   const frameConfig = event?.frame_printing_config || null;
   const activeFrameTypes = useMemo(() => {
@@ -389,29 +417,78 @@ export default function ConvocationBookingClient({
       return;
     }
 
+    // 1. Resolve contact details
+    let resolvedName =
+      String(customFields["full_name"] || customFields["client_name"] || customFields["name"] || userProfile?.full_name || "").trim();
+    let resolvedEmail =
+      String(customFields["client_email"] || customFields["email"] || userProfile?.email || "").trim();
+    let resolvedPhone =
+      String(customFields["client_phone"] || customFields["phone"] || userProfile?.phone || "").trim();
+
+    // Check visible questions for email/phone/name if not yet resolved
+    for (const q of visibleQuestions) {
+      const qKey = q.key || q.id;
+      const qType = q.field_type || q.type;
+      const val = String(customFields[qKey] || "").trim();
+      if (qType === "email" && !resolvedEmail && val) {
+        resolvedEmail = val;
+      }
+      if (qType === "phone" && !resolvedPhone && val) {
+        resolvedPhone = val;
+      }
+      if ((qKey.includes("name") || qKey === "full_name") && !resolvedName && val) {
+        resolvedName = val;
+      }
+    }
+
+    if (!resolvedName) resolvedName = "Client";
+
+    // Required confirmation contact rule:
+    // If admin included email field and marked required, check it
+    const emailQuestion = visibleQuestions.find(
+      (q) => q.field_type === "email" || q.type === "email" || q.key === "client_email" || q.key === "email"
+    );
+    if (emailQuestion && emailQuestion.required && !resolvedEmail) {
+      setSubmitError(`Please provide a valid ${emailQuestion.label || "Email Address"}`);
+      return;
+    }
+
+    const phoneQuestion = visibleQuestions.find(
+      (q) => q.field_type === "phone" || q.type === "phone" || q.key === "client_phone" || q.key === "phone"
+    );
+    if (phoneQuestion && phoneQuestion.required && !resolvedPhone) {
+      setSubmitError(`Please provide a valid ${phoneQuestion.label || "Phone Number"}`);
+      return;
+    }
+
+    // Always require at least ONE contact method (email or phone)
+    if (!resolvedEmail && !resolvedPhone) {
+      setSubmitError(
+        "Please provide at least one contact method (email or phone) for your booking confirmation."
+      );
+      return;
+    }
+
+    // Validate email format if provided
+    if (resolvedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedEmail)) {
+      setSubmitError("Please enter a valid email address (e.g. name@domain.com).");
+      return;
+    }
+
     // Client-side validation for required custom questions
-    for (const q of customQuestions) {
-      if (q.is_visible === false) continue;
+    for (const q of visibleQuestions) {
       const qKey = q.key || q.id;
       if (!qKey) continue;
       const qType = q.field_type || q.type;
       if (qType === "heading") continue;
 
-      if (
-        [
-          "full_name",
-          "client_email",
-          "client_phone",
-          "guests_count",
-          "company_or_institution",
-        ].includes(qKey)
-      ) {
-        continue;
-      }
-
       const val = customFields[qKey];
       if (q.required) {
-        if (qType === "multiple_choice" || qType === "checkbox") {
+        if (
+          qType === "multiple_choice" ||
+          qType === "checkbox" ||
+          (qType === "select_box" && q.select_mode === "multiple")
+        ) {
           if (!Array.isArray(val) || val.length === 0) {
             setSubmitError(`Please select at least one option for "${q.label}".`);
             return;
@@ -440,17 +517,6 @@ export default function ConvocationBookingClient({
       }
     }
 
-    const resolvedStudentId =
-      typeof customFields.student_id === "string" && customFields.student_id.trim()
-        ? customFields.student_id.trim()
-        : studentId.trim() || null;
-
-    const resolvedDept =
-      typeof customFields.degree_or_department === "string" &&
-      customFields.degree_or_department.trim()
-        ? customFields.degree_or_department.trim()
-        : degreeOrDepartment.trim() || null;
-
     try {
       setSubmitting(true);
       const slotStartMs = Date.parse(selectedSlot.start_at);
@@ -474,31 +540,30 @@ export default function ConvocationBookingClient({
           start_at: selectedSlot.start_at,
           end_at: computedEndAt,
           duration_mins: chosenDuration,
-          frame_printing_selected: framePrintingSelected,
+          frame_printing_selected: isFramePrintingAvailable && framePrintingSelected && Boolean(selectedFrame),
           frame_type_id:
-            framePrintingSelected && selectedFrame ? selectedFrame.id : null,
-          frame_quantity: framePrintingSelected ? frameQuantity : 0,
-          client_name: clientName.trim(),
-          client_email: clientEmail.trim(),
-          client_phone: clientPhone.trim(),
-          company_or_institution: companyOrInstitution.trim() || null,
-          student_id: resolvedStudentId,
-          degree_or_department: resolvedDept,
-          guests_count: Number(guestsCount) || 1,
+            isFramePrintingAvailable && framePrintingSelected && selectedFrame ? selectedFrame.id : null,
+          frame_quantity: isFramePrintingAvailable && framePrintingSelected ? frameQuantity : 0,
+          client_name: resolvedName,
+          client_email: resolvedEmail || null,
+          client_phone: resolvedPhone || null,
+          company_or_institution:
+            String(customFields["company_or_institution"] || customFields["institution"] || "").trim() || null,
+          student_id: String(customFields["student_id"] || "").trim() || null,
+          degree_or_department:
+            String(customFields["degree_or_department"] || customFields["department"] || "").trim() || null,
+          guests_count: Number(customFields["guests_count"] || customFields["guests"] || 1),
           location:
-            locationPreference.trim() ||
+            String(customFields["location"] || "").trim() ||
             event.venue ||
             "OFFPRINT Studio, Dhaka",
-          client_notes: clientNotes.trim() || null,
+          client_notes: String(customFields["client_notes"] || customFields["notes"] || "").trim() || null,
           custom_fields: {
             ...customFields,
-            full_name: clientName.trim(),
-            client_email: clientEmail.trim(),
-            client_phone: clientPhone.trim(),
-            guests_count: Number(guestsCount) || 1,
-            company_or_institution: companyOrInstitution.trim() || null,
-            student_id: resolvedStudentId,
-            degree_or_department: resolvedDept,
+            full_name: resolvedName,
+            client_name: resolvedName,
+            client_email: resolvedEmail,
+            client_phone: resolvedPhone,
           },
         }),
       });
@@ -791,21 +856,6 @@ export default function ConvocationBookingClient({
                   {activePackages[0].description}
                 </p>
               )}
-
-              {activePackages[0].deliverables &&
-                activePackages[0].deliverables.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {activePackages[0].deliverables.map((item, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs text-[#141210] font-medium"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#A66D35] shrink-0" />
-                        <span>{item}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
             </div>
           )}
 
@@ -904,20 +954,6 @@ export default function ConvocationBookingClient({
                       <p className="text-xs text-[#5C5449] leading-relaxed">
                         {pkg.description}
                       </p>
-                    )}
-
-                    {pkg.deliverables && pkg.deliverables.length > 0 && (
-                      <ul className="space-y-1.5 pt-2 border-t border-[#E5DEC9]">
-                        {pkg.deliverables.map((item, idx) => (
-                          <li
-                            key={idx}
-                            className="flex items-start gap-2 text-xs text-[#141210]"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#A66D35] shrink-0 mt-0.5" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
                     )}
                   </div>
 
@@ -1150,7 +1186,7 @@ export default function ConvocationBookingClient({
       )}
 
       {/* Step 2 & 3: Interactive Calendar + Dynamic Booking Form */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div id="booking-calendar-section" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start scroll-mt-24">
         <div className="lg:col-span-7 space-y-4">
           <div>
             <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
@@ -1215,7 +1251,31 @@ export default function ConvocationBookingClient({
           />
         </div>
 
-        <div className="lg:col-span-5 space-y-6">
+        <div id="booking-reservation-details" className="lg:col-span-5 space-y-6 scroll-mt-24 lg:scroll-mt-8">
+          {/* Selected Slot Compact Mobile Banner */}
+          {selectedSlot && (
+            <div className="lg:hidden p-3.5 rounded-2xl bg-[#3A2008] text-[#FAF7F2] flex items-center justify-between gap-3 shadow-md border border-[#5C4028]">
+              <div className="text-xs space-y-0.5">
+                <span className="text-[10px] uppercase font-mono tracking-wider text-[#D9A673] block">
+                  Selected Time Slot
+                </span>
+                <span className="font-bold font-mono">
+                  {selectedSlot.date} • {selectedSlot.start_time_label} – {selectedSlot.end_time_label}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const cal = document.getElementById("booking-calendar-section");
+                  if (cal) cal.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#FAF7F2] text-[#3A2008] text-xs font-semibold shrink-0"
+              >
+                Change slot
+              </button>
+            </div>
+          )}
+
           <div>
             <span className="text-xs font-mono uppercase tracking-widest text-[#A66D35]">
               {activePackages.length >= 2
@@ -1323,346 +1383,250 @@ export default function ConvocationBookingClient({
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Full Name *</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                placeholder="e.g., Nafisa Rahman"
-                className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-              />
-            </div>
+            {/* Dynamic Custom Questions Driven 100% by Administrator */}
+            <div className="space-y-4">
+              {visibleQuestions.map((q) => {
+                const qKey = q.key || q.id;
+                if (!qKey) return null;
+                const qType = q.field_type || q.type || "short_text";
+                const val = customFields[qKey];
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Email Address *</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Mobile Phone *</span>
-                </label>
-                <input
-                  type="tel"
-                  required
-                  value={clientPhone}
-                  onChange={(e) => setClientPhone(e.target.value)}
-                  placeholder="+880 1711-000000"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>Participants / Guests Count</span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={guestsCount}
-                  onChange={(e) =>
-                    setGuestsCount(parseInt(e.target.value, 10) || 1)
-                  }
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5 text-[#A66D35]" />
-                  <span>University / Organization</span>
-                </label>
-                <input
-                  type="text"
-                  value={companyOrInstitution}
-                  onChange={(e) => setCompanyOrInstitution(e.target.value)}
-                  placeholder="e.g., Independent University, Bangladesh"
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                />
-              </div>
-            </div>
-
-            {/* Fallback Student ID & Department fields only if custom_questions doesn't already define them */}
-            {!hasCustomStudentIdQuestion &&
-              (event?.category === "convocation" ||
-                event?.category === "graduation" ||
-                eventSlug === "iub-27th-convocation") && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#141210]">
-                    Student ID *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value)}
-                    placeholder="e.g., 2021456"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono"
-                  />
-                </div>
-              )}
-
-            {!hasCustomDepartmentQuestion &&
-              (event?.category === "convocation" ||
-                event?.category === "graduation" ||
-                eventSlug === "iub-27th-convocation") && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#141210]">
-                    Department / Academic Program
-                  </label>
-                  <input
-                    type="text"
-                    value={degreeOrDepartment}
-                    onChange={(e) => setDegreeOrDepartment(e.target.value)}
-                    placeholder="e.g., BBA Finance / CSE"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210]"
-                  />
-                </div>
-              )}
-
-            {/* Dynamic Custom Questions Configured by Administrator */}
-            {displayCustomQuestions.length > 0 && (
-              <div className="pt-2 border-t border-[#E5DEC9] space-y-4">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#A66D35] font-semibold">
-                  Event-Specific Questions
-                </div>
-
-                {displayCustomQuestions.map((q) => {
-                  const qKey = q.key || q.id;
-                  if (!qKey) return null;
-                  const qType = q.field_type || q.type || "short_text";
-                  const val = customFields[qKey];
-
-                  if (qType === "heading") {
-                    return (
-                      <div
-                        key={q.id || qKey}
-                        className="pt-3 pb-1 border-t border-[#E5DEC9] first:border-t-0 first:pt-0"
-                      >
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-[#A66D35]">
-                          {q.label}
-                        </h4>
-                        {q.description && (
-                          <p className="text-[11px] text-[#5C5449] mt-0.5">
-                            {q.description}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  }
-
+                if (qType === "heading") {
                   return (
-                    <div key={q.id || qKey} className="space-y-1.5">
-                      <label className="text-xs font-semibold text-[#141210] block">
-                        {q.label} {q.required && <span className="text-red-600">*</span>}
-                      </label>
-                      {q.description && (
-                        <p className="text-[11px] text-[#5C5449]">{q.description}</p>
-                      )}
-
-                      {qType === "short_text" && (
-                        <input
-                          type="text"
-                          required={q.required}
-                          minLength={q.min_length ?? undefined}
-                          maxLength={q.max_length ?? undefined}
-                          placeholder={q.placeholder || ""}
-                          value={typeof val === "string" ? val : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                        />
-                      )}
-
-                      {qType === "email" && (
-                        <input
-                          type="email"
-                          required={q.required}
-                          placeholder={q.placeholder || "you@example.com"}
-                          value={typeof val === "string" ? val : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                        />
-                      )}
-
-                      {qType === "phone" && (
-                        <input
-                          type="tel"
-                          required={q.required}
-                          placeholder={q.placeholder || "+880 1711-000000"}
-                          value={typeof val === "string" ? val : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
-                        />
-                      )}
-
-                      {qType === "number" && (
-                        <input
-                          type="number"
-                          required={q.required}
-                          min={q.min_value ?? undefined}
-                          max={q.max_value ?? undefined}
-                          placeholder={q.placeholder || ""}
-                          value={val !== undefined ? String(val) : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
-                        />
-                      )}
-
-                      {qType === "date" && (
-                        <input
-                          type="date"
-                          required={q.required}
-                          value={typeof val === "string" ? val : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                        />
-                      )}
-
-                      {qType === "long_text" && (
-                        <textarea
-                          rows={3}
-                          required={q.required}
-                          minLength={q.min_length || undefined}
-                          maxLength={q.max_length || undefined}
-                          placeholder={q.placeholder || ""}
-                          value={typeof val === "string" ? val : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                        />
-                      )}
-
-                      {qType === "dropdown" && (
-                        <select
-                          required={q.required}
-                          value={typeof val === "string" ? val : ""}
-                          onChange={(e) =>
-                            handleCustomFieldChange(qKey, e.target.value)
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-                        >
-                          <option value="">Select an option...</option>
-                          {(q.options || []).map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {(qType === "single_choice" || qType === "radio") && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                          {(q.options || []).map((opt) => {
-                            const selected = val === opt;
-                            return (
-                              <button
-                                key={opt}
-                                type="button"
-                                onClick={() => handleCustomFieldChange(qKey, opt)}
-                                className={`px-3.5 py-2 rounded-xl border text-left text-xs font-medium transition-all ${
-                                  selected
-                                    ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008]"
-                                    : "bg-[#FAF7F2] text-[#141210] border-[#E5DEC9] hover:border-[#A66D35]"
-                                }`}
-                              >
-                                {opt}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {(qType === "multiple_choice" || qType === "checkbox") && (
-                        <div className="grid grid-cols-1 gap-2 pt-1">
-                          {(q.options || []).map((opt) => {
-                            const checked =
-                              Array.isArray(val) && val.includes(opt);
-                            return (
-                              <label
-                                key={opt}
-                                className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border cursor-pointer text-xs transition-all ${
-                                  checked
-                                    ? "bg-[#F4EFE6] border-[#3A2008] text-[#141210] font-semibold"
-                                    : "bg-[#FAF7F2] border-[#E5DEC9] text-[#5C5449]"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() =>
-                                    handleToggleMultiChoiceOption(qKey, opt)
-                                  }
-                                />
-                                <span>{opt}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
+                    <div
+                      key={q.id || qKey}
+                      className="pt-3 pb-1 border-t border-[#E5DEC9] first:border-t-0 first:pt-0"
+                    >
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-[#A66D35]">
+                        {q.label}
+                      </h4>
+                      {q.help_text && (
+                        <p className="text-[11px] text-[#5C5449] mt-0.5">
+                          {q.help_text}
+                        </p>
                       )}
                     </div>
                   );
-                })}
-              </div>
-            )}
+                }
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Preferred Meeting Point / Venue Location</span>
-              </label>
-              <input
-                type="text"
-                value={locationPreference}
-                onChange={(e) => setLocationPreference(e.target.value)}
-                placeholder={event?.venue || "OFFPRINT Studio / Campus Booth"}
-                className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
-              />
-            </div>
+                return (
+                  <div key={q.id || qKey} className="space-y-1.5">
+                    <label className="text-xs font-semibold text-[#141210] flex items-center justify-between">
+                      <span>
+                        {q.label} {q.required && <span className="text-red-600">*</span>}
+                      </span>
+                      {q.help_text && (
+                        <span className="text-[11px] text-[#A66D35] font-normal">
+                          {q.help_text}
+                        </span>
+                      )}
+                    </label>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#141210] flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#A66D35]" />
-                <span>Additional Requests or Notes</span>
-              </label>
-              <textarea
-                rows={2}
-                value={clientNotes}
-                onChange={(e) => setClientNotes(e.target.value)}
-                placeholder="Optional notes for our photography team..."
-                className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008] resize-none"
-              />
+                    {qType === "short_text" && (
+                      <input
+                        type="text"
+                        required={q.required}
+                        minLength={q.min_length ?? undefined}
+                        maxLength={q.max_length ?? undefined}
+                        placeholder={q.placeholder || ""}
+                        value={typeof val === "string" ? val : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                      />
+                    )}
+
+                    {qType === "email" && (
+                      <input
+                        type="email"
+                        required={q.required}
+                        placeholder={q.placeholder || "you@example.com"}
+                        value={typeof val === "string" ? val : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                      />
+                    )}
+
+                    {qType === "phone" && (
+                      <input
+                        type="tel"
+                        required={q.required}
+                        placeholder={q.placeholder || "+880 1711-000000"}
+                        value={typeof val === "string" ? val : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
+                      />
+                    )}
+
+                    {qType === "number" && (
+                      <input
+                        type="number"
+                        required={q.required}
+                        min={q.min_value ?? undefined}
+                        max={q.max_value ?? undefined}
+                        placeholder={q.placeholder || ""}
+                        value={val !== undefined && val !== null ? String(val) : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] font-mono focus:outline-none focus:border-[#3A2008]"
+                      />
+                    )}
+
+                    {qType === "date" && (
+                      <input
+                        type="date"
+                        required={q.required}
+                        value={typeof val === "string" ? val : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                      />
+                    )}
+
+                    {qType === "long_text" && (
+                      <textarea
+                        rows={3}
+                        required={q.required}
+                        minLength={q.min_length || undefined}
+                        maxLength={q.max_length || undefined}
+                        placeholder={q.placeholder || ""}
+                        value={typeof val === "string" ? val : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                      />
+                    )}
+
+                    {qType === "dropdown" && (
+                      <select
+                        required={q.required}
+                        value={typeof val === "string" ? val : ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(qKey, e.target.value)
+                        }
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-sm text-[#141210] focus:outline-none focus:border-[#3A2008]"
+                      >
+                        <option value="">Select an option...</option>
+                        {(q.options || []).map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Select Box (Visual Selectable Cards) */}
+                    {qType === "select_box" && (
+                      <div
+                        className={
+                          q.layout === "horizontal"
+                            ? "flex flex-wrap gap-2 pt-1"
+                            : "grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1"
+                        }
+                      >
+                        {(q.options || []).map((opt) => {
+                          const isMulti = q.select_mode === "multiple";
+                          const curArr: string[] = Array.isArray(val) ? val : val ? [String(val)] : [];
+                          const isSelected = isMulti ? curArr.includes(opt) : val === opt;
+
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => {
+                                if (isMulti) {
+                                  const next = isSelected
+                                    ? curArr.filter((x) => x !== opt)
+                                    : [...curArr, opt];
+                                  handleCustomFieldChange(qKey, next);
+                                } else {
+                                  handleCustomFieldChange(qKey, opt);
+                                }
+                              }}
+                              className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                                isSelected
+                                  ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-xs font-semibold"
+                                  : "bg-[#FAF7F2] text-[#141210] border-[#E5DEC9] hover:border-[#A66D35]"
+                              }`}
+                            >
+                              <span className="text-xs">{opt}</span>
+                              {isSelected && <CheckCircle2 className="w-4 h-4 text-[#FAF7F2]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Radio Button */}
+                    {(qType === "single_choice" || qType === "radio") && (
+                      <div
+                        className={
+                          q.layout === "horizontal"
+                            ? "flex flex-wrap gap-4 pt-1"
+                            : "space-y-2 pt-1"
+                        }
+                      >
+                        {(q.options || []).map((opt) => {
+                          const selected = val === opt;
+                          return (
+                            <label
+                              key={opt}
+                              className="flex items-center gap-2 text-xs text-[#141210] cursor-pointer"
+                            >
+                              <input
+                                type="radio"
+                                name={`radio_${qKey}`}
+                                checked={selected}
+                                onChange={() => handleCustomFieldChange(qKey, opt)}
+                                className="w-3.5 h-3.5 text-[#3A2008] border-[#E5DEC9] focus:ring-[#A66D35]"
+                              />
+                              <span>{opt}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Checkbox (Multi Choice) */}
+                    {(qType === "multiple_choice" || qType === "checkbox") && (
+                      <div className="grid grid-cols-1 gap-2 pt-1">
+                        {(q.options || []).map((opt) => {
+                          const checked =
+                            Array.isArray(val) && val.includes(opt);
+                          return (
+                            <label
+                              key={opt}
+                              className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border cursor-pointer text-xs transition-all ${
+                                checked
+                                  ? "bg-[#F4EFE6] border-[#3A2008] text-[#141210] font-semibold"
+                                  : "bg-[#FAF7F2] border-[#E5DEC9] text-[#5C5449]"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  handleToggleMultiChoiceOption(qKey, opt)
+                                }
+                                className="rounded text-[#3A2008]"
+                              />
+                              <span>{opt}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <button

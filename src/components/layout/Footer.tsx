@@ -112,16 +112,16 @@ export default function Footer() {
   return (
     <footer className="bg-[#F4EFE6] border-t border-[#E5DEC9] text-[#655E55] pt-16 pb-12 mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 mb-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8 sm:gap-10 mb-12">
           {/* Brand Info & Govt Reg */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="sm:col-span-2 lg:col-span-2 space-y-4">
             <div className="flex items-center">
               <Image
                 src="/brand/offprint-black-logo.png"
                 alt="OFFPRINT Photography & Print Studio"
                 width={185}
                 height={64}
-                className="w-[165px] sm:w-[180px] md:w-[185px] h-auto object-contain shrink-0"
+                className="w-[150px] sm:w-[170px] md:w-[185px] h-auto object-contain shrink-0"
               />
             </div>
 
@@ -138,17 +138,17 @@ export default function Footer() {
             )}
 
             {showBooking && (
-              <div className="pt-1 flex flex-wrap items-center gap-2">
+              <div className="pt-1 flex flex-wrap items-center gap-2.5">
                 <Link
                   href="/book"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#3A2008] text-[#FAF7F2] text-xs font-semibold hover:bg-[#5C4028] transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3A2008] text-[#FAF7F2] text-xs font-semibold hover:bg-[#5C4028] transition-colors shadow-2xs"
                 >
                   <Calendar className="w-3.5 h-3.5 text-[#D8B084]" />
                   <span>Book a Session</span>
                 </Link>
                 <Link
                   href="/client-portal"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#FFFFFF] text-[#3A2008] border border-[#DED6C6] text-xs font-semibold hover:bg-[#FAF7F2] transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#FFFFFF] text-[#3A2008] border border-[#DED6C6] text-xs font-semibold hover:bg-[#FAF7F2] transition-colors shadow-2xs"
                 >
                   <UserCheck className="w-3.5 h-3.5 text-[#A66D35]" />
                   <span>Client Portal</span>
@@ -163,11 +163,11 @@ export default function Footer() {
               <h4 className="text-xs font-bold uppercase tracking-wider text-[#141210]">
                 Photography &amp; Booking
               </h4>
-              <ul className="space-y-2.5 text-xs">
+              <ul className="space-y-1.5 text-xs">
                 <li>
                   <Link
                     href="/book"
-                    className="inline-flex items-center gap-1.5 font-semibold text-[#3A2008] hover:text-[#A66D35] transition-colors"
+                    className="inline-flex items-center gap-1.5 font-semibold text-[#3A2008] hover:text-[#A66D35] transition-colors py-1 block"
                   >
                     <GraduationCap className="w-3.5 h-3.5 text-[#A66D35]" />
                     <span>Special Event Booking</span>
@@ -176,7 +176,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/book/traditional"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Traditional Photography Booking
                   </Link>
@@ -184,7 +184,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/works"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Production Works Archive
                   </Link>
@@ -192,7 +192,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/client-portal"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Reschedule or Manage Booking
                   </Link>
@@ -200,7 +200,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/#quote"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Custom Corporate Quote
                   </Link>
@@ -217,11 +217,11 @@ export default function Footer() {
               <h4 className="text-xs font-bold uppercase tracking-wider text-[#141210]">
                 Physical Print &amp; Merch
               </h4>
-              <ul className="space-y-2.5 text-xs">
+              <ul className="space-y-1.5 text-xs">
                 <li>
                   <Link
                     href="/print-solutions"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     650 GSM Debossed Business Cards
                   </Link>
@@ -229,7 +229,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/print-solutions"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     12mm Optical Clear Acrylic Frames
                   </Link>
@@ -237,7 +237,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/print-solutions"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Bespoke Corporate Swag Suites
                   </Link>
@@ -245,7 +245,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/print-solutions"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Laser Engraved Brass Pens
                   </Link>
@@ -253,7 +253,7 @@ export default function Footer() {
                 <li>
                   <Link
                     href="/print-solutions"
-                    className="hover:text-[#141210] transition-colors"
+                    className="hover:text-[#141210] transition-colors py-1 block"
                   >
                     Matte Roll-up Summit Banners
                   </Link>
@@ -269,11 +269,11 @@ export default function Footer() {
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#141210]">
               Direct Studio Desk
             </h4>
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2 text-xs">
               {settings.email && (
                 <a
                   href={`mailto:${settings.email}`}
-                  className="flex items-center gap-2 text-[#3D3730] hover:text-[#3A2008] transition-colors"
+                  className="flex items-center gap-2 text-[#3D3730] hover:text-[#3A2008] transition-colors py-0.5"
                 >
                   <Mail className="w-3.5 h-3.5 text-[#A66D35] shrink-0" />
                   <span className="font-mono">{settings.email}</span>
@@ -282,20 +282,20 @@ export default function Footer() {
               {settings.phone && (
                 <a
                   href={`tel:${settings.phone}`}
-                  className="flex items-center gap-2 text-[#3D3730] hover:text-[#3A2008] transition-colors"
+                  className="flex items-center gap-2 text-[#3D3730] hover:text-[#3A2008] transition-colors py-0.5"
                 >
                   <Phone className="w-3.5 h-3.5 text-[#A66D35] shrink-0" />
                   <span className="font-mono">{settings.phone}</span>
                 </a>
               )}
               {settings.address && (
-                <div className="flex items-start gap-2 text-[11px] text-[#655E55]">
+                <div className="flex items-start gap-2 text-[11px] text-[#655E55] py-0.5">
                   <MapPin className="w-3.5 h-3.5 text-[#A66D35] shrink-0 mt-0.5" />
                   <span>{settings.address}</span>
                 </div>
               )}
               {settings.operating_hours_label && (
-                <div className="flex items-start gap-2 text-[11px] text-[#8A8175]">
+                <div className="flex items-start gap-2 text-[11px] text-[#8A8175] py-0.5">
                   <Clock className="w-3.5 h-3.5 text-[#A66D35] shrink-0 mt-0.5" />
                   <span>{settings.operating_hours_label}</span>
                 </div>
@@ -303,16 +303,16 @@ export default function Footer() {
 
               {/* Social Media Links */}
               {showSocial && (
-                <div className="pt-2 flex items-center gap-2.5">
+                <div className="pt-2.5 flex items-center gap-2">
                   {settings.instagram_url && (
                     <a
                       href={settings.instagram_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-7 h-7 rounded-md bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors"
+                      className="w-9 h-9 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors shadow-2xs"
                       aria-label="Instagram"
                     >
-                      <InstagramIcon className="w-3.5 h-3.5" />
+                      <InstagramIcon className="w-4 h-4" />
                     </a>
                   )}
                   {settings.facebook_url && (
@@ -320,10 +320,10 @@ export default function Footer() {
                       href={settings.facebook_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-7 h-7 rounded-md bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors"
+                      className="w-9 h-9 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors shadow-2xs"
                       aria-label="Facebook"
                     >
-                      <FacebookIcon className="w-3.5 h-3.5" />
+                      <FacebookIcon className="w-4 h-4" />
                     </a>
                   )}
                   {settings.linkedin_url && (
@@ -331,10 +331,10 @@ export default function Footer() {
                       href={settings.linkedin_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-7 h-7 rounded-md bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors"
+                      className="w-9 h-9 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors shadow-2xs"
                       aria-label="LinkedIn"
                     >
-                      <LinkedinIcon className="w-3.5 h-3.5" />
+                      <LinkedinIcon className="w-4 h-4" />
                     </a>
                   )}
                   {settings.youtube_url && (
@@ -342,10 +342,10 @@ export default function Footer() {
                       href={settings.youtube_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-7 h-7 rounded-md bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors"
+                      className="w-9 h-9 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-center text-[#5C4028] hover:text-[#141210] hover:border-[#3A2008] transition-colors shadow-2xs"
                       aria-label="YouTube"
                     >
-                      <YoutubeIcon className="w-3.5 h-3.5" />
+                      <YoutubeIcon className="w-4 h-4" />
                     </a>
                   )}
                 </div>
@@ -355,14 +355,14 @@ export default function Footer() {
         </div>
 
         {/* Bottom Sub-bar */}
-        <div className="pt-8 border-t border-[#E5DEC9] flex flex-col sm:flex-row items-center justify-between text-xs text-[#655E55] gap-4">
+        <div className="pt-8 border-t border-[#E5DEC9] flex flex-col sm:flex-row items-center justify-between text-xs text-[#655E55] gap-4 text-center sm:text-left">
           <div>
             {settings.footer_copyright ||
               "© 2026 OFFPRINT (অফপ্রিন্ট). All rights reserved. Registered under Laws of Bangladesh."}
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6">
             <span>Studio Atelier • Dhaka</span>
-            <Link href="/privacy" className="hover:text-[#141210] transition-colors">
+            <Link href="/privacy" className="hover:text-[#141210] transition-colors py-1">
               Booking Policy &amp; Privacy
             </Link>
           </div>

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   bookingEventSchema,
+  customQuestionSchema,
   eventSessionSchema,
+  framePrintingConfigSchema,
   photographyPackageSchema,
   photographyServiceSchema,
 } from "@/lib/validations";
-import { parseDatabaseBookingError } from "@/lib/booking/booking-service";
 import { isMissingSchemaError, requireAdminAuth } from "@/lib/supabase/auth-helpers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { addMinutesToISO, dhakaDateTimeToISO } from "@/lib/booking/timezone";
@@ -14,6 +16,7 @@ import {
   compareScheduleWithExisting,
   ScheduleConfig,
 } from "@/lib/booking/schedule-generator";
+import { formatAdminError } from "@/lib/booking/admin-error";
 
 export async function GET() {
   const auth = await requireAdminAuth();
@@ -99,7 +102,7 @@ export async function GET() {
       blocks: blocksRes.data || [],
     });
   } catch (err: any) {
-    const parsed = parseDatabaseBookingError(err);
+    const parsed = formatAdminError(err);
     return NextResponse.json(
       { success: false, code: parsed.code, error: parsed.message },
       { status: parsed.httpStatus }
@@ -174,6 +177,8 @@ export async function POST(request: NextRequest) {
         booking_closes_at: parsed.data.booking_closes_at || null,
         booking_restrictions: parsed.data.booking_restrictions || null,
         custom_questions: parsed.data.custom_questions || [],
+        info_blocks: parsed.data.info_blocks || [],
+        slot_hold_duration_mins: parsed.data.slot_hold_duration_mins || 5,
         frame_printing_config: parsed.data.frame_printing_config || {
           enabled: false,
           title: "Archival Frame Printing",
@@ -190,8 +195,119 @@ export async function POST(request: NextRequest) {
         .select("*")
         .single();
 
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true, data: saved });
+    }
+
+    if (entity === "event_custom_questions") {
+      const eventId = String(body.event_id || "").trim();
+      if (!eventId) {
+        return NextResponse.json(
+          { success: false, error: "event_id is required" },
+          { status: 400 }
+        );
+      }
+      const questions = Array.isArray(body.custom_questions) ? body.custom_questions : [];
+      const parsedQuestions = z.array(customQuestionSchema).safeParse(questions);
+      if (!parsedQuestions.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: parsedQuestions.error.issues[0]?.message || "Invalid question configuration",
+          },
+          { status: 400 }
+        );
+      }
+      const { data: updated, error } = await supabase
+        .from("booking_events")
+        .update({
+          custom_questions: parsedQuestions.data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId)
+        .select("id, custom_questions")
+        .single();
+
+      if (error) throw formatAdminError(error);
+      return NextResponse.json({ success: true, data: updated });
+    }
+
+    if (entity === "event_info_blocks") {
+      const eventId = String(body.event_id || "").trim();
+      if (!eventId) {
+        return NextResponse.json(
+          { success: false, error: "event_id is required" },
+          { status: 400 }
+        );
+      }
+      const blocks = Array.isArray(body.info_blocks) ? body.info_blocks : [];
+      const { data: updated, error } = await supabase
+        .from("booking_events")
+        .update({
+          info_blocks: blocks,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId)
+        .select("id, info_blocks")
+        .single();
+
+      if (error) throw formatAdminError(error);
+      return NextResponse.json({ success: true, data: updated });
+    }
+
+    if (entity === "event_frame_config") {
+      const eventId = String(body.event_id || "").trim();
+      if (!eventId) {
+        return NextResponse.json(
+          { success: false, error: "event_id is required" },
+          { status: 400 }
+        );
+      }
+      const parsedConfig = framePrintingConfigSchema.safeParse(body.frame_printing_config);
+      if (!parsedConfig.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: parsedConfig.error.issues[0]?.message || "Invalid frame printing configuration",
+          },
+          { status: 400 }
+        );
+      }
+      const { data: updated, error } = await supabase
+        .from("booking_events")
+        .update({
+          frame_printing_config: parsedConfig.data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId)
+        .select("id, frame_printing_config")
+        .single();
+
+      if (error) throw formatAdminError(error);
+      return NextResponse.json({ success: true, data: updated });
+    }
+
+    if (entity === "event_slot_hold_duration") {
+      const eventId = String(body.event_id || "").trim();
+      if (!eventId) {
+        return NextResponse.json(
+          { success: false, error: "event_id is required" },
+          { status: 400 }
+        );
+      }
+      const holdDuration = Math.max(1, Math.min(60, Number(body.slot_hold_duration_mins) || 5));
+      const { data: updated, error } = await supabase
+        .from("booking_events")
+        .update({
+          slot_hold_duration_mins: holdDuration,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId)
+        .select("id, slot_hold_duration_mins")
+        .single();
+
+      if (error) throw formatAdminError(error);
+      return NextResponse.json({ success: true, data: updated });
     }
 
     if (entity === "duplicate_event") {
@@ -241,7 +357,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (cloneErr || !clonedEvent) {
-        throw parseDatabaseBookingError(
+        throw formatAdminError(
           cloneErr || new Error("Failed to duplicate event")
         );
       }
@@ -349,7 +465,7 @@ export async function POST(request: NextRequest) {
         .select("*")
         .single();
 
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
 
       let generatedCount = 0;
       if (auto_generate_slots !== false && savedSession) {
@@ -357,7 +473,7 @@ export async function POST(request: NextRequest) {
           "generate_event_session_slots",
           { p_session_id: savedSession.id }
         );
-        if (genErr) throw parseDatabaseBookingError(genErr);
+        if (genErr) throw formatAdminError(genErr);
         generatedCount = Number(genData || 0);
       }
 
@@ -374,7 +490,7 @@ export async function POST(request: NextRequest) {
         "generate_event_session_slots",
         { p_session_id: sessionId }
       );
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({
         success: true,
         generatedSlotsCount: Number(genData || 0),
@@ -631,7 +747,7 @@ export async function POST(request: NextRequest) {
             .select("id")
             .single();
 
-          if (newSessErr) throw parseDatabaseBookingError(newSessErr);
+          if (newSessErr) throw formatAdminError(newSessErr);
           if (newSess) sessionMap.set(proposedSess.session_date, newSess.id);
         }
       }
@@ -733,7 +849,7 @@ export async function POST(request: NextRequest) {
           .update({ status: "blocked", updated_at: new Date().toISOString() })
           .in("id", slotIds);
 
-        if (error) throw parseDatabaseBookingError(error);
+        if (error) throw formatAdminError(error);
         return NextResponse.json({
           success: true,
           message: `Blocked ${slotIds.length} slot(s) from public booking.`,
@@ -747,7 +863,7 @@ export async function POST(request: NextRequest) {
           .update({ status: "available", updated_at: new Date().toISOString() })
           .in("id", slotIds);
 
-        if (error) throw parseDatabaseBookingError(error);
+        if (error) throw formatAdminError(error);
         return NextResponse.json({
           success: true,
           message: `Restored ${slotIds.length} slot(s) to available status.`,
@@ -812,7 +928,7 @@ export async function POST(request: NextRequest) {
             .delete()
             .in("id", safeIdsToDelete);
 
-          if (error) throw parseDatabaseBookingError(error);
+          if (error) throw formatAdminError(error);
         }
 
         return NextResponse.json({
@@ -906,7 +1022,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .single();
 
-        if (error) throw parseDatabaseBookingError(error);
+        if (error) throw formatAdminError(error);
         return NextResponse.json({ success: true, data: updated });
       } else {
         const startIso = dhakaDateTimeToISO(slot_date, start_time);
@@ -934,7 +1050,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .single();
 
-        if (error) throw parseDatabaseBookingError(error);
+        if (error) throw formatAdminError(error);
         return NextResponse.json({ success: true, data: created });
       }
     }
@@ -962,7 +1078,7 @@ export async function POST(request: NextRequest) {
         .select("*")
         .single();
 
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true, data: saved });
     }
 
@@ -989,7 +1105,7 @@ export async function POST(request: NextRequest) {
         .select("*")
         .single();
 
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true, data: saved });
     }
 
@@ -1030,7 +1146,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (insertErr || !duplicated) {
-        throw parseDatabaseBookingError(insertErr || new Error("Failed to duplicate package"));
+        throw formatAdminError(insertErr || new Error("Failed to duplicate package"));
       }
 
       return NextResponse.json({ success: true, data: duplicated });
@@ -1067,7 +1183,7 @@ export async function POST(request: NextRequest) {
         .upsert(payload, { onConflict: "resource_pool,day_of_week" })
         .select("*");
 
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true, data: saved });
     }
 
@@ -1089,7 +1205,7 @@ export async function POST(request: NextRequest) {
         .select("*")
         .single();
 
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true, data: saved });
     }
 
@@ -1098,7 +1214,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (err: any) {
-    const parsed = parseDatabaseBookingError(err);
+    const parsed = formatAdminError(err);
     return NextResponse.json(
       { success: false, code: parsed.code, error: parsed.message },
       { status: parsed.httpStatus }
@@ -1160,7 +1276,7 @@ export async function DELETE(request: NextRequest) {
         .from("booking_events")
         .delete()
         .eq("id", id);
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true });
     }
 
@@ -1189,7 +1305,7 @@ export async function DELETE(request: NextRequest) {
         .from("event_sessions")
         .delete()
         .eq("id", id);
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true });
     }
 
@@ -1216,7 +1332,7 @@ export async function DELETE(request: NextRequest) {
         .from("event_time_slots")
         .delete()
         .eq("id", id);
-      if (error) throw parseDatabaseBookingError(error);
+      if (error) throw formatAdminError(error);
       return NextResponse.json({ success: true });
     }
 
@@ -1226,7 +1342,7 @@ export async function DELETE(request: NextRequest) {
         { p_package_id: id }
       );
 
-      if (rpcErr) throw parseDatabaseBookingError(rpcErr);
+      if (rpcErr) throw formatAdminError(rpcErr);
 
       return NextResponse.json({
         success: true,
@@ -1250,11 +1366,11 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { error } = await supabase.from(tableName).delete().eq("id", id);
-    if (error) throw parseDatabaseBookingError(error);
+    if (error) throw formatAdminError(error);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    const parsed = parseDatabaseBookingError(err);
+    const parsed = formatAdminError(err);
     return NextResponse.json(
       { success: false, code: parsed.code, error: parsed.message },
       { status: parsed.httpStatus }

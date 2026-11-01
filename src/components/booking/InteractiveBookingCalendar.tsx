@@ -266,8 +266,9 @@ export default function InteractiveBookingCalendar({
             No bookable time slots are available on {selectedDate}. Please choose another date.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {slotsForSelectedDate.map((slot) => {
+          <div className="max-h-[360px] sm:max-h-[420px] lg:max-h-none overflow-y-auto pr-1.5 touch-pan-y scrollbar-thin">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {slotsForSelectedDate.map((slot) => {
               const isSelected =
                 selectedSlot?.start_at === slot.start_at &&
                 (selectedSlot?.slot_id === slot.slot_id || !slot.slot_id);
@@ -333,6 +334,7 @@ export default function InteractiveBookingCalendar({
                 </button>
               );
             })}
+            </div>
           </div>
         )}
       </div>

@@ -79,6 +79,7 @@ export const customQuestionFieldTypeSchema = z.enum([
   "phone",
   "number",
   "dropdown",
+  "select_box",
   "single_choice",
   "multiple_choice",
   "radio",
@@ -111,6 +112,8 @@ export const customQuestionSchema = z
     max_value: z.coerce.number().optional().nullable(),
     validation_regex: z.string().trim().max(240).optional().nullable(),
     validation_message: z.string().trim().max(240).optional().nullable(),
+    select_mode: z.enum(["single", "multiple"]).optional().default("single"),
+    layout: z.enum(["horizontal", "vertical"]).optional().default("horizontal"),
     sort_order: z.coerce.number().int().default(0),
     is_visible: z.boolean().default(true),
     section: z.string().trim().optional().default("general"),
@@ -131,9 +134,11 @@ export const customQuestionSchema = z
   .superRefine((val, ctx) => {
     if (
       (val.field_type === "dropdown" ||
+        val.field_type === "select_box" ||
         val.field_type === "single_choice" ||
         val.field_type === "radio" ||
-        val.field_type === "multiple_choice") &&
+        val.field_type === "multiple_choice" ||
+        val.field_type === "checkbox") &&
       (!val.options || val.options.filter((o) => Boolean(o && o.trim())).length === 0)
     ) {
       ctx.addIssue({
@@ -326,14 +331,14 @@ export const createBookingSchema = z
     start_at: z.string().min(10, "Valid start timestamp is required"),
     end_at: z.string().min(10, "Valid end timestamp is required"),
     duration_mins: z.coerce.number().int().min(10).max(720),
-    client_name: z.string().trim().min(2, "Please enter your full name"),
-    client_email: z.string().trim().email("Please enter a valid email address"),
-    client_phone: z.string().trim().min(7, "Please enter a valid phone number"),
+    client_name: z.string().trim().min(1, "Please enter your name").default("Client"),
+    client_email: z.string().trim().email("Please enter a valid email address").optional().nullable().or(z.literal("")),
+    client_phone: z.string().trim().min(3, "Please enter a valid contact phone number").optional().nullable().or(z.literal("")),
     company_or_institution: z.string().trim().max(160).optional().nullable(),
     student_id: z.string().trim().max(64).optional().nullable(),
     degree_or_department: z.string().trim().max(160).optional().nullable(),
     guests_count: z.coerce.number().int().min(1).max(100).default(1),
-    location: z.string().trim().min(3, "Please specify the venue or session location"),
+    location: z.string().trim().min(1, "Please specify the venue or session location").default("OFFPRINT Studio, Dhaka"),
     client_notes: z.string().trim().max(2000).optional().nullable(),
     custom_fields: z
       .record(z.string(), z.union([z.string(), z.array(z.string())]))
@@ -344,6 +349,14 @@ export const createBookingSchema = z
     frame_quantity: z.coerce.number().int().min(0).max(20).optional().default(0),
   })
   .superRefine((val, ctx) => {
+    if (!val.client_email && !val.client_phone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["client_email"],
+        message: "Please provide at least one contact method (email or phone) for your booking confirmation",
+      });
+    }
+
     if (val.booking_type === "convocation" || val.booking_type === "special") {
       if (!val.event_id) {
         ctx.addIssue({
@@ -409,10 +422,12 @@ export type ClientProfileInput = z.infer<typeof clientProfileSchema>;
 export const frameTypeOptionSchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(2),
-  dimensions: z.string().trim().min(2),
+  dimensions: z.string().trim().optional().nullable().or(z.literal("")),
   price: z.coerce.number().min(0),
   description: z.string().trim().optional().nullable(),
   is_active: z.boolean().default(true),
+  sort_order: z.coerce.number().int().default(0),
+  allow_quantity: z.boolean().default(false),
 });
 
 export const framePrintingConfigSchema = z.object({
@@ -756,7 +771,7 @@ export function calculateAndVerifyBookingPrice(params: {
       finalFrameSelected = true;
       finalFrameTypeId = chosenFrame.id;
       finalFrameTypeName = chosenFrame.name;
-      finalFrameDimensions = chosenFrame.dimensions;
+      finalFrameDimensions = chosenFrame.dimensions ?? null;
       finalFrameUnitPrice = Number(chosenFrame.price) || 0;
       const maxAllowed = frameConfig.max_quantity || 5;
       finalFrameQuantity = Math.min(Math.max(1, Number(frameQuantity) || 1), maxAllowed);

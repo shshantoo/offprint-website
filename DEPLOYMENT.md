@@ -430,5 +430,47 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
 
 ---
 
+## 14. Release 1.5.0 — Booking Form & Package Corrections, Frame Add-on Pricing, Admin Diagnostics & Mobile UX
+
+### 14.1 Streamlined Package Presentation
+- Predefined, auto-generated deliverable bullets (4-line repetitive checklists) removed completely from both admin editor and public client-facing booking pages (`ConvocationBookingClient`, `TraditionalBookingClient`, `EventPackagesEditor`).
+- Display is strictly streamlined to:
+  - **Package Name**
+  - **Package Price** (with formatted BDT currency)
+  - **Package Description** (the genuine, editable description text configured by administrators in `/admin-portal`).
+
+### 14.2 Admin Error Diagnostics & Direct Save Endpoints
+- Eradicated error-masking bug where PostgREST schema errors triggered generic visitor fallback (`"Booking service is temporarily updating..."`) inside `/admin-portal`.
+- Implemented `formatAdminError` in `src/lib/booking/admin-error.ts` to preserve authentic database error codes (`code`, `details`, `hint`, `status`).
+- Added dedicated targeted save endpoints in `/api/admin/events` for:
+  - `event_custom_questions`
+  - `event_info_blocks`
+  - `event_frame_config`
+  - `event_slot_hold_duration`
+
+### 14.3 Decoupled Dynamic Booking Form Engine
+- Completely decoupled public booking inputs from hardcoded static fields (`clientName`, `clientEmail`, `clientPhone`, `guestsCount`, `companyOrInstitution`).
+- 100% of the client information section is driven dynamically by `custom_questions` (`q.is_visible !== false`). Hiding or deleting a field immediately removes it from the public form.
+- Added support for new field types and layout configurations:
+  - `select_box` (with horizontal or vertical layout and single/multiple select modes).
+  - `radio` (horizontal or vertical layout).
+  - `long_text` (multi-line textarea), `short_text`, `dropdown`, `checkbox`, `email`, `phone`, `number`, `date`, and `heading`.
+- Seamlessly prefills authenticated user profile data from `/api/client/profile`.
+- Enforces booking validation rule: at least one confirmation contact method (valid email or phone) must be provided upon submission.
+
+### 14.4 Frame and Print Add-on Management & Pricing
+- Created dedicated admin editor `EventFrameAddonsEditor.tsx` integrated as Tab 3 in Special Events management.
+- Supports comprehensive preset loading, custom frame option creation/editing, reordering, active toggling, and direct database persistence.
+- **Strict Visibility Rule:** If framing is disabled, or no active frame options exist, or all options are deactivated, the framing section and any mention of "Step 3: Archival Frame & Print" is completely omitted from the public booking experience.
+- Real-time client total price calculation: `Total Price = Package Base Price + (Frame Unit Price × Quantity)`.
+
+### 14.5 Mobile Responsive UX & Slot Selection
+- **Internal Mobile Scrolling:** Time slots are contained within a dedicated internal scrollable area on mobile devices (`max-h-[360px] touch-pan-y scrollbar-thin`) to prevent page jumpiness.
+- **Smooth Navigation Flow:** Upon successful slot hold acquisition, automatically and smoothly scrolls to `#booking-reservation-details`.
+- **Selected Slot Banner:** Displays a sticky/compact selected-slot card on mobile with a "Change slot" button that smoothly returns the user to `#booking-calendar-section`.
+- **Mobile Footer Optimization:** Vertically stacked footer sections on mobile, enlarged tap targets (`w-9 h-9` with `w-4 h-4` icons), increased vertical tap padding (`py-1`), and standard logo sizing (`w-[150px] sm:w-[170px] md:w-[185px]`).
+
+---
+
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.4.0 (Dynamic Packages, Form Builder, Event CMS, Slot Holds & Standard Logo Visibility Ready)*
+*Document Version: 1.5.0 (Package Corrections, Dynamic Form Decoupling, Frame Add-on Pricing, Admin Diagnostics & Mobile UX Verified)*

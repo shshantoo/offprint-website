@@ -33,8 +33,10 @@ import {
   Info,
   Package,
   ListFilter,
+  Image as ImageIcon,
 } from "lucide-react";
 import EventPackagesEditor from "./special-events/EventPackagesEditor";
+import EventFrameAddonsEditor from "./special-events/EventFrameAddonsEditor";
 import EventFormBuilder from "./special-events/EventFormBuilder";
 import EventInfoBlocksEditor from "./special-events/EventInfoBlocksEditor";
 import {
@@ -79,7 +81,7 @@ function calculateSlotEndSample(startHHMM: string, durationMins: number): string
 export default function SpecialEventsAdminClient() {
   const [viewMode, setViewMode] = useState<"list" | "editor">("list");
   const [editorTab, setEditorTab] = useState<
-    "details" | "packages" | "form_builder" | "scheduling" | "sessions_slots"
+    "details" | "packages" | "frame_addons" | "form_builder" | "scheduling" | "sessions_slots"
   >("details");
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<BookingEvent[]>([]);
@@ -1297,6 +1299,28 @@ export default function SpecialEventsAdminClient() {
 
             <button
               type="button"
+              onClick={() => setEditorTab("frame_addons")}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                editorTab === "frame_addons"
+                  ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                  : "bg-[#FFFFFF] text-[#5C5449] border border-[#E5DEC9] hover:bg-[#FAF7F2]"
+              }`}
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span>3. Frame &amp; Print Add-ons</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                  editorTab === "frame_addons"
+                    ? "bg-[#5C4028] text-[#FAF7F2]"
+                    : "bg-[#FAF7F2] text-[#3A2008]"
+                }`}
+              >
+                {(editingEvent.frame_printing_config?.frame_types || []).filter((f) => f.is_active !== false).length}
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setEditorTab("form_builder")}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
                 editorTab === "form_builder"
@@ -1305,7 +1329,7 @@ export default function SpecialEventsAdminClient() {
               }`}
             >
               <ListFilter className="w-3.5 h-3.5" />
-              <span>3. Booking Form Builder</span>
+              <span>4. Booking Form Builder</span>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
                   editorTab === "form_builder"
@@ -1327,7 +1351,7 @@ export default function SpecialEventsAdminClient() {
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
-              <span>4. Schedule &amp; Hold Lock</span>
+              <span>5. Schedule &amp; Hold Lock</span>
             </button>
 
             <button
@@ -1340,7 +1364,7 @@ export default function SpecialEventsAdminClient() {
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>5. Sessions &amp; Time Slots</span>
+              <span>6. Sessions &amp; Time Slots</span>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
                   editorTab === "sessions_slots"
@@ -1922,10 +1946,29 @@ export default function SpecialEventsAdminClient() {
           )}
 
           {/* =================================================================== */}
-          {/* TAB 3: BOOKING FORM BUILDER */}
+          {/* TAB 3: FRAME & PRINT ADD-ONS */}
+          {/* =================================================================== */}
+          {editorTab === "frame_addons" && (
+            <EventFrameAddonsEditor
+              eventId={editingEvent.id}
+              config={editingEvent.frame_printing_config}
+              onChange={(updated) => {
+                setEditingEvent({
+                  ...editingEvent,
+                  frame_printing_config: updated,
+                });
+                setIsFormDirty(true);
+              }}
+              onFeedback={setFeedback}
+            />
+          )}
+
+          {/* =================================================================== */}
+          {/* TAB 4: BOOKING FORM BUILDER */}
           {/* =================================================================== */}
           {editorTab === "form_builder" && (
             <EventFormBuilder
+              eventId={editingEvent.id}
               questions={editingEvent.custom_questions || []}
               onChange={(updated) => {
                 setEditingEvent({

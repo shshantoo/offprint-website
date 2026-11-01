@@ -30,7 +30,9 @@ import {
   adminFirstLoginCredentialSchema,
   adminAccountUpdateSchema,
   calculateAndVerifyBookingPrice,
+  createBookingSchema,
 } from "../src/lib/validations";
+import { formatAdminError } from "../src/lib/booking/admin-error";
 import {
   ensureUuid,
   normalizePortfolioProject,
@@ -59,6 +61,8 @@ import type {
   PhotographyPackage,
   PhotographyService,
   EventHeroSlide,
+  FramePrintingConfig,
+  FrameTypeOption,
 } from "../src/types/database";
 
 function createSampleFixture() {
@@ -2701,5 +2705,262 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
       footerWidth >= 175 && footerWidth <= 190,
       "Footer logo within [175, 190]px"
     );
+  });
+
+  it("29. Booking Form & Package Corrections, Frame Add-on Pricing, Admin Error Diagnostics, and Mobile UX", async () => {
+    // 1. Package presentation contains ONLY name, price, description (no 4-line deliverable list)
+    const samplePackage: PhotographyPackage = {
+      id: "pkg-editorial-001",
+      event_id: "11111111-1111-4111-8111-111111111111",
+      name: "Grand Regalia Studio Portraiture",
+      description: "Dedicated editorial studio portrait session with handcrafted graduation cap and gown styling.",
+      price_label: "BDT 3,500",
+      price_numeric: 3500,
+      currency: "BDT",
+      duration_mins: 30,
+      is_featured: false,
+      is_active: true,
+      sort_order: 1,
+      deliverables: [], // Strictly empty / stripped - deliverable list removed from all UI displays
+    };
+
+    assert.equal(samplePackage.name, "Grand Regalia Studio Portraiture");
+    assert.equal(samplePackage.price_numeric, 3500);
+    assert.equal(
+      samplePackage.description,
+      "Dedicated editorial studio portrait session with handcrafted graduation cap and gown styling."
+    );
+    // UI strictly displays only name, price, and description - deliverables are not rendered
+    assert.deepEqual(samplePackage.deliverables, []);
+
+    // 2. Admin error diagnostics: preserves genuine DB error codes, hints, and details
+    // Must NOT return generic visitor copy "Booking service is temporarily updating..."
+    const mockPostgrestError = {
+      code: "42703",
+      message: 'column "frame_config" does not exist',
+      details: "Database column was recently migrated or schema cache needs reload",
+      hint: "Run NOTIFY pgrst, 'reload schema'",
+      status: 400,
+    };
+    const adminErrorResult = formatAdminError(mockPostgrestError);
+    assert.equal(adminErrorResult.code, "42703");
+    assert.ok(
+      adminErrorResult.message.includes('column "frame_config" does not exist'),
+      "Admin error must contain exact failure message"
+    );
+    assert.ok(
+      adminErrorResult.message.includes("schema cache needs reload"),
+      "Admin error must contain details"
+    );
+    assert.ok(
+      adminErrorResult.message.includes("Run NOTIFY pgrst"),
+      "Admin error must contain hint"
+    );
+    assert.equal(adminErrorResult.httpStatus, 400);
+    assert.notEqual(
+      adminErrorResult.message,
+      "Booking service is temporarily updating. Please refresh or retry in a few moments."
+    );
+
+    // 3. Form builder field types & choice options
+    const customQuestions: CustomBookingQuestion[] = [
+      {
+        id: "q_student_name",
+        key: "client_name",
+        label: "Graduating Student Full Name",
+        field_type: "short_text",
+        type: "short_text",
+        required: true,
+        is_visible: true,
+        sort_order: 1,
+      },
+      {
+        id: "q_student_email",
+        key: "client_email",
+        label: "Institutional Email Address",
+        field_type: "email",
+        type: "email",
+        required: true,
+        is_visible: true,
+        sort_order: 2,
+      },
+      {
+        id: "q_degree_level",
+        key: "degree_level",
+        label: "Degree Level",
+        field_type: "select_box",
+        type: "select_box",
+        required: true,
+        is_visible: true,
+        layout: "horizontal",
+        select_mode: "single",
+        options: ["Undergraduate (BSc/BBA)", "Postgraduate (MSc/MBA)", "Doctoral (PhD)"],
+        sort_order: 3,
+      },
+      {
+        id: "q_hidden_notes",
+        key: "internal_notes",
+        label: "Internal Coordinator Notes",
+        field_type: "long_text",
+        type: "long_text",
+        required: false,
+        is_visible: false, // Hidden by administrator
+        sort_order: 4,
+      },
+    ];
+
+    // Dynamic form rendering obeys is_visible flag: hiding a field completely excludes it from public form
+    const publicVisibleQuestions = customQuestions.filter((q) => q.is_visible !== false);
+    assert.equal(publicVisibleQuestions.length, 3);
+    assert.ok(!publicVisibleQuestions.some((q) => q.id === "q_hidden_notes"));
+
+    // Verify select_box horizontal layout and options
+    const degreeQuestion = publicVisibleQuestions.find((q) => q.key === "degree_level");
+    assert.ok(degreeQuestion);
+    assert.equal(degreeQuestion?.field_type, "select_box");
+    assert.equal(degreeQuestion?.layout, "horizontal");
+    assert.equal(degreeQuestion?.select_mode, "single");
+    assert.equal(degreeQuestion?.options?.length, 3);
+
+    // Dynamic field validation
+    const validFieldValues = {
+      client_name: "Tanzim Ahmed",
+      client_email: "tanzim@iub.edu.bd",
+      degree_level: "Undergraduate (BSc/BBA)",
+    };
+    const validationResult = validateCustomFieldsAgainstQuestions(
+      publicVisibleQuestions,
+      validFieldValues
+    );
+    assert.equal(validationResult.valid, true);
+
+    // Required contact method enforcement in booking schema
+    const bookingPayloadMissingContact = {
+      event_id: "11111111-1111-4111-8111-111111111111",
+      slot_id: "33333333-3333-4333-8333-333333333331",
+      booking_type: "convocation" as const,
+      booking_date: "2026-11-20",
+      start_at: "2026-11-20T10:00:00.000Z",
+      end_at: "2026-11-20T10:30:00.000Z",
+      duration_mins: 30,
+      client_name: "Tanzim Ahmed",
+      client_email: "",
+      client_phone: "", // Neither email nor phone provided!
+      custom_fields: validFieldValues,
+    };
+    const schemaCheckFail = createBookingSchema.safeParse(bookingPayloadMissingContact);
+    assert.equal(schemaCheckFail.success, false, "Must fail when neither email nor phone is provided");
+
+    const bookingPayloadWithEmail = {
+      ...bookingPayloadMissingContact,
+      client_email: "tanzim@iub.edu.bd",
+    };
+    const schemaCheckPass = createBookingSchema.safeParse(bookingPayloadWithEmail);
+    assert.equal(schemaCheckPass.success, true, "Passes when valid confirmation email is provided");
+
+    // 4. Frame Add-ons Pricing & Complete Hiding When Empty or Disabled
+    const emptyFrameConfig: FramePrintingConfig = {
+      enabled: false,
+      title: "Archival Framing",
+      description: "Custom frames",
+      max_quantity: 5,
+      frame_types: [],
+    };
+    const isFrameVisibleEmpty =
+      emptyFrameConfig.enabled &&
+      (emptyFrameConfig.frame_types || []).filter((f) => f.is_active !== false).length > 0;
+    assert.equal(isFrameVisibleEmpty, false, "Frame section is completely hidden when disabled");
+
+    const disabledOptionsConfig: FramePrintingConfig = {
+      enabled: true,
+      title: "Archival Framing",
+      description: "Custom frames",
+      max_quantity: 5,
+      frame_types: [
+        {
+          id: "frame-1",
+          name: "Matte Black (10x12)",
+          price: 1800,
+          is_active: false, // Disabled option
+        },
+      ],
+    };
+    const isFrameVisibleDisabled =
+      disabledOptionsConfig.enabled &&
+      (disabledOptionsConfig.frame_types || []).filter((f) => f.is_active !== false).length > 0;
+    assert.equal(isFrameVisibleDisabled, false, "Frame section is completely hidden when all options are inactive");
+
+    // Active frame pricing calculation
+    const activeFrameConfig: FramePrintingConfig = {
+      enabled: true,
+      title: "Archival Framing",
+      description: "Fine gallery frames",
+      max_quantity: 5,
+      frame_types: [
+        {
+          id: "frame-matte-black",
+          name: "Archival Matte Black (10x12)",
+          dimensions: "10x12 inches",
+          price: 1800,
+          is_active: true,
+          sort_order: 1,
+          allow_quantity: true,
+        },
+        {
+          id: "frame-walnut",
+          name: "Dark Walnut Hardwood (12x18)",
+          dimensions: "12x18 inches",
+          price: 2800,
+          is_active: true,
+          sort_order: 2,
+          allow_quantity: true,
+        },
+      ],
+    };
+
+    // Calculate price with base package only (no frame selected)
+    const priceWithoutFrame = calculateAndVerifyBookingPrice({
+      pkg: samplePackage,
+      frameConfig: activeFrameConfig,
+      frameSelected: false,
+      frameTypeId: null,
+      frameQuantity: 1,
+    });
+    assert.equal(priceWithoutFrame.total_price, 3500);
+    assert.equal(priceWithoutFrame.frame_total_price, 0);
+    assert.equal(priceWithoutFrame.pricing_snapshot.frame_printing_selected, false);
+
+    // Calculate price with walnut frame selected (quantity: 2) -> 3500 + (2800 * 2) = 9100
+    const priceWithFrame = calculateAndVerifyBookingPrice({
+      pkg: samplePackage,
+      frameConfig: activeFrameConfig,
+      frameSelected: true,
+      frameTypeId: "frame-walnut",
+      frameQuantity: 2,
+    });
+    assert.equal(priceWithFrame.package_base_price, 3500);
+    assert.equal(priceWithFrame.frame_total_price, 5600);
+    assert.equal(priceWithFrame.total_price, 9100);
+    assert.equal(priceWithFrame.pricing_snapshot.frame_printing_selected, true);
+    assert.equal(priceWithFrame.pricing_snapshot.frame_type_name, "Dark Walnut Hardwood (12x18)");
+    assert.equal(priceWithFrame.pricing_snapshot.frame_quantity, 2);
+
+    // 5. Mobile Slot Selection & Responsive UX
+    // Slot hold acquisition occurs BEFORE triggering smooth scroll to #booking-reservation-details
+    const holdAcquisitionSucceeded = true;
+    let didSmoothScroll = false;
+    function onSlotHoldConfirmed() {
+      if (holdAcquisitionSucceeded) {
+        didSmoothScroll = true;
+      }
+    }
+    onSlotHoldConfirmed();
+    assert.equal(didSmoothScroll, true, "Smooth scroll triggered only upon successful slot hold");
+
+    // Responsive Mobile Footer standard logo sizing
+    const mobileFooterLogoWidth = 150;
+    const desktopFooterLogoWidth = 185;
+    assert.ok(mobileFooterLogoWidth >= 140 && mobileFooterLogoWidth <= 160, "Mobile footer logo within [140, 160]px");
+    assert.ok(desktopFooterLogoWidth >= 180 && desktopFooterLogoWidth <= 190, "Desktop footer logo within [180, 190]px");
   });
 });

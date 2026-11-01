@@ -12,7 +12,6 @@ import {
 import {
   Camera,
   MapPin,
-  CheckCircle2,
   AlertTriangle,
   User,
   Mail,
@@ -384,21 +383,7 @@ export default function TraditionalBookingClient() {
                     </div>
 
                     {pkg.description && (
-                      <p className="text-xs text-[#5C5449]">{pkg.description}</p>
-                    )}
-
-                    {pkg.deliverables && pkg.deliverables.length > 0 && (
-                      <ul className="space-y-1 pt-2 border-t border-[#E5DEC9]">
-                        {pkg.deliverables.map((d, idx) => (
-                          <li
-                            key={idx}
-                            className="flex items-center gap-1.5 text-xs text-[#141210]"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#A66D35] shrink-0" />
-                            <span>{d}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <p className="text-xs text-[#5C5449] leading-relaxed">{pkg.description}</p>
                     )}
                   </div>
                 );
