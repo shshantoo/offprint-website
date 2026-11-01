@@ -22,7 +22,11 @@ ALTER TABLE public.event_time_slots
 ADD COLUMN IF NOT EXISTS duration_mins integer DEFAULT 30,
 ADD COLUMN IF NOT EXISTS package_ids uuid[] DEFAULT '{}'::uuid[];
 
--- 3. Ensure event_session_packages junction table exists
+-- 3. Ensure package_id exists on booking_slot_holds
+ALTER TABLE public.booking_slot_holds
+ADD COLUMN IF NOT EXISTS package_id uuid REFERENCES public.photography_packages(id) ON DELETE SET NULL;
+
+-- 4. Ensure event_session_packages junction table exists
 CREATE TABLE IF NOT EXISTS public.event_session_packages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id uuid NOT NULL REFERENCES public.event_sessions(id) ON DELETE CASCADE,

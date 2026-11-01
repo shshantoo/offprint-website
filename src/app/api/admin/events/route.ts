@@ -92,10 +92,40 @@ export async function GET() {
       }
     }
 
-    const sessionsWithPackages = (sessionsRes.data || []).map((sess: any) => ({
-      ...sess,
-      package_ids: sessionPackagesMap.get(sess.id) || [],
-    }));
+    const allPackages = packagesRes.data || [];
+    const sessionsWithPackages = (sessionsRes.data || []).map((sess: any) => {
+      let pkgIds = sessionPackagesMap.get(sess.id);
+      if (!pkgIds || pkgIds.length === 0) {
+        pkgIds = allPackages
+          .filter((p: any) => p.event_id === sess.event_id && p.is_active !== false)
+          .map((p: any) => p.id);
+      }
+      return {
+        ...sess,
+        package_ids: pkgIds || [],
+      };
+    });
+
+    const resolvedEvents = (eventsRes.data || []).map((ev: any) => {
+      let schedulePkgIds = Array.isArray(ev.schedule_package_ids) ? ev.schedule_package_ids : null;
+      if (!schedulePkgIds || schedulePkgIds.length === 0) {
+        if (Array.isArray(ev.schedule_overrides)) {
+          const pkgOverride = ev.schedule_overrides.find((o: any) => o?.type === "schedule_packages");
+          if (pkgOverride && Array.isArray(pkgOverride.package_ids)) {
+            schedulePkgIds = pkgOverride.package_ids;
+          }
+        }
+      }
+      if (!schedulePkgIds || schedulePkgIds.length === 0) {
+        schedulePkgIds = allPackages
+          .filter((p: any) => p.event_id === ev.id && p.is_active !== false)
+          .map((p: any) => p.id);
+      }
+      return {
+        ...ev,
+        schedule_package_ids: schedulePkgIds || [],
+      };
+    });
 
     if (eventsRes.error && isMissingSchemaError(eventsRes.error)) {
       return NextResponse.json({
@@ -115,7 +145,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       schemaReady: true,
-      events: eventsRes.data || [],
+      events: resolvedEvents,
       sessions: sessionsWithPackages,
       slots: slotsRes.data || [],
       services: servicesRes.data || [],
@@ -188,8 +218,23 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const payload = {
-        ...parsed.data,
+      const schedulePkgIds = Array.isArray(parsed.data.schedule_package_ids)
+        ? parsed.data.schedule_package_ids
+        : [];
+
+      // Store package selection safely in schedule_overrides so associations persist across all DB versions
+      const cleanOverrides = Array.isArray(parsed.data.schedule_overrides)
+        ? parsed.data.schedule_overrides.filter((o: any) => o?.type !== "schedule_packages")
+        : [];
+      if (schedulePkgIds.length > 0) {
+        cleanOverrides.push({ type: "schedule_packages", package_ids: schedulePkgIds });
+      }
+
+      const { schedule_package_ids: _rawPkgIds, ...eventFields } = parsed.data;
+
+      const payload: Record<string, any> = {
+        ...eventFields,
+        schedule_overrides: cleanOverrides,
         hero_image_url: parsed.data.hero_image_url || null,
         cover_storage_path: parsed.data.cover_storage_path || null,
         event_start_date: parsed.data.event_start_date || null,
@@ -212,6 +257,15 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       };
 
+      // Probe if schedule_package_ids column exists in booking_events
+      const { error: probeErr } = await supabase
+        .from("booking_events")
+        .select("schedule_package_ids")
+        .limit(0);
+      if (!probeErr) {
+        payload.schedule_package_ids = schedulePkgIds;
+      }
+
       const { data: saved, error } = await supabase
         .from("booking_events")
         .upsert(payload)
@@ -219,7 +273,13 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (error) throw formatAdminError(error);
-      return NextResponse.json({ success: true, data: saved });
+      return NextResponse.json({
+        success: true,
+        data: {
+          ...saved,
+          schedule_package_ids: schedulePkgIds,
+        },
+      });
     }
 
     if (entity === "event_custom_questions") {
@@ -496,20 +556,27 @@ export async function POST(request: NextRequest) {
 
       if (error) throw formatAdminError(error);
 
-      // Sync event_session_packages junction records
+      // Sync event_session_packages junction records if table exists
       if (savedSession) {
         try {
-          await supabase
+          const { error: spTableErr } = await supabase
             .from("event_session_packages")
-            .delete()
-            .eq("session_id", savedSession.id);
+            .select("id")
+            .limit(0);
 
-          if (targetPackageIds.length > 0) {
-            const rows = targetPackageIds.map((pkgId: string) => ({
-              session_id: savedSession.id,
-              package_id: pkgId,
-            }));
-            await supabase.from("event_session_packages").insert(rows);
+          if (!spTableErr) {
+            await supabase
+              .from("event_session_packages")
+              .delete()
+              .eq("session_id", savedSession.id);
+
+            if (targetPackageIds.length > 0) {
+              const rows = targetPackageIds.map((pkgId: string) => ({
+                session_id: savedSession.id,
+                package_id: pkgId,
+              }));
+              await supabase.from("event_session_packages").insert(rows);
+            }
           }
         } catch {
           // Table may not exist yet or be empty
@@ -546,23 +613,35 @@ export async function POST(request: NextRequest) {
             packages: attachedPackages,
           });
 
+          // Probe if duration_mins exists on event_time_slots
+          const { error: slotProbeErr } = await supabase
+            .from("event_time_slots")
+            .select("duration_mins")
+            .limit(0);
+          const supportsSlotDuration = !slotProbeErr;
+
           const slotsToInsert = proposed.sessions.flatMap((s) =>
-            s.slots.map((sl) => ({
-              event_id: savedSession.event_id,
-              session_id: savedSession.id,
-              slot_date: sl.slot_date,
-              start_at: sl.start_at,
-              end_at: sl.end_at,
-              effective_start_at: sl.effective_start_at,
-              effective_end_at: sl.effective_end_at,
-              capacity: sl.capacity,
-              duration_mins: sl.duration_mins,
-              package_ids: sl.package_ids,
-              buffer_before_mins: savedSession.buffer_before_mins,
-              buffer_after_mins: savedSession.buffer_after_mins,
-              status: "available",
-              booked_count: 0,
-            }))
+            s.slots.map((sl) => {
+              const row: Record<string, any> = {
+                event_id: savedSession.event_id,
+                session_id: savedSession.id,
+                slot_date: sl.slot_date,
+                start_at: sl.start_at,
+                end_at: sl.end_at,
+                effective_start_at: sl.effective_start_at,
+                effective_end_at: sl.effective_end_at,
+                capacity: sl.capacity,
+                buffer_before_mins: savedSession.buffer_before_mins,
+                buffer_after_mins: savedSession.buffer_after_mins,
+                status: "available",
+                booked_count: 0,
+              };
+              if (supportsSlotDuration) {
+                row.duration_mins = sl.duration_mins;
+                row.package_ids = sl.package_ids;
+              }
+              return row;
+            })
           );
 
           if (slotsToInsert.length > 0) {
@@ -636,13 +715,31 @@ export async function POST(request: NextRequest) {
 
       // 1. Resolve packages to attach to this schedule configuration
       let schedulePackages: any[] = [];
-      const packageIds: string[] = Array.isArray(body.package_ids)
+      let packageIds: string[] = Array.isArray(body.package_ids)
         ? body.package_ids
         : Array.isArray(body.packages)
         ? body.packages.map((p: any) => p.id)
-        : Array.isArray(event.schedule_package_ids)
+        : Array.isArray(event.schedule_package_ids) && event.schedule_package_ids.length > 0
         ? event.schedule_package_ids
         : [];
+
+      if (packageIds.length === 0 && Array.isArray(event.schedule_overrides)) {
+        const pkgOverride = event.schedule_overrides.find((o: any) => o?.type === "schedule_packages");
+        if (pkgOverride && Array.isArray(pkgOverride.package_ids)) {
+          packageIds = pkgOverride.package_ids;
+        }
+      }
+
+      if (packageIds.length === 0) {
+        const { data: defaultPkgs } = await supabase
+          .from("photography_packages")
+          .select("id")
+          .eq("event_id", eventId)
+          .eq("is_active", true);
+        if (defaultPkgs && defaultPkgs.length > 0) {
+          packageIds = defaultPkgs.map((p: any) => p.id);
+        }
+      }
 
       if (packageIds.length > 0) {
         const { data: dbPackages } = await supabase
@@ -763,13 +860,31 @@ export async function POST(request: NextRequest) {
 
       // 1. Resolve packages to attach to this schedule configuration
       let schedulePackages: any[] = [];
-      const packageIds: string[] = Array.isArray(body.package_ids)
+      let packageIds: string[] = Array.isArray(body.package_ids)
         ? body.package_ids
         : Array.isArray(body.packages)
         ? body.packages.map((p: any) => p.id)
-        : Array.isArray(event.schedule_package_ids)
+        : Array.isArray(event.schedule_package_ids) && event.schedule_package_ids.length > 0
         ? event.schedule_package_ids
         : [];
+
+      if (packageIds.length === 0 && Array.isArray(event.schedule_overrides)) {
+        const pkgOverride = event.schedule_overrides.find((o: any) => o?.type === "schedule_packages");
+        if (pkgOverride && Array.isArray(pkgOverride.package_ids)) {
+          packageIds = pkgOverride.package_ids;
+        }
+      }
+
+      if (packageIds.length === 0) {
+        const { data: defaultPkgs } = await supabase
+          .from("photography_packages")
+          .select("id")
+          .eq("event_id", eventId)
+          .eq("is_active", true);
+        if (defaultPkgs && defaultPkgs.length > 0) {
+          packageIds = defaultPkgs.map((p: any) => p.id);
+        }
+      }
 
       if (packageIds.length > 0) {
         const { data: dbPackages } = await supabase
@@ -841,24 +956,48 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 1. Persist schedule configuration onto booking_events
+      // 1. Probe database capabilities for backward compatibility
+      const [beProbe, slotProbe, spProbe] = await Promise.all([
+        supabase.from("booking_events").select("schedule_package_ids").limit(0),
+        supabase.from("event_time_slots").select("duration_mins").limit(0),
+        supabase.from("event_session_packages").select("id").limit(0),
+      ]);
+      const supportsSchedulePkgIds = !beProbe.error;
+      const supportsSlotDuration = !slotProbe.error;
+      const supportsSessionPackages = !spProbe.error;
+
+      // Clean overrides and attach schedule_packages record
+      const cleanOverrides = Array.isArray(event.schedule_overrides)
+        ? event.schedule_overrides.filter((o: any) => o?.type !== "schedule_packages")
+        : [];
+      if (packageIds.length > 0) {
+        cleanOverrides.push({ type: "schedule_packages", package_ids: packageIds });
+      }
+
+      const eventUpdatePayload: Record<string, any> = {
+        event_start_date: scheduleConfig.start_date,
+        event_end_date: scheduleConfig.end_date,
+        operating_days: scheduleConfig.operating_days,
+        operating_start_time: scheduleConfig.operating_start_time,
+        operating_end_time: scheduleConfig.operating_end_time,
+        default_slot_duration_mins: scheduleConfig.slot_duration_mins,
+        slot_interval_mins: scheduleConfig.slot_interval_mins,
+        default_slot_capacity: scheduleConfig.capacity_per_slot,
+        buffer_before_mins: scheduleConfig.buffer_before_mins,
+        buffer_after_mins: scheduleConfig.buffer_after_mins,
+        break_periods: scheduleConfig.break_periods,
+        schedule_overrides: cleanOverrides,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (supportsSchedulePkgIds) {
+        eventUpdatePayload.schedule_package_ids = packageIds;
+      }
+
+      // Persist schedule configuration onto booking_events
       await supabase
         .from("booking_events")
-        .update({
-          event_start_date: scheduleConfig.start_date,
-          event_end_date: scheduleConfig.end_date,
-          operating_days: scheduleConfig.operating_days,
-          operating_start_time: scheduleConfig.operating_start_time,
-          operating_end_time: scheduleConfig.operating_end_time,
-          default_slot_duration_mins: scheduleConfig.slot_duration_mins,
-          slot_interval_mins: scheduleConfig.slot_interval_mins,
-          default_slot_capacity: scheduleConfig.capacity_per_slot,
-          buffer_before_mins: scheduleConfig.buffer_before_mins,
-          buffer_after_mins: scheduleConfig.buffer_after_mins,
-          break_periods: scheduleConfig.break_periods,
-          schedule_package_ids: packageIds,
-          updated_at: new Date().toISOString(),
-        })
+        .update(eventUpdatePayload)
         .eq("id", eventId);
 
       // 2. Calculate proposed sessions & slots
@@ -923,9 +1062,9 @@ export async function POST(request: NextRequest) {
           if (newSess) sessionMap.set(proposedSess.session_date, newSess.id);
         }
 
-        // Sync event_session_packages junction records for this session
+        // Sync event_session_packages junction records for this session if supported
         const actualSessionId = sessionMap.get(proposedSess.session_date);
-        if (actualSessionId && packageIds.length > 0) {
+        if (actualSessionId && packageIds.length > 0 && supportsSessionPackages) {
           try {
             await supabase
               .from("event_session_packages")
@@ -967,30 +1106,29 @@ export async function POST(request: NextRequest) {
               matchedExisting.booked_count || 0,
               ps.capacity
             );
+            const slotUpdate: Record<string, any> = {
+              session_id: sessionId || matchedExisting.session_id,
+              capacity: safeCap,
+              buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
+              buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
+              updated_at: new Date().toISOString(),
+            };
+            if (supportsSlotDuration) {
+              slotUpdate.duration_mins = ps.duration_mins;
+              slotUpdate.package_ids = ps.package_ids;
+            }
             await supabase
               .from("event_time_slots")
-              .update({
-                session_id: sessionId || matchedExisting.session_id,
-                capacity: safeCap,
-                duration_mins: ps.duration_mins,
-                package_ids: ps.package_ids,
-                package_id: ps.package_ids?.length === 1 ? ps.package_ids[0] : matchedExisting.package_id,
-                buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
-                buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
-                updated_at: new Date().toISOString(),
-              })
+              .update(slotUpdate)
               .eq("id", matchedExisting.id);
           } else {
             createdSlotsCount++;
-            await supabase.from("event_time_slots").insert({
+            const slotInsert: Record<string, any> = {
               event_id: eventId,
               session_id: sessionId || null,
               slot_date: ps.slot_date,
               start_at: ps.start_at,
               end_at: ps.end_at,
-              duration_mins: ps.duration_mins,
-              package_ids: ps.package_ids,
-              package_id: ps.package_ids?.length === 1 ? ps.package_ids[0] : null,
               buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
               buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
               effective_start_at: ps.effective_start_at,
@@ -999,7 +1137,12 @@ export async function POST(request: NextRequest) {
               booked_count: 0,
               status: "available",
               label: `${ps.start_time} - ${ps.end_time}`,
-            });
+            };
+            if (supportsSlotDuration) {
+              slotInsert.duration_mins = ps.duration_mins;
+              slotInsert.package_ids = ps.package_ids;
+            }
+            await supabase.from("event_time_slots").insert(slotInsert);
           }
         }
       }

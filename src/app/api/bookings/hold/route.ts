@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       // Fallback implementation if RPC is unavailable
       const { data: slot, error: slotErr } = await supabase
         .from("event_time_slots")
-        .select("id, start_at, end_at, duration_mins, capacity, booked_count, status")
+        .select("*")
         .eq("id", slot_id)
         .maybeSingle();
 
@@ -175,28 +175,41 @@ export async function POST(request: NextRequest) {
 
       let activeHoldId = existingHold?.id;
 
+      // Probe if package_id exists on booking_slot_holds
+      const { error: bshColErr } = await supabase
+        .from("booking_slot_holds")
+        .select("package_id")
+        .limit(0);
+      const supportsHoldPackageId = !bshColErr;
+
       if (activeHoldId) {
+        const updatePayload: Record<string, any> = {
+          expires_at: expiresAt,
+          hold_duration_mins: durationMins,
+        };
+        if (supportsHoldPackageId) {
+          updatePayload.package_id = package_id || null;
+        }
         await supabase
           .from("booking_slot_holds")
-          .update({
-            expires_at: expiresAt,
-            hold_duration_mins: durationMins,
-            package_id: package_id || null,
-          })
+          .update(updatePayload)
           .eq("id", activeHoldId);
       } else {
+        const insertPayload: Record<string, any> = {
+          event_id: event_id || null,
+          session_id: session_id || null,
+          slot_id: slot_id,
+          flow_token: flow_token,
+          hold_duration_mins: durationMins,
+          expires_at: expiresAt,
+          status: "active",
+        };
+        if (supportsHoldPackageId) {
+          insertPayload.package_id = package_id || null;
+        }
         const { data: newHold, error: insErr } = await supabase
           .from("booking_slot_holds")
-          .insert({
-            event_id: event_id || null,
-            session_id: session_id || null,
-            slot_id: slot_id,
-            package_id: package_id || null,
-            flow_token: flow_token,
-            hold_duration_mins: durationMins,
-            expires_at: expiresAt,
-            status: "active",
-          })
+          .insert(insertPayload)
           .select("id")
           .single();
 

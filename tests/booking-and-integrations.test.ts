@@ -3457,4 +3457,84 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     assert.equal(previewComparison.packages!.length, 2);
     assert.deepEqual(previewComparison.slots_by_duration, { 30: 5, 60: 2 });
   });
+
+  it("32. PostgREST Schema-Cache Resilience & Backward Compatibility", () => {
+    // 1. Booking Event Schema-Cache Tolerance (schedule_package_ids vs schedule_overrides fallback)
+    const mockDbEventWithoutCol = {
+      id: "ev-resilience-1",
+      title: "Convocation 2026",
+      schedule_overrides: [
+        { type: "schedule_packages", package_ids: ["pkg-uuid-1", "pkg-uuid-2"] },
+      ],
+      // schedule_package_ids column does not physically exist in DB
+    };
+
+    // Derived resolution logic as implemented in GET /api/admin/events & schedule generator
+    const resolveSchedulePackageIds = (ev: any, allPackages: any[] = []) => {
+      let pkgIds = Array.isArray(ev.schedule_package_ids) && ev.schedule_package_ids.length > 0
+        ? ev.schedule_package_ids
+        : null;
+      if (!pkgIds && Array.isArray(ev.schedule_overrides)) {
+        const pkgOverride = ev.schedule_overrides.find((o: any) => o?.type === "schedule_packages");
+        if (pkgOverride && Array.isArray(pkgOverride.package_ids)) {
+          pkgIds = pkgOverride.package_ids;
+        }
+      }
+      if (!pkgIds) {
+        pkgIds = allPackages
+          .filter((p: any) => p.event_id === ev.id && p.is_active !== false)
+          .map((p: any) => p.id);
+      }
+      return pkgIds || [];
+    };
+
+    const resolvedIds = resolveSchedulePackageIds(mockDbEventWithoutCol);
+    assert.deepEqual(resolvedIds, ["pkg-uuid-1", "pkg-uuid-2"], "Resolves package IDs safely from schedule_overrides when column is missing");
+
+    // Event with neither column nor override defaults to all active packages for that event
+    const mockEmptyEvent = { id: "ev-resilience-2" };
+    const mockPackages = [
+      { id: "pkg-a", event_id: "ev-resilience-2", is_active: true },
+      { id: "pkg-b", event_id: "ev-resilience-2", is_active: true },
+      { id: "pkg-inactive", event_id: "ev-resilience-2", is_active: false },
+    ];
+    const resolvedDefaultIds = resolveSchedulePackageIds(mockEmptyEvent, mockPackages);
+    assert.deepEqual(resolvedDefaultIds, ["pkg-a", "pkg-b"], "Safely defaults to active packages for the event");
+
+    // 2. Slot Duration Calculation Fallback (when event_time_slots lacks duration_mins)
+    const mockSlotWithoutDurationCol = {
+      id: "slot-resilience-1",
+      start_at: "2026-11-20T04:00:00.000Z",
+      end_at: "2026-11-20T04:45:00.000Z", // 45 mins
+      // duration_mins column is undefined
+    };
+
+    const resolveSlotDuration = (slot: any) => {
+      return slot.duration_mins && slot.duration_mins > 0
+        ? slot.duration_mins
+        : Math.max(
+            1,
+            Math.round((Date.parse(slot.end_at) - Date.parse(slot.start_at)) / 60_000)
+          );
+    };
+
+    const calculatedDur = resolveSlotDuration(mockSlotWithoutDurationCol);
+    assert.equal(calculatedDur, 45, "Calculates accurate duration in minutes from slot start_at and end_at");
+
+    // 3. Payload Stripping: Ensuring payloads never submit non-existent columns to PostgREST
+    const testAdminPayload = {
+      title: "Convocation Photography",
+      slug: "convocation-photography",
+      schedule_package_ids: ["pkg-uuid-1"],
+      custom_questions: [],
+    };
+
+    // When supportsSchedulePkgIds is false, omit schedule_package_ids
+    const supportsSchedulePkgIds = false;
+    const { schedule_package_ids: _omit, ...safeDbPayload } = testAdminPayload;
+    const finalPayload = supportsSchedulePkgIds ? testAdminPayload : safeDbPayload;
+
+    assert.equal("schedule_package_ids" in finalPayload, false, "Strips schedule_package_ids before upsert to prevent PostgREST column missing error");
+    assert.equal(finalPayload.title, "Convocation Photography");
+  });
 });

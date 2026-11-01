@@ -213,10 +213,10 @@ export async function getConvocationAvailabilityFromDb(params: {
     // Fetch package associations from event_session_packages if available
     const sessionPackagesMap = new Map<string, string[]>();
     try {
-      const { data: spRows } = await supabase
+      const { data: spRows, error: spErr } = await supabase
         .from("event_session_packages")
         .select("session_id, package_id");
-      if (spRows && Array.isArray(spRows)) {
+      if (!spErr && spRows && Array.isArray(spRows)) {
         for (const row of spRows) {
           const list = sessionPackagesMap.get(row.session_id) || [];
           list.push(row.package_id);
@@ -309,7 +309,7 @@ export async function getConvocationAvailabilityFromDb(params: {
     try {
       const { data: holdsData } = await supabase
         .from("booking_slot_holds")
-        .select("slot_id, flow_token, package_id, duration_mins")
+        .select("*")
         .eq("event_id", event.id)
         .eq("status", "active")
         .gt("expires_at", new Date().toISOString());
@@ -698,7 +698,7 @@ export async function executeCreateBookingWorkflow(params: {
   if (input.slot_id && selectedPkg && selectedPkg.duration_mins) {
     const { data: slotRow } = await supabase
       .from("event_time_slots")
-      .select("id, duration_mins, start_at, end_at, package_ids")
+      .select("*")
       .eq("id", input.slot_id)
       .maybeSingle();
 
