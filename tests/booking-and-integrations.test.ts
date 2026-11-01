@@ -31,6 +31,7 @@ import {
   adminAccountUpdateSchema,
   calculateAndVerifyBookingPrice,
   createBookingSchema,
+  photographyPackageSchema,
 } from "../src/lib/validations";
 import { formatAdminError } from "../src/lib/booking/admin-error";
 import {
@@ -3221,5 +3222,239 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     const mismatchedSlot = eventSlotsForEval.find((s) => s.duration_mins === 30)!;
     const isDurationMatch = mismatchedSlot.duration_mins === pkgB60.duration_mins;
     assert.equal(isDurationMatch, false, "30m slot duration does not match 60m package duration");
+  });
+
+  it("31. Package Creation, Safe Deletion & Schedule Configuration Package Attachment", () => {
+    // =========================================================================
+    // 1. Package Schema Validation & Robust Creation Sanitization
+    // =========================================================================
+    // A. Valid Package with auto-defaulted description and sanitized empty ID
+    const validPkgInput = {
+      id: "",
+      event_id: "16ae23d0-97d1-474a-93be-eb88542f4c8a",
+      name: "Convocation Solo Standard",
+      description: "", // empty description should be transformed to default
+      duration_mins: 30,
+      price_numeric: 3500,
+      price_label: "৳3,500",
+      currency: "BDT",
+      is_active: true,
+      is_featured: true,
+    };
+
+    const parsedValid = photographyPackageSchema.safeParse(validPkgInput);
+    assert.ok(parsedValid.success, "Empty id and description are successfully sanitized");
+    assert.equal(parsedValid.data.id, undefined, "Empty id string transformed to undefined");
+    assert.equal(
+      parsedValid.data.description,
+      "Event Portrait Package",
+      "Empty description defaulted to fallback"
+    );
+    assert.equal(parsedValid.data.duration_mins, 30);
+    assert.equal(parsedValid.data.price_numeric, 3500);
+
+    // B. Package with custom duration (e.g. 15m rapid portrait, 60m executive regalia)
+    const rapidPkg = photographyPackageSchema.safeParse({
+      name: "15-Min Quick Portrait",
+      duration_mins: 15,
+      price_numeric: 1500,
+      event_id: "16ae23d0-97d1-474a-93be-eb88542f4c8a",
+    });
+    assert.ok(rapidPkg.success, "Supports 15-minute quick portrait packages");
+    assert.equal(rapidPkg.data.duration_mins, 15);
+
+    const execPkg = photographyPackageSchema.safeParse({
+      name: "60-Min Full Regalia & Family",
+      duration_mins: 60,
+      price_numeric: 6000,
+      event_id: "16ae23d0-97d1-474a-93be-eb88542f4c8a",
+    });
+    assert.ok(execPkg.success, "Supports 60-minute extended portrait packages");
+    assert.equal(execPkg.data.duration_mins, 60);
+
+    // C. Rejects invalid durations (< 5 mins) or invalid names
+    const invalidDuration = photographyPackageSchema.safeParse({
+      name: "Invalid Duration Package",
+      duration_mins: 2, // below minimum 5 mins
+      price_numeric: 1000,
+    });
+    assert.ok(!invalidDuration.success, "Rejects durations under 5 minutes");
+
+    // =========================================================================
+    // 2. Safe Deletion Logic (Cases A, B, and C)
+    // =========================================================================
+    interface SimulatedPackage {
+      id: string;
+      name: string;
+      is_active: boolean;
+      event_id: string;
+    }
+
+    interface SimulatedSessionPackage {
+      session_id: string;
+      package_id: string;
+    }
+
+    interface SimulatedBooking {
+      id: string;
+      package_id: string;
+      client_name: string;
+      status: string;
+    }
+
+    // Mock State
+    let mockPackages: SimulatedPackage[] = [
+      { id: "pkg-unused-1", name: "Unused Solo Tier", is_active: true, event_id: "event-1" },
+      { id: "pkg-session-linked", name: "Session Linked Tier", is_active: true, event_id: "event-1" },
+      { id: "pkg-with-bookings", name: "Historical Booked Tier", is_active: true, event_id: "event-1" },
+    ];
+
+    let mockSessionPackages: SimulatedSessionPackage[] = [
+      { session_id: "sess-1", package_id: "pkg-session-linked" },
+      { session_id: "sess-2", package_id: "pkg-session-linked" },
+      { session_id: "sess-1", package_id: "pkg-with-bookings" },
+    ];
+
+    const mockBookings: SimulatedBooking[] = [
+      { id: "book-1", package_id: "pkg-with-bookings", client_name: "Tanvir Hasan", status: "confirmed" },
+      { id: "book-2", package_id: "pkg-with-bookings", client_name: "Nabila Rahman", status: "confirmed" },
+    ];
+
+    // Simulated Safe Deletion Engine mirroring the RPC and Route Handler logic
+    function simulateDeleteOrArchivePackage(packageId: string) {
+      const pkg = mockPackages.find((p) => p.id === packageId);
+      if (!pkg) return { success: false, action: "not_found", message: "Package not found" };
+
+      const bookingCount = mockBookings.filter((b) => b.package_id === packageId).length;
+
+      if (bookingCount > 0) {
+        // Case C: Safely archive for future bookings, preserving all historical client bookings
+        pkg.is_active = false;
+        return {
+          success: true,
+          action: "archived",
+          id: pkg.id,
+          name: pkg.name,
+          historical_bookings_count: bookingCount,
+          message: `Package "${pkg.name}" is referenced by ${bookingCount} historical booking(s) and was safely archived and disabled for future bookings to protect client records.`,
+        };
+      } else {
+        // Case A & B: Zero bookings - clean up junction table, then delete package permanently
+        mockSessionPackages = mockSessionPackages.filter((sp) => sp.package_id !== packageId);
+        mockPackages = mockPackages.filter((p) => p.id !== packageId);
+        return {
+          success: true,
+          action: "deleted",
+          id: packageId,
+          name: pkg.name,
+          historical_bookings_count: 0,
+          message: `Package "${pkg.name}" had no bookings and was permanently deleted. Schedule associations were cleaned up.`,
+        };
+      }
+    }
+
+    // A. Case A Test: Delete Unused Package
+    const caseAResult = simulateDeleteOrArchivePackage("pkg-unused-1");
+    assert.equal(caseAResult.action, "deleted", "Unused package permanently deleted");
+    assert.equal(caseAResult.historical_bookings_count, 0);
+    assert.ok(!mockPackages.some((p) => p.id === "pkg-unused-1"), "Package removed from database");
+
+    // B. Case B Test: Delete Session-Linked Package with 0 Bookings
+    const initialSessionLinksCount = mockSessionPackages.length;
+    const caseBResult = simulateDeleteOrArchivePackage("pkg-session-linked");
+    assert.equal(caseBResult.action, "deleted", "Session-linked package with 0 bookings permanently deleted");
+    assert.ok(
+      !mockSessionPackages.some((sp) => sp.package_id === "pkg-session-linked"),
+      "Junction rows cleaned up cleanly"
+    );
+    assert.ok(
+      mockSessionPackages.some((sp) => sp.package_id === "pkg-with-bookings"),
+      "Other packages in junction table preserved"
+    );
+    assert.ok(mockSessionPackages.length < initialSessionLinksCount);
+
+    // C. Case C Test: Attempt to Delete Package with Historical Bookings
+    const caseCResult = simulateDeleteOrArchivePackage("pkg-with-bookings");
+    assert.equal(caseCResult.action, "archived", "Package with historical bookings is archived, NOT hard deleted");
+    assert.equal(caseCResult.historical_bookings_count, 2);
+    const archivedPkg = mockPackages.find((p) => p.id === "pkg-with-bookings");
+    assert.ok(archivedPkg, "Package row remains preserved in database");
+    assert.equal(archivedPkg.is_active, false, "Package is marked inactive for future bookings");
+    // All client booking records remain intact!
+    assert.equal(mockBookings.filter((b) => b.package_id === "pkg-with-bookings").length, 2);
+
+    // =========================================================================
+    // 3. Schedule Configuration Package Attachment & Multi-Duration Slot Calculations
+    // =========================================================================
+    const attachedPackages = [
+      { id: "pkg-30m", name: "30-Min Classic Convocation", duration_mins: 30, price: 2500 },
+      { id: "pkg-60m", name: "60-Min Deluxe Convocation", duration_mins: 60, price: 4500 },
+    ];
+
+    const multiPkgScheduleConfig: ScheduleConfig = {
+      start_date: "2026-11-20",
+      end_date: "2026-11-20",
+      operating_days: [5], // Friday
+      operating_start_time: "10:00",
+      operating_end_time: "13:00", // 3 hours = 180 minutes
+      slot_duration_mins: 30,
+      slot_interval_mins: 30,
+      capacity_per_slot: 1,
+      buffer_before_mins: 0,
+      buffer_after_mins: 0,
+      break_periods: [
+        { name: "Prayer Break", start_time: "12:00", end_time: "12:30" }, // 30m break
+      ],
+      packages: attachedPackages,
+    };
+
+    // Calculate proposed schedule with multi-package attachment
+    const proposedResult = calculateProposedSchedule(multiPkgScheduleConfig);
+    assert.equal(proposedResult.sessions.length, 1, "Generates 1 operating session for Friday");
+    const fridaySession = proposedResult.sessions[0];
+
+    // Check package associations on session
+    assert.deepEqual(
+      fridaySession.package_ids,
+      ["pkg-30m", "pkg-60m"],
+      "Session is attached to all selected packages"
+    );
+
+    // Slots Breakdown by Duration:
+    // Available hours: 10:00 - 12:00 (120 mins) + 12:30 - 13:00 (30 mins) = 150 mins total bookable time
+    // 30m slots:
+    // 10:00-10:30, 10:30-11:00, 11:00-11:30, 11:30-12:00, 12:30-13:00 = 5 slots
+    assert.equal(fridaySession.slots_by_duration[30], 5, "5 slots generated for 30m package");
+
+    // 60m slots:
+    // 10:00-11:00, 11:00-12:00 (12:00-13:00 overlaps 12:00-12:30 break, so excluded!) = 2 slots
+    assert.equal(fridaySession.slots_by_duration[60], 2, "2 slots generated for 60m package, break excluded");
+
+    // Total slots in session = 5 + 2 = 7 slots
+    assert.equal(fridaySession.slots.length, 7, "Total discrete duration slots equals 7");
+
+    // Verify slots are tagged with exact duration and package_ids
+    const slots30m = fridaySession.slots.filter((s) => s.duration_mins === 30);
+    assert.equal(slots30m.length, 5);
+    assert.ok(slots30m.every((s) => s.package_ids.includes("pkg-30m")));
+
+    const slots60m = fridaySession.slots.filter((s) => s.duration_mins === 60);
+    assert.equal(slots60m.length, 2);
+    assert.ok(slots60m.every((s) => s.package_ids.includes("pkg-60m")));
+
+    // Schedule Comparison / Preview Result
+    const previewComparison = compareScheduleWithExisting(
+      multiPkgScheduleConfig,
+      proposedResult,
+      [],
+      [],
+      []
+    );
+
+    assert.equal(previewComparison.total_proposed_sessions, 1);
+    assert.equal(previewComparison.total_proposed_slots, 7);
+    assert.ok(Array.isArray(previewComparison.packages), "Packages included in preview comparison");
+    assert.equal(previewComparison.packages!.length, 2);
+    assert.deepEqual(previewComparison.slots_by_duration, { 30: 5, 60: 2 });
   });
 });

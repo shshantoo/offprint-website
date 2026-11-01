@@ -94,6 +94,8 @@ export interface SchedulePreviewResult {
   removable_unbooked_slots_count: number;
   confirmed_bookings_count: number;
   confirmed_bookings_preserved: boolean;
+  packages?: SchedulePackageConfig[];
+  slots_by_duration?: Record<number, number>;
   affected_active_bookings: Array<{
     id: string;
     booking_ref: string;
@@ -309,6 +311,13 @@ export function compareScheduleWithExisting(
     (s) => !proposedSlotKeys.has(`${s.slot_date}_${s.start_at}_${s.end_at}`) && (s.booked_count || 0) === 0
   ).length;
 
+  const aggregateSlotsByDuration: Record<number, number> = {};
+  for (const session of proposed.sessions) {
+    for (const [dur, cnt] of Object.entries(session.slots_by_duration || {})) {
+      aggregateSlotsByDuration[Number(dur)] = (aggregateSlotsByDuration[Number(dur)] || 0) + cnt;
+    }
+  }
+
   return {
     date_range: {
       from: config.start_date,
@@ -337,6 +346,8 @@ export function compareScheduleWithExisting(
     removable_unbooked_slots_count: removableUnbookedSlotsCount,
     confirmed_bookings_count: activeBookings.length,
     confirmed_bookings_preserved: true,
+    packages: config.packages || [],
+    slots_by_duration: aggregateSlotsByDuration,
     affected_active_bookings: activeBookings.map((b) => ({
       id: b.id,
       booking_ref: b.booking_ref,

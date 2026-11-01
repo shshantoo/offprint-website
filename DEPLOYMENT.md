@@ -507,5 +507,43 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
 
 ---
 
+## 16. Release 1.7.0 — Package CRUD Resilience, Safe Deletion & Schedule Configuration Package Attachment
+
+### 16.1 Package Creation, Update & Safe Deletion Resilience
+- **Database Migration `20261102000002_package_crud_and_schedule_package_linking.sql`:**
+  - Deployed `public.upsert_photography_package(jsonb)` RPC with `SECURITY DEFINER` and explicit `GRANT EXECUTE TO anon, authenticated, service_role`.
+  - Deployed `public.delete_or_archive_package(uuid)` RPC with `SECURITY DEFINER` and explicit `GRANT EXECUTE TO anon, authenticated, service_role`.
+  - Updated `public.is_admin()` and RLS policies on `public.photography_packages` and `public.event_session_packages`.
+- **Safe Deletion Rules Engine:**
+  - **Case A (Unused Package):** Package has 0 bookings -> permanently deleted from database and schedule references cleaned up.
+  - **Case B (Session-Linked Package with 0 Bookings):** Cleans up `public.event_session_packages` junction rows without affecting sessions or other packages.
+  - **Case C (Package with Bookings):** Has active, confirmed, or historical bookings -> safely archived (`is_active = false`) for future bookings while strictly preserving booking records, pricing snapshots, and client receipts.
+- **Dual-Layer API Handler:**
+  - In `/api/admin/events`, package operations attempt `upsert_photography_package` and `delete_or_archive_package` RPCs first, with a comprehensive TypeScript fallback.
+  - Package schema (`photographyPackageSchema`) sanitizes empty IDs to `undefined`, defaults empty descriptions to `"Event Portrait Package"`, and supports appointment durations down to 5 minutes.
+- **Admin Package Editor UI (`EventPackagesEditor.tsx`):**
+  - Added dedicated safe deletion confirmation dialog explaining Case A vs Case C.
+  - Added quick Enable/Disable toggle on each package card with instant feedback.
+  - Guaranteed `id: undefined` on creation to eliminate PostgREST primary key conflicts.
+
+### 16.2 Direct Package Selection in Schedule Configuration Parameters
+- **Dedicated Package Selection Section in Schedule Parameters:**
+  - Located directly in `Admin Portal → Special Events & Services → Select Convocation Event → Tab 1 (Scheduling) → Schedule Configuration Parameters`.
+  - Positioned near the top of the form, BEFORE generating sessions and time slots.
+  - Displays each package's name, price, appointment duration (`duration_mins`), and active status badge.
+  - Includes select package, remove package, search packages, and Select All / Clear shortcuts.
+- **Summary Table: Packages Attached to This Schedule:**
+  - Shows attached packages with their duration, base price, and active status.
+- **In-Workflow Quick Package Creation Modal:**
+  - Includes a `+ Create New Package` shortcut button directly inside the scheduling form so administrators can define and attach new packages without leaving the scheduling tab.
+- **Schedule Generation Attachment:**
+  - Requires at least one active package before allowing schedule generation.
+  - Passes selected package IDs to both `preview_schedule` and `rebuild_event_schedule`.
+  - Generates discrete time slots matching each package duration, automatically excluding break periods.
+  - Links sessions to packages in `event_session_packages` and tags generated slots with `duration_mins` and `package_ids`.
+  - Persists `schedule_package_ids` in `booking_events`.
+
+---
+
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.6.0 (Passwordless Client Portal & Package-Linked Scheduling Verified)*
+*Document Version: 1.7.0 (Package Creation/Deletion & Schedule Configuration Package Attachment Verified)*

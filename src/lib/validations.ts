@@ -523,6 +523,7 @@ export const bookingEventSchema = z.object({
     start_time: z.string().trim(),
     end_time: z.string().trim(),
   })).optional().default([]),
+  schedule_package_ids: z.array(z.string().uuid()).optional().default([]),
   schedule_overrides: z.array(z.any()).optional().default([]),
   resource_pool: z.string().trim().min(1).default("primary_studio"),
 });
@@ -569,15 +570,30 @@ export const photographyServiceSchema = z.object({
 });
 
 export const photographyPackageSchema = z.object({
-  id: z.string().uuid().optional(),
-  event_id: z.string().uuid().optional().nullable(),
-  service_id: z.string().uuid().optional().nullable(),
-  name: z.string().trim().min(2),
+  id: z.preprocess(
+    (val) => (val === "" || val === null ? undefined : val),
+    z.string().uuid().optional()
+  ),
+  event_id: z.preprocess(
+    (val) => (val === "" || val === null ? undefined : val),
+    z.string().uuid().optional().nullable()
+  ),
+  service_id: z.preprocess(
+    (val) => (val === "" || val === null ? undefined : val),
+    z.string().uuid().optional().nullable()
+  ),
+  name: z.string().trim().min(1, "Package name is required"),
   subtitle: z.string().trim().optional().nullable(),
-  description: z.string().trim().min(5),
+  description: z.preprocess(
+    (val) => (typeof val === "string" ? val.trim() : ""),
+    z.string().default("").transform((v) => v || "Event Portrait Package")
+  ),
   instructions: z.string().trim().optional().nullable(),
-  duration_mins: z.coerce.number().int().min(10).max(720),
-  price_label: z.string().trim().min(1),
+  duration_mins: z.coerce.number().int().min(5, "Minimum duration is 5 minutes").max(720).default(30),
+  price_label: z.preprocess(
+    (val) => (typeof val === "string" ? val.trim() : ""),
+    z.string().default("").transform((v) => v || "৳0")
+  ),
   price_numeric: z.coerce.number().min(0).default(0),
   currency: z.string().trim().default("BDT"),
   deliverables: z.array(z.string().trim()).optional().default([]),

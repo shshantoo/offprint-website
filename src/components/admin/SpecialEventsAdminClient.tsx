@@ -32,6 +32,7 @@ import {
   Users,
   Info,
   Package,
+  Save,
   ListFilter,
   Image as ImageIcon,
 } from "lucide-react";
@@ -101,6 +102,15 @@ export default function SpecialEventsAdminClient() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewData, setPreviewData] = useState<SchedulePreviewResult | null>(null);
+
+  // Schedule Configuration Package Selector State
+  const [schedulePackageSearch, setSchedulePackageSearch] = useState("");
+  const [showQuickAddPackageModal, setShowQuickAddPackageModal] = useState(false);
+  const [quickPackageName, setQuickPackageName] = useState("");
+  const [quickPackagePrice, setQuickPackagePrice] = useState(2500);
+  const [quickPackageDuration, setQuickPackageDuration] = useState(30);
+  const [quickPackageDesc, setQuickPackageDesc] = useState("Dedicated Convocation portrait session.");
+  const [quickPackageSaving, setQuickPackageSaving] = useState(false);
 
   // Break periods builder
   const [newBreakName, setNewBreakName] = useState("");
@@ -208,6 +218,7 @@ export default function SpecialEventsAdminClient() {
         max_quantity: 5,
         frame_types: [],
       },
+      schedule_package_ids: [],
       resource_pool: "primary_studio",
     });
     setRelatedArchiveIds([]);
@@ -242,6 +253,12 @@ export default function SpecialEventsAdminClient() {
           : ev.slug === "iub-27th-convocation" || ev.category === "convocation"
           ? IUB_CONVOCATION_DEFAULT_QUESTIONS
           : [],
+      schedule_package_ids:
+        Array.isArray(ev.schedule_package_ids) && ev.schedule_package_ids.length > 0
+          ? ev.schedule_package_ids
+          : _packages
+              .filter((p) => p.event_id === ev.id && p.is_active !== false)
+              .map((p) => p.id),
     });
     setRelatedArchiveIds([]);
     setSelectedSlotIds([]);
@@ -474,6 +491,14 @@ export default function SpecialEventsAdminClient() {
       return;
     }
 
+    const selectedPkgIds = Array.isArray(editingEvent.schedule_package_ids)
+      ? editingEvent.schedule_package_ids
+      : [];
+    if (selectedPkgIds.length === 0) {
+      alert("Please select at least one active package to attach to this schedule configuration before previewing.");
+      return;
+    }
+
     try {
       setPreviewLoading(true);
       setFeedback(null);
@@ -483,6 +508,7 @@ export default function SpecialEventsAdminClient() {
         body: JSON.stringify({
           entity: "preview_schedule",
           event_id: editingEvent.id,
+          package_ids: selectedPkgIds,
           start_date: editingEvent.event_start_date,
           end_date: editingEvent.event_end_date,
           operating_days: editingEvent.operating_days,
@@ -516,6 +542,9 @@ export default function SpecialEventsAdminClient() {
   // Execute Rebuild Schedule
   const handleExecuteRebuild = async () => {
     if (!editingEvent.id) return;
+    const selectedPkgIds = Array.isArray(editingEvent.schedule_package_ids)
+      ? editingEvent.schedule_package_ids
+      : [];
     try {
       setRebuildingSchedule(true);
       setFeedback(null);
@@ -525,6 +554,7 @@ export default function SpecialEventsAdminClient() {
         body: JSON.stringify({
           entity: "rebuild_event_schedule",
           event_id: editingEvent.id,
+          package_ids: selectedPkgIds,
           start_date: editingEvent.event_start_date,
           end_date: editingEvent.event_end_date,
           operating_days: editingEvent.operating_days,
@@ -556,6 +586,82 @@ export default function SpecialEventsAdminClient() {
       setFeedback({ type: "error", text: err.message });
     } finally {
       setRebuildingSchedule(false);
+    }
+  };
+
+  // Save Quick Package created inside scheduling workflow
+  const handleSaveQuickPackage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEvent.id) {
+      alert("Please save the event first before adding packages.");
+      return;
+    }
+    if (!quickPackageName.trim()) {
+      alert("Package name is required.");
+      return;
+    }
+
+    try {
+      setQuickPackageSaving(true);
+      const numPrice = Number(quickPackagePrice) || 0;
+      const res = await fetch("/api/admin/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "package",
+          data: {
+            event_id: editingEvent.id,
+            name: quickPackageName.trim(),
+            duration_mins: Number(quickPackageDuration) || 30,
+            price_numeric: numPrice,
+            price_label: `৳${numPrice.toLocaleString()}`,
+            description: quickPackageDesc.trim() || "Event Portrait Package",
+            currency: "BDT",
+            is_active: true,
+            is_featured: false,
+            frame_printing_enabled: true,
+            deliverables: [],
+            inclusions: [],
+          },
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "Failed to create package.");
+      }
+
+      const createdPkg = json.data;
+      setFeedback({
+        type: "success",
+        text: `Package "${createdPkg.name}" created and attached to schedule!`,
+      });
+
+      // Update local editingEvent.schedule_package_ids
+      const currentSelected = Array.isArray(editingEvent.schedule_package_ids)
+        ? editingEvent.schedule_package_ids
+        : [];
+      const updatedSelected = currentSelected.includes(createdPkg.id)
+        ? currentSelected
+        : [...currentSelected, createdPkg.id];
+
+      setEditingEvent({
+        ...editingEvent,
+        schedule_package_ids: updatedSelected,
+      });
+      setIsFormDirty(true);
+
+      setShowQuickAddPackageModal(false);
+      setQuickPackageName("");
+      setQuickPackagePrice(2500);
+      setQuickPackageDuration(30);
+
+      // Refresh data
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || "Failed to create package.");
+    } finally {
+      setQuickPackageSaving(false);
     }
   };
 
@@ -2086,6 +2192,249 @@ export default function SpecialEventsAdminClient() {
                   <span>Schedule Configuration Parameters</span>
                 </h3>
 
+                {/* 1. Dedicated Package Selection Section */}
+                {(() => {
+                  const eventAllPackages = _packages.filter(
+                    (p) => p.event_id === editingEvent.id
+                  );
+                  const selectedSchedulePkgIds = Array.isArray(editingEvent.schedule_package_ids)
+                    ? editingEvent.schedule_package_ids
+                    : [];
+                  const selectedSchedulePackages = eventAllPackages.filter((p) =>
+                    selectedSchedulePkgIds.includes(p.id)
+                  );
+                  const filteredPackagesForSchedule = eventAllPackages.filter((p) => {
+                    if (!schedulePackageSearch.trim()) return true;
+                    const q = schedulePackageSearch.toLowerCase();
+                    return (
+                      p.name.toLowerCase().includes(q) ||
+                      (p.price_label && p.price_label.toLowerCase().includes(q)) ||
+                      String(p.duration_mins).includes(q)
+                    );
+                  });
+
+                  return (
+                    <div className="p-5 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E5DEC9] pb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Package className="w-4 h-4 text-[#A66D35]" />
+                            <h4 className="text-sm font-bold text-[#141210]">
+                              Select Packages for This Schedule *
+                            </h4>
+                            <span className="px-2 py-0.5 rounded-full bg-[#3A2008] text-[#FAF7F2] text-[10px] font-mono">
+                              {selectedSchedulePkgIds.length} Selected
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#5C5449] mt-0.5">
+                            Attach applicable package(s) to this configuration before generating sessions and slots. Sessions will inherit each package&apos;s duration and pricing.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickAddPackageModal(true)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider shrink-0 transition-colors shadow-2xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Create New Package</span>
+                        </button>
+                      </div>
+
+                      {/* Search and Selection Helpers */}
+                      {eventAllPackages.length > 3 && (
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#877D70]" />
+                            <input
+                              type="text"
+                              value={schedulePackageSearch}
+                              onChange={(e) => setSchedulePackageSearch(e.target.value)}
+                              placeholder="Search packages by name, price, or duration..."
+                              className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allIds = eventAllPackages.filter((p) => p.is_active !== false).map((p) => p.id);
+                              setEditingEvent({ ...editingEvent, schedule_package_ids: allIds });
+                              setIsFormDirty(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-[11px] font-semibold text-[#5C5449] hover:bg-[#FAF7F2]"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingEvent({ ...editingEvent, schedule_package_ids: [] });
+                              setIsFormDirty(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-[11px] font-semibold text-[#5C5449] hover:bg-[#FAF7F2]"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Packages Cards Grid */}
+                      {filteredPackagesForSchedule.length === 0 ? (
+                        <div className="p-4 rounded-xl bg-[#FFFFFF] border border-dashed border-[#E5DEC9] text-center space-y-2">
+                          <p className="text-xs text-[#877D70]">
+                            {eventAllPackages.length === 0
+                              ? "No photography packages exist for this event yet. Create at least one package above before generating schedules."
+                              : "No packages match your search filter."}
+                          </p>
+                          {eventAllPackages.length === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowQuickAddPackageModal(true)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#3A2008] text-[#FAF7F2] text-xs font-semibold"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Create First Package</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {filteredPackagesForSchedule.map((pkg) => {
+                            const isSelected = selectedSchedulePkgIds.includes(pkg.id);
+                            return (
+                              <div
+                                key={pkg.id}
+                                onClick={() => {
+                                  const updated = isSelected
+                                    ? selectedSchedulePkgIds.filter((id) => id !== pkg.id)
+                                    : [...selectedSchedulePkgIds, pkg.id];
+                                  setEditingEvent({
+                                    ...editingEvent,
+                                    schedule_package_ids: updated,
+                                  });
+                                  setIsFormDirty(true);
+                                }}
+                                className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                                  isSelected
+                                    ? "bg-[#FFFFFF] border-[#3A2008] ring-2 ring-[#3A2008]/15 shadow-2xs"
+                                    : "bg-[#FFFFFF]/70 border-[#E5DEC9] hover:bg-[#FFFFFF] opacity-80"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {}}
+                                      className="rounded text-[#3A2008] pointer-events-none"
+                                    />
+                                    <span className="font-bold text-xs text-[#141210] line-clamp-1">
+                                      {pkg.name}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[9px] font-mono uppercase font-semibold shrink-0 ${
+                                      pkg.is_active !== false
+                                        ? "bg-[#EEF7F2] text-[#2E6B4E]"
+                                        : "bg-[#F4EFE6] text-[#877D70]"
+                                    }`}
+                                  >
+                                    {pkg.is_active !== false ? "Active" : "Disabled"}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-[#E5DEC9]/60 font-mono">
+                                  <span className="text-[#A66D35] flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {pkg.duration_mins} mins
+                                  </span>
+                                  <span className="font-bold text-[#3A2008]">
+                                    {pkg.price_label || `৳${pkg.price_numeric}`}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Summary Table: Packages Attached to This Schedule */}
+                      {selectedSchedulePackages.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-[#E5DEC9]">
+                          <span className="text-xs font-bold text-[#141210] block">
+                            Packages Attached to This Schedule ({selectedSchedulePackages.length}):
+                          </span>
+                          <div className="overflow-x-auto rounded-xl border border-[#E5DEC9] bg-[#FFFFFF]">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-[#FAF7F2] text-[#5C5449] border-b border-[#E5DEC9] text-[11px] font-mono uppercase">
+                                <tr>
+                                  <th className="py-2.5 px-3">Package Name</th>
+                                  <th className="py-2.5 px-3">Duration</th>
+                                  <th className="py-2.5 px-3">Price</th>
+                                  <th className="py-2.5 px-3">Status</th>
+                                  <th className="py-2.5 px-3 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#E5DEC9]">
+                                {selectedSchedulePackages.map((pkg) => (
+                                  <tr key={pkg.id} className="hover:bg-[#FAF7F2]/50">
+                                    <td className="py-2 px-3 font-semibold text-[#141210]">
+                                      {pkg.name}
+                                    </td>
+                                    <td className="py-2 px-3 font-mono text-[#A66D35]">
+                                      {pkg.duration_mins} mins
+                                    </td>
+                                    <td className="py-2 px-3 font-mono font-bold text-[#3A2008]">
+                                      {pkg.price_label || `৳${pkg.price_numeric}`}
+                                    </td>
+                                    <td className="py-2 px-3">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                                          pkg.is_active !== false
+                                            ? "bg-emerald-50 text-emerald-800"
+                                            : "bg-neutral-100 text-neutral-600"
+                                        }`}
+                                      >
+                                        {pkg.is_active !== false ? "Active" : "Disabled"}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = selectedSchedulePkgIds.filter((id) => id !== pkg.id);
+                                          setEditingEvent({
+                                            ...editingEvent,
+                                            schedule_package_ids: updated,
+                                          });
+                                          setIsFormDirty(true);
+                                        }}
+                                        className="text-[#877D70] hover:text-red-700 text-[11px] font-semibold"
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Zero packages warning */}
+                      {selectedSchedulePackages.length === 0 && (
+                        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>
+                            At least one active package must be selected before generating a Convocation schedule.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Operating Days Selector */}
                 <div>
                   <label className="font-semibold block mb-1.5 text-xs">
@@ -2397,7 +2746,7 @@ export default function SpecialEventsAdminClient() {
                     <button
                       type="button"
                       onClick={handleOpenPreview}
-                      disabled={previewLoading || rebuildingSchedule}
+                      disabled={previewLoading || rebuildingSchedule || (Array.isArray(editingEvent.schedule_package_ids) && editingEvent.schedule_package_ids.length === 0)}
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#FAF7F2] hover:bg-[#FFFFFF] text-[#3A2008] text-xs font-semibold border border-[#E5DEC9] transition-all disabled:opacity-50"
                     >
                       <Eye className="w-3.5 h-3.5 text-[#A66D35]" />
@@ -2409,7 +2758,7 @@ export default function SpecialEventsAdminClient() {
                     <button
                       type="button"
                       onClick={handleOpenPreview}
-                      disabled={rebuildingSchedule}
+                      disabled={rebuildingSchedule || (Array.isArray(editingEvent.schedule_package_ids) && editingEvent.schedule_package_ids.length === 0)}
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50"
                     >
                       <RefreshCw
@@ -3128,6 +3477,30 @@ export default function SpecialEventsAdminClient() {
                   </div>
                 </div>
 
+                {/* Attached Packages Breakdown */}
+                {Array.isArray(previewData.packages) && previewData.packages.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-2">
+                    <span className="font-bold text-[#141210] block text-xs">
+                      Attached Packages ({previewData.packages.length}):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {previewData.packages.map((pkg) => (
+                        <div key={pkg.id} className="p-2.5 rounded-lg bg-[#FFFFFF] border border-[#E5DEC9] flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-[#141210] block text-xs">{pkg.name}</span>
+                            <span className="font-mono text-[10px] text-[#A66D35]">{pkg.duration_mins} mins duration</span>
+                          </div>
+                          {previewData.slots_by_duration?.[pkg.duration_mins] !== undefined && (
+                            <span className="px-2 py-0.5 rounded-full bg-[#3A2008] text-[#FAF7F2] text-[10px] font-mono">
+                              {previewData.slots_by_duration[pkg.duration_mins]} total slots
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Break periods notice */}
                 {previewData.break_periods.length > 0 && (
                   <div className="p-3 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9]">
@@ -3242,7 +3615,106 @@ export default function SpecialEventsAdminClient() {
           )}
 
           {/* =================================================================== */}
-          {/* MODAL 2: EDIT SESSION OVERRIDE */}
+          {/* MODAL 1B: QUICK CREATE & ATTACH PACKAGE */}
+          {/* =================================================================== */}
+          {showQuickAddPackageModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#141210]/70 backdrop-blur-xs"
+              onClick={() => setShowQuickAddPackageModal(false)}
+            >
+              <div
+                className="bg-[#FFFFFF] border border-[#E5DEC9] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs animate-in zoom-in-95"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-[#E5DEC9] pb-3">
+                  <div className="flex items-center gap-2">
+                    <Package className="w-4 h-4 text-[#A66D35]" />
+                    <h4 className="text-base font-bold text-[#141210]">
+                      Create &amp; Attach Package
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickAddPackageModal(false)}
+                    className="p-1.5 rounded-full hover:bg-[#FAF7F2] text-[#877D70]"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveQuickPackage} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="font-semibold block mb-1">Package Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={quickPackageName}
+                      onChange={(e) => setQuickPackageName(e.target.value)}
+                      placeholder="e.g. Graduation Regalia Session"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-[#141210]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold block mb-1">Price (BDT) *</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={50}
+                        required
+                        value={quickPackagePrice}
+                        onChange={(e) => setQuickPackagePrice(Number(e.target.value) || 0)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono text-[#141210]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-semibold block mb-1">Duration (mins) *</label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={360}
+                        required
+                        value={quickPackageDuration}
+                        onChange={(e) => setQuickPackageDuration(Number(e.target.value) || 30)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] font-mono text-[#141210]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1">Description (Optional)</label>
+                    <textarea
+                      rows={2}
+                      value={quickPackageDesc}
+                      onChange={(e) => setQuickPackageDesc(e.target.value)}
+                      placeholder="Dedicated Convocation portrait session..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-[#141210]"
+                    />
+                  </div>
+
+                  <div className="pt-3 border-t border-[#E5DEC9] flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickAddPackageModal(false)}
+                      className="px-4 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#E5DEC9] text-[#5C5449] font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={quickPackageSaving}
+                      className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold uppercase tracking-wider disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{quickPackageSaving ? "Saving..." : "Save & Attach"}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
           {/* =================================================================== */}
           {editingSessionModal && (
             <div

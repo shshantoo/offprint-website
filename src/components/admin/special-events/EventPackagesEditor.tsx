@@ -36,6 +36,8 @@ export default function EventPackagesEditor({
 
   const [editingModal, setEditingModal] = useState<Partial<PhotographyPackage> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingPkg, setDeletingPkg] = useState<PhotographyPackage | null>(null);
+  const [deletingLoading, setDeletingLoading] = useState(false);
 
   // In-line quick edits state
   const [inlinePrice, setInlinePrice] = useState<Record<string, number>>({});
@@ -48,10 +50,11 @@ export default function EventPackagesEditor({
       return;
     }
     setEditingModal({
+      id: undefined,
       event_id: eventId,
       name: "",
       subtitle: "",
-      description: "",
+      description: "Dedicated portrait session capturing academic regalia and campus portraits.",
       price_numeric: 2500,
       price_label: "৳2,500",
       currency: "BDT",
@@ -91,6 +94,8 @@ export default function EventPackagesEditor({
           entity: "package",
           data: {
             ...editingModal,
+            id: editingModal.id || undefined,
+            description: editingModal.description?.trim() || "Event Portrait Package",
             price_numeric: numPrice,
             price_label: formattedPrice,
             deliverables: [],
@@ -225,17 +230,15 @@ export default function EventPackagesEditor({
     }
   };
 
-  const handleDelete = async (pkg: PhotographyPackage) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete package "${pkg.name}"?\n\nIf clients have historical bookings with this package, the system will safely archive it instead of hard-deleting, preserving all financial and booking records.`
-      )
-    ) {
-      return;
-    }
+  const handleDelete = (pkg: PhotographyPackage) => {
+    setDeletingPkg(pkg);
+  };
 
+  const confirmDeletePackage = async () => {
+    if (!deletingPkg) return;
     try {
-      const res = await fetch(`/api/admin/events?id=${encodeURIComponent(pkg.id)}&entity=package`, {
+      setDeletingLoading(true);
+      const res = await fetch(`/api/admin/events?id=${encodeURIComponent(deletingPkg.id)}&entity=package`, {
         method: "DELETE",
       });
       const json = await res.json();
@@ -247,12 +250,15 @@ export default function EventPackagesEditor({
         type: "success",
         text: json.message || "Package processed successfully.",
       });
+      setDeletingPkg(null);
       await onRefresh();
     } catch (err: any) {
       onFeedback({
         type: "error",
         text: err.message || "Failed to delete package.",
       });
+    } finally {
+      setDeletingLoading(false);
     }
   };
 
@@ -586,7 +592,7 @@ export default function EventPackagesEditor({
                   <label className="font-semibold block mb-1">Session Duration (Minutes) *</label>
                   <input
                     type="number"
-                    min={10}
+                    min={5}
                     max={360}
                     required
                     value={editingModal.duration_mins || 30}
@@ -651,6 +657,61 @@ export default function EventPackagesEditor({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Safe Deletion Confirmation Dialog */}
+      {deletingPkg && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] p-6 sm:p-7 shadow-2xl space-y-4 animate-fadeIn">
+            <div className="flex items-center gap-3 text-red-600 border-b border-[#E5DEC9] pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-[#141210]">Delete Photography Package</h4>
+                <p className="text-xs text-[#5C5449]">Confirm package deletion or archival</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-1 text-xs">
+              <div className="font-bold text-[#141210] text-sm">{deletingPkg.name}</div>
+              <div className="text-[#5C5449] flex items-center gap-2 font-mono">
+                <span>{deletingPkg.duration_mins} mins</span>
+                <span>•</span>
+                <span className="font-bold text-[#3A2008]">{deletingPkg.price_label || `৳${deletingPkg.price_numeric}`}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-[#5C5449]">
+              <p>
+                <strong>Case A (Unused):</strong> If no client bookings reference this package, it will be permanently deleted and removed from schedules.
+              </p>
+              <p>
+                <strong>Case C (Has Bookings):</strong> If historical or active bookings exist, the package will be safely archived (disabled for future bookings) while preserving all client booking records and receipts.
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-[#E5DEC9] flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={deletingLoading}
+                onClick={() => setDeletingPkg(null)}
+                className="px-4 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#E5DEC9] text-[#5C5449] font-semibold text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingLoading}
+                onClick={confirmDeletePackage}
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold uppercase tracking-wider text-xs shadow-xs disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{deletingLoading ? "Processing..." : "Confirm Delete / Archive"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

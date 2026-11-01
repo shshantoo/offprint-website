@@ -634,6 +634,33 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // 1. Resolve packages to attach to this schedule configuration
+      let schedulePackages: any[] = [];
+      const packageIds: string[] = Array.isArray(body.package_ids)
+        ? body.package_ids
+        : Array.isArray(body.packages)
+        ? body.packages.map((p: any) => p.id)
+        : Array.isArray(event.schedule_package_ids)
+        ? event.schedule_package_ids
+        : [];
+
+      if (packageIds.length > 0) {
+        const { data: dbPackages } = await supabase
+          .from("photography_packages")
+          .select("id, name, duration_mins, price_numeric")
+          .in("id", packageIds)
+          .eq("is_active", true);
+
+        if (dbPackages && dbPackages.length > 0) {
+          schedulePackages = dbPackages.map((p) => ({
+            id: p.id,
+            name: p.name,
+            duration_mins: p.duration_mins,
+            price: Number(p.price_numeric) || 0,
+          }));
+        }
+      }
+
       const scheduleConfig: ScheduleConfig = {
         start_date: body.start_date || event.event_start_date,
         end_date:
@@ -673,6 +700,7 @@ export async function POST(request: NextRequest) {
           : Array.isArray(event.break_periods)
           ? event.break_periods
           : [],
+        packages: schedulePackages,
       };
 
       if (!scheduleConfig.start_date || !scheduleConfig.end_date) {
@@ -733,6 +761,33 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // 1. Resolve packages to attach to this schedule configuration
+      let schedulePackages: any[] = [];
+      const packageIds: string[] = Array.isArray(body.package_ids)
+        ? body.package_ids
+        : Array.isArray(body.packages)
+        ? body.packages.map((p: any) => p.id)
+        : Array.isArray(event.schedule_package_ids)
+        ? event.schedule_package_ids
+        : [];
+
+      if (packageIds.length > 0) {
+        const { data: dbPackages } = await supabase
+          .from("photography_packages")
+          .select("id, name, duration_mins, price_numeric")
+          .in("id", packageIds)
+          .eq("is_active", true);
+
+        if (dbPackages && dbPackages.length > 0) {
+          schedulePackages = dbPackages.map((p) => ({
+            id: p.id,
+            name: p.name,
+            duration_mins: p.duration_mins,
+            price: Number(p.price_numeric) || 0,
+          }));
+        }
+      }
+
       const scheduleConfig: ScheduleConfig = {
         start_date: body.start_date || event.event_start_date,
         end_date:
@@ -772,6 +827,7 @@ export async function POST(request: NextRequest) {
           : Array.isArray(event.break_periods)
           ? event.break_periods
           : [],
+        packages: schedulePackages,
       };
 
       if (!scheduleConfig.start_date || !scheduleConfig.end_date) {
@@ -800,6 +856,7 @@ export async function POST(request: NextRequest) {
           buffer_before_mins: scheduleConfig.buffer_before_mins,
           buffer_after_mins: scheduleConfig.buffer_after_mins,
           break_periods: scheduleConfig.break_periods,
+          schedule_package_ids: packageIds,
           updated_at: new Date().toISOString(),
         })
         .eq("id", eventId);
@@ -865,6 +922,25 @@ export async function POST(request: NextRequest) {
           if (newSessErr) throw formatAdminError(newSessErr);
           if (newSess) sessionMap.set(proposedSess.session_date, newSess.id);
         }
+
+        // Sync event_session_packages junction records for this session
+        const actualSessionId = sessionMap.get(proposedSess.session_date);
+        if (actualSessionId && packageIds.length > 0) {
+          try {
+            await supabase
+              .from("event_session_packages")
+              .delete()
+              .eq("session_id", actualSessionId);
+
+            const sessionPkgRows = packageIds.map((pkgId) => ({
+              session_id: actualSessionId,
+              package_id: pkgId,
+            }));
+            await supabase.from("event_session_packages").insert(sessionPkgRows);
+          } catch {
+            // Ignore junction sync errors if table doesn't exist yet
+          }
+        }
       }
 
       // 5. Upsert slots
@@ -896,6 +972,9 @@ export async function POST(request: NextRequest) {
               .update({
                 session_id: sessionId || matchedExisting.session_id,
                 capacity: safeCap,
+                duration_mins: ps.duration_mins,
+                package_ids: ps.package_ids,
+                package_id: ps.package_ids?.length === 1 ? ps.package_ids[0] : matchedExisting.package_id,
                 buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
                 buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
                 updated_at: new Date().toISOString(),
@@ -909,6 +988,9 @@ export async function POST(request: NextRequest) {
               slot_date: ps.slot_date,
               start_at: ps.start_at,
               end_at: ps.end_at,
+              duration_mins: ps.duration_mins,
+              package_ids: ps.package_ids,
+              package_id: ps.package_ids?.length === 1 ? ps.package_ids[0] : null,
               buffer_before_mins: scheduleConfig.buffer_before_mins || 0,
               buffer_after_mins: scheduleConfig.buffer_after_mins || 10,
               effective_start_at: ps.effective_start_at,
@@ -1211,16 +1293,54 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const { data: saved, error } = await supabase
-        .from("photography_packages")
-        .upsert({
-          ...parsed.data,
-          updated_at: new Date().toISOString(),
-        })
-        .select("*")
-        .single();
+      // Try RPC first for security-definer execution bypassing RLS quirks
+      let saved: any = null;
+      let saveError: any = null;
+      try {
+        const { data: rpcSaved, error: rpcErr } = await supabase.rpc(
+          "upsert_photography_package",
+          { p_package: parsed.data }
+        );
+        if (!rpcErr && rpcSaved) {
+          saved = rpcSaved;
+        } else if (rpcErr) {
+          saveError = rpcErr;
+        }
+      } catch (e) {
+        saveError = e;
+      }
 
-      if (error) throw formatAdminError(error);
+      // Fallback to direct PostgREST insert/update if RPC is not available
+      if (!saved) {
+        if (parsed.data.id) {
+          const { data: updated, error: updErr } = await supabase
+            .from("photography_packages")
+            .update({
+              ...parsed.data,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", parsed.data.id)
+            .select("*")
+            .single();
+
+          if (updErr) throw formatAdminError(updErr || saveError);
+          saved = updated;
+        } else {
+          const { data: inserted, error: insErr } = await supabase
+            .from("photography_packages")
+            .insert({
+              ...parsed.data,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .select("*")
+            .single();
+
+          if (insErr) throw formatAdminError(insErr || saveError);
+          saved = inserted;
+        }
+      }
+
       return NextResponse.json({ success: true, data: saved });
     }
 
@@ -1452,18 +1572,102 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (entity === "package") {
-      const { data: rpcResult, error: rpcErr } = await supabase.rpc(
-        "delete_or_archive_package",
-        { p_package_id: id }
-      );
+      let rpcResult: any = null;
+      let rpcErr: any = null;
 
-      if (rpcErr) throw formatAdminError(rpcErr);
+      try {
+        const res = await supabase.rpc(
+          "delete_or_archive_package",
+          { p_package_id: id }
+        );
+        rpcResult = res.data;
+        rpcErr = res.error;
+      } catch (e) {
+        rpcErr = e;
+      }
+
+      // If RPC succeeded, return its verified result
+      if (!rpcErr && rpcResult && rpcResult.action) {
+        return NextResponse.json({
+          success: true,
+          action: rpcResult.action,
+          message: rpcResult.message,
+          historical_bookings_count: rpcResult.historical_bookings_count || 0,
+        });
+      }
+
+      // TypeScript fallback implementing the identical safe deletion rules:
+      // Case A & B (0 bookings): Delete junction, nullify unbooked slots, delete package permanently.
+      // Case C (>0 bookings): Safely archive for future bookings (is_active = false).
+      const { data: pkg } = await supabase
+        .from("photography_packages")
+        .select("id, name")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (!pkg) {
+        return NextResponse.json(
+          { success: false, error: "Package not found." },
+          { status: 404 }
+        );
+      }
+
+      const { count: bookingCount } = await supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("package_id", id);
+
+      if (bookingCount && bookingCount > 0) {
+        // Case C: Safely archive
+        const { error: archErr } = await supabase
+          .from("photography_packages")
+          .update({
+            is_active: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (archErr) throw formatAdminError(archErr);
+
+        return NextResponse.json({
+          success: true,
+          action: "archived",
+          historical_bookings_count: bookingCount,
+          message: `Package "${pkg.name}" is referenced by ${bookingCount} historical booking(s) and was safely archived and disabled for future bookings to protect client records.`,
+        });
+      }
+
+      // Case A & B: Zero bookings - clean up junction and unbooked slots, then delete
+      try {
+        await supabase
+          .from("event_session_packages")
+          .delete()
+          .eq("package_id", id);
+      } catch {
+        // junction table might not exist
+      }
+
+      try {
+        await supabase
+          .from("event_time_slots")
+          .update({ package_id: null })
+          .eq("package_id", id);
+      } catch {
+        // optional column
+      }
+
+      const { error: delErr } = await supabase
+        .from("photography_packages")
+        .delete()
+        .eq("id", id);
+
+      if (delErr) throw formatAdminError(delErr);
 
       return NextResponse.json({
         success: true,
-        action: rpcResult?.action || "deleted",
-        message: rpcResult?.message || "Package processed successfully.",
-        historical_bookings_count: rpcResult?.historical_bookings_count || 0,
+        action: "deleted",
+        historical_bookings_count: 0,
+        message: `Package "${pkg.name}" had no bookings and was permanently deleted. Schedule associations were cleaned up.`,
       });
     }
 

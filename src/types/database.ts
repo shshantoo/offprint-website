@@ -268,6 +268,7 @@ export interface BookingEvent {
   schedule_overrides?: Array<{ date: string; is_closed?: boolean; start_time?: string; end_time?: string }>;
   related_event_archive_ids?: string[];
   related_event_archives?: EventArchive[];
+  schedule_package_ids?: string[];
   resource_pool: string;
   created_at?: string;
   updated_at?: string;
