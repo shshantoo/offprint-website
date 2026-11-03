@@ -56,6 +56,10 @@ export default function SearchableFolderSelector({
   const expectedPrefix =
     folderType === "event-highlight"
       ? "event-archive-highlights/"
+      : folderType === "portfolio"
+      ? "projects/"
+      : folderType === "product"
+      ? "products/"
       : "event-archives/";
 
   const loadFolders = useCallback(async () => {
@@ -75,6 +79,19 @@ export default function SearchableFolderSelector({
 
   useEffect(() => {
     loadFolders();
+  }, [loadFolders]);
+
+  // Auto-refresh folders on window focus or visibility change (e.g. after adding folders in Supabase Dashboard)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadFolders();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
   }, [loadFolders]);
 
   // Click outside to close dropdown
@@ -252,7 +269,13 @@ export default function SearchableFolderSelector({
       {/* Combobox Trigger */}
       <div className="relative" ref={dropdownRef}>
         <div
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const nextState = !isOpen;
+            setIsOpen(nextState);
+            if (nextState) {
+              loadFolders();
+            }
+          }}
           className={`flex min-h-[46px] w-full cursor-pointer items-center justify-between rounded-xl border bg-[#FAF7F2] px-3.5 py-2 text-xs transition-colors ${
             isOpen
               ? "border-[#3A2008] bg-[#FFFFFF] ring-2 ring-[#3A2008]/15"
@@ -345,7 +368,17 @@ export default function SearchableFolderSelector({
                 </div>
               ) : filteredFolders.length === 0 ? (
                 <div className="py-6 text-center text-xs text-[#877D70]">
-                  <p>No {folderType === "event-highlight" ? "highlight" : "event"} folders found.</p>
+                  <p>
+                    No{" "}
+                    {folderType === "event-highlight"
+                      ? "highlight"
+                      : folderType === "portfolio"
+                      ? "portfolio"
+                      : folderType === "product"
+                      ? "product"
+                      : "event"}{" "}
+                    folders found in {expectedPrefix}.
+                  </p>
                   <button
                     type="button"
                     onClick={(e) => {

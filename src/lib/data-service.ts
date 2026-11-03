@@ -512,107 +512,140 @@ export async function discoverAndReconcileStorageFolders(
   const client = customClient || supabase;
   if (!isSupabaseConfigured() || !client) return [];
 
-  const bucket = "portfolio-media";
-  const typesToScan: Array<{ folderType: MediaFolderType; prefix: string }> = [];
+  // 1. First trigger the PostgreSQL RPC which queries storage.objects directly
+  try {
+    await client.rpc("sync_media_folders_and_photos");
+  } catch (rpcErr) {
+    console.warn("sync_media_folders_and_photos RPC notice:", rpcErr);
+  }
+
+  // 2. Storage API scanner for comprehensive prefix and nested path discovery
+  const typesToScan: Array<{
+    folderType: MediaFolderType;
+    prefix: string;
+    bucket: string;
+  }> = [];
 
   if (!type || type === "event-archive") {
-    typesToScan.push({ folderType: "event-archive", prefix: "event-archives" });
+    typesToScan.push({ folderType: "event-archive", prefix: "event-archives", bucket: "portfolio-media" });
   }
   if (!type || type === "event-highlight") {
-    typesToScan.push({ folderType: "event-highlight", prefix: "event-archive-highlights" });
+    typesToScan.push({ folderType: "event-highlight", prefix: "event-archive-highlights", bucket: "portfolio-media" });
+  }
+  if (!type || type === "portfolio") {
+    typesToScan.push({ folderType: "portfolio", prefix: "projects", bucket: "portfolio-media" });
+    typesToScan.push({ folderType: "portfolio", prefix: "portfolio", bucket: "portfolio-media" });
+  }
+  if (!type || type === "product") {
+    typesToScan.push({ folderType: "product", prefix: "products", bucket: "product-media" });
   }
 
   try {
     for (const scan of typesToScan) {
-      const { data: topItems, error: topErr } = await client.storage
-        .from(bucket)
-        .list(scan.prefix, { limit: 1000, sortBy: { column: "name", order: "asc" } });
+      let offset = 0;
+      const limit = 1000;
+      let hasMore = true;
 
-      if (topErr || !Array.isArray(topItems)) continue;
+      while (hasMore) {
+        const { data: topItems, error: topErr } = await client.storage
+          .from(scan.bucket)
+          .list(scan.prefix, { limit, offset, sortBy: { column: "name", order: "asc" } });
 
-      for (const item of topItems) {
-        // Skip hidden placeholder files at the root of the prefix directory
-        if (!item.name || item.name.startsWith(".")) continue;
-
-        const folderName = item.name;
-        const cleanSlug = folderName
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]/g, "-")
-          .replace(/-+/g, "-");
-        const folderPrefix = `${scan.prefix}/${folderName}/`;
-
-        // Check objects inside this folder
-        const { data: folderFiles } = await client.storage
-          .from(bucket)
-          .list(`${scan.prefix}/${folderName}`, { limit: 1000 });
-
-        // Filter out .emptyFolderPlaceholder and dotfiles from photo count
-        const validPhotos = Array.isArray(folderFiles)
-          ? folderFiles.filter(
-              (f) =>
-                f.name &&
-                !f.name.startsWith(".") &&
-                f.name !== ".emptyFolderPlaceholder"
-            )
-          : [];
-
-        // Check if already registered in media_folders
-        const { data: existingFolder } = await client
-          .from("media_folders")
-          .select("id, name, slug, folder_type, storage_prefix")
-          .or(`slug.eq.${cleanSlug},storage_prefix.eq.${folderPrefix}`)
-          .maybeSingle();
-
-        let folderId: string;
-        if (existingFolder) {
-          folderId = existingFolder.id;
-          if (existingFolder.storage_prefix !== folderPrefix) {
-            await client
-              .from("media_folders")
-              .update({ storage_prefix: folderPrefix, updated_at: new Date().toISOString() })
-              .eq("id", folderId);
-          }
-        } else {
-          // Discovered new physical folder! Auto-register in media_folders
-          const { data: inserted, error: insErr } = await client
-            .from("media_folders")
-            .insert({
-              name: folderName,
-              slug: cleanSlug,
-              folder_type: scan.folderType,
-              storage_prefix: folderPrefix,
-              description: `Discovered from Supabase Storage: ${folderName}`,
-            })
-            .select("id")
-            .single();
-
-          if (insErr || !inserted) continue;
-          folderId = inserted.id;
+        if (topErr || !Array.isArray(topItems) || topItems.length === 0) {
+          hasMore = false;
+          break;
         }
 
-        // Reconcile photographs for discovered or existing folder
-        if (validPhotos.length > 0) {
-          let order = 1;
-          for (const file of validPhotos) {
-            const storagePath = `${scan.prefix}/${folderName}/${file.name}`;
-            const publicUrl = `https://qqklsbbysybzivifnykd.supabase.co/storage/v1/object/public/${bucket}/${encodeURI(storagePath)}`;
+        for (const item of topItems) {
+          // Skip hidden files/placeholders directly at the prefix level
+          if (!item.name || item.name.startsWith(".")) continue;
 
-            await client.from("media_folder_photos").upsert(
-              {
-                folder_id: folderId,
-                storage_path: storagePath,
-                public_url: publicUrl,
-                file_name: file.name,
-                size_bytes: file.metadata?.size || 0,
-                mime_type: file.metadata?.mimetype || "image/jpeg",
-                alt_text: `${folderName} - ${file.name}`,
-                sort_order: order,
-                is_cover: order === 1,
-              },
-              { onConflict: "storage_path" }
-            );
-            order++;
+          const folderName = item.name;
+          const cleanSlug = folderName
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]/g, "-")
+            .replace(/-+/g, "-");
+          const folderPrefix = scan.prefix ? `${scan.prefix}/${folderName}/` : `${folderName}/`;
+
+          // Check objects inside this folder
+          const { data: folderFiles } = await client.storage
+            .from(scan.bucket)
+            .list(scan.prefix ? `${scan.prefix}/${folderName}` : folderName, { limit: 1000 });
+
+          // Filter out .emptyFolderPlaceholder and dotfiles from photo count
+          const validPhotos = Array.isArray(folderFiles)
+            ? folderFiles.filter(
+                (f) =>
+                  f.name &&
+                  !f.name.startsWith(".") &&
+                  f.name !== ".emptyFolderPlaceholder"
+              )
+            : [];
+
+          // Check if already registered in media_folders
+          const { data: existingFolder } = await client
+            .from("media_folders")
+            .select("id, name, slug, folder_type, storage_prefix")
+            .or(`slug.eq.${cleanSlug},storage_prefix.eq.${folderPrefix}`)
+            .maybeSingle();
+
+          let folderId: string;
+          if (existingFolder) {
+            folderId = existingFolder.id;
+            if (existingFolder.storage_prefix !== folderPrefix) {
+              await client
+                .from("media_folders")
+                .update({ storage_prefix: folderPrefix, updated_at: new Date().toISOString() })
+                .eq("id", folderId);
+            }
+          } else {
+            // Discovered new physical folder! Auto-register in media_folders
+            const { data: inserted, error: insErr } = await client
+              .from("media_folders")
+              .insert({
+                name: folderName,
+                slug: cleanSlug,
+                folder_type: scan.folderType,
+                storage_prefix: folderPrefix,
+                description: `Discovered from Supabase Storage: ${folderName}`,
+              })
+              .select("id")
+              .single();
+
+            if (insErr || !inserted) continue;
+            folderId = inserted.id;
           }
+
+          // Reconcile photographs for discovered or existing folder
+          if (validPhotos.length > 0) {
+            let order = 1;
+            for (const file of validPhotos) {
+              const storagePath = scan.prefix ? `${scan.prefix}/${folderName}/${file.name}` : `${folderName}/${file.name}`;
+              const publicUrl = `https://qqklsbbysybzivifnykd.supabase.co/storage/v1/object/public/${scan.bucket}/${encodeURI(storagePath)}`;
+
+              await client.from("media_folder_photos").upsert(
+                {
+                  folder_id: folderId,
+                  storage_path: storagePath,
+                  public_url: publicUrl,
+                  file_name: file.name,
+                  size_bytes: file.metadata?.size || 0,
+                  mime_type: file.metadata?.mimetype || "image/jpeg",
+                  alt_text: `${folderName} - ${file.name}`,
+                  sort_order: order,
+                  is_cover: order === 1,
+                },
+                { onConflict: "storage_path" }
+              );
+              order++;
+            }
+          }
+        }
+
+        if (topItems.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
         }
       }
     }
@@ -642,6 +675,10 @@ export async function saveMediaFolder(
   const cleanSlug = folder.slug.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-");
   const prefix = folder.folder_type === "event-highlight"
     ? `event-archive-highlights/${cleanSlug}/`
+    : folder.folder_type === "portfolio"
+    ? `projects/${cleanSlug}/`
+    : folder.folder_type === "product"
+    ? `products/${cleanSlug}/`
     : `event-archives/${cleanSlug}/`;
 
   const payload = {

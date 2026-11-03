@@ -713,6 +713,81 @@ export default function ClientPortalClient() {
                     )}
                   </div>
 
+                  {/* Payment & Financial Accounting Summary */}
+                  <div className="pt-2 border-t border-[#E5DEC9] space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-mono text-[#877D70] uppercase">
+                        Billing &amp; Payment
+                      </span>
+                      <span className="font-mono font-bold text-[#3A2008]">
+                        ৳{((b.total_price != null ? b.total_price : b.package_base_price) || 0).toLocaleString()} BDT
+                      </span>
+                    </div>
+
+                    {b.payment_status === "paid" ? (
+                      <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs flex items-center justify-between text-emerald-900">
+                        <div>
+                          <span className="font-semibold block">
+                            Paid in Full {b.payment_method === "bkash" ? "(bKash)" : "(Cash)"}
+                          </span>
+                          {b.payment_reference && (
+                            <span className="text-[10px] font-mono text-[#5C5449]">
+                              TrxID: {b.payment_reference}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                          Settled
+                        </span>
+                      </div>
+                    ) : b.payment_method === "bkash" ? (
+                      b.is_partial_advance || b.payment_status === "partially_paid" || b.payment_status === "advance_pending" ? (
+                        <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-xs space-y-1">
+                          <div className="flex items-center justify-between font-semibold text-amber-900">
+                            <span>Partially Paid — Remaining Balance:</span>
+                            <span className="font-mono font-bold text-[#A66D35]">
+                              ৳{(b.balance_amount != null ? b.balance_amount : ((b.total_price || 0) - (b.advance_amount || 0))).toLocaleString()} BDT
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-[#5C5449] font-mono">
+                            <span>Advance Paid: ৳{(b.advance_amount || b.amount_paid || 0).toLocaleString()} BDT</span>
+                            {b.payment_reference && <span>TrxID: {b.payment_reference}</span>}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs flex items-center justify-between text-emerald-900">
+                          <div>
+                            <span className="font-semibold block">
+                              bKash Payment Submitted
+                            </span>
+                            {b.payment_reference && (
+                              <span className="text-[10px] font-mono text-[#5C5449]">
+                                TrxID: {b.payment_reference}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                            Pending Verification
+                          </span>
+                        </div>
+                      )
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] text-xs flex items-center justify-between text-[#5C5449]">
+                        <div>
+                          <span className="font-semibold text-[#141210] block">
+                            {b.payment_status === "paid" ? "Paid in Full (Cash)" : "Cash on Arrival"}
+                          </span>
+                          <span className="text-[10px] text-[#877D70]">
+                            {b.payment_status === "paid" ? "Payment received" : "Pay at venue on session date"}
+                          </span>
+                        </div>
+                        <span className="font-mono font-bold text-[#3A2008]">
+                          {b.payment_status === "paid" ? "Settled" : `৳${((b.balance_amount != null ? b.balance_amount : b.total_price) || 0).toLocaleString()} Due`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Production Workflow Stage Tracker */}
                   {b.status !== "cancelled" && (
                     <div className="pt-2 border-t border-[#E5DEC9] space-y-1.5">

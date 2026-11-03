@@ -481,6 +481,17 @@ export interface Booking {
   frame_total_price?: number;
   total_price?: number;
   pricing_snapshot?: BookingPricingSnapshot;
+  payment_method?: 'cash' | 'bkash' | string | null;
+  payment_reference?: string | null;
+  is_partial_advance?: boolean | null;
+  advance_amount?: number | null;
+  amount_paid?: number | null;
+  balance_amount?: number | null;
+  payment_status?: 'unpaid' | 'pending_verification' | 'advance_pending' | 'partially_paid' | 'paid' | 'rejected' | string | null;
+  payment_submitted_at?: string | null;
+  payment_verified_at?: string | null;
+  payment_verified_by?: string | null;
+  payment_rejection_reason?: string | null;
   calendar_sync_status: CalendarSyncStatus;
   google_calendar_event_id?: string | null;
   google_calendar_id?: string | null;
@@ -700,7 +711,7 @@ export interface HomepageConfig {
 // WORK ARCHIVE, SUPABASE MEDIA FOLDERS & EVENT HIGHLIGHTS
 // =============================================================================
 
-export type MediaFolderType = 'event-archive' | 'event-highlight';
+export type MediaFolderType = 'event-archive' | 'event-highlight' | 'portfolio' | 'product';
 
 export interface MediaFolder {
   id: string;

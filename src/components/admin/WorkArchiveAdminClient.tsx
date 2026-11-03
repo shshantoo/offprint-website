@@ -1149,6 +1149,20 @@ export default function WorkArchiveAdminClient() {
               >
                 Highlights (event-archive-highlights/)
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFolderTabType("portfolio");
+                  setActiveFolderForPhotos(null);
+                }}
+                className={`rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                  folderTabType === "portfolio"
+                    ? "bg-[#3A2008] text-[#FAF7F2] shadow-2xs"
+                    : "text-[#5C5449] hover:text-[#141210]"
+                }`}
+              >
+                Portfolio (projects/)
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -1982,7 +1996,7 @@ export default function WorkArchiveAdminClient() {
           <div className="w-full max-w-md rounded-3xl border border-[#E5DEC9] bg-[#FFFFFF] p-6 shadow-2xl text-[#141210]">
             <h3 className="text-base font-bold text-[#141210] mb-4 flex items-center gap-2 border-b border-[#E5DEC9] pb-3">
               <FolderPlus className="h-5 w-5 text-[#A66D35]" />
-              <span>Create {folderTabType === "event-highlight" ? "Highlight" : "Event"} Folder</span>
+              <span>Create {folderTabType === "portfolio" ? "Portfolio" : folderTabType === "event-highlight" ? "Highlight" : "Event"} Folder</span>
             </h3>
 
             <form onSubmit={handleCreateFolder} className="space-y-4">
@@ -2017,7 +2031,9 @@ export default function WorkArchiveAdminClient() {
               <div className="rounded-xl bg-[#FAF7F2] border border-[#E5DEC9] p-3 text-[11px] font-mono text-[#5C5449]">
                 Storage Prefix:{" "}
                 <span className="text-[#3A2008] font-bold">
-                  {folderTabType === "event-highlight"
+                  {folderTabType === "portfolio"
+                    ? "projects/"
+                    : folderTabType === "event-highlight"
                     ? "event-archive-highlights/"
                     : "event-archives/"}
                   &lt;folder-slug&gt;/

@@ -1906,8 +1906,41 @@ export default function AdminPortalClient() {
                           )}
                         </td>
 
-                        <td className="py-3.5 px-4 font-mono font-bold text-[#3A2008]">
-                          ৳{((b.total_price != null ? b.total_price : b.package_base_price) || 0).toLocaleString()}
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-[#3A2008]">
+                            ৳{((b.total_price != null ? b.total_price : b.package_base_price) || 0).toLocaleString()}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#FAF7F2] border border-[#E5DEC9] text-[#5C5449]">
+                              {b.payment_method === "bkash" ? "bKash" : "Cash"}
+                            </span>
+                            {b.payment_status === "paid" ? (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                Paid
+                              </span>
+                            ) : b.payment_status === "partially_paid" ? (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                                Partial (Bal: ৳{(b.balance_amount || 0).toLocaleString()})
+                              </span>
+                            ) : b.payment_status === "advance_pending" ? (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                                Adv Pending
+                              </span>
+                            ) : b.payment_status === "pending_verification" ? (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-50 text-orange-800 border border-orange-200">
+                                Verify Trx
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#FAF7F2] text-[#877D70] border border-[#E5DEC9]">
+                                Unpaid
+                              </span>
+                            )}
+                          </div>
+                          {b.payment_reference && (
+                            <div className="text-[9px] font-mono text-[#877D70] mt-0.5 truncate max-w-[120px]">
+                              Trx: {b.payment_reference}
+                            </div>
+                          )}
                         </td>
 
                         <td className="py-3.5 px-4">
@@ -3415,6 +3448,135 @@ export default function AdminPortalClient() {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Dedicated Payment & Billing Verification Card */}
+                <div className="rounded-2xl border border-[#E5DEC9] bg-[#FAF7F2] p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5DEC9] pb-3">
+                    <div>
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-[#A66D35]">
+                        Billing &amp; Payment Ledger
+                      </span>
+                      <h3 className="font-bold text-sm text-[#141210] flex items-center gap-2">
+                        <span>Payment Status:</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold uppercase ${
+                          inspectedBooking.payment_status === "paid"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : inspectedBooking.payment_status === "partially_paid"
+                            ? "bg-amber-100 text-amber-800"
+                            : inspectedBooking.payment_status === "advance_pending"
+                            ? "bg-blue-100 text-blue-800"
+                            : inspectedBooking.payment_status === "pending_verification"
+                            ? "bg-orange-100 text-orange-800"
+                            : inspectedBooking.payment_status === "rejected"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-[#FFFFFF] text-[#5C5449] border border-[#E5DEC9]"
+                        }`}>
+                          {inspectedBooking.payment_status || "unpaid"}
+                        </span>
+                      </h3>
+                    </div>
+
+                    {/* Quick Verification Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {inspectedBooking.payment_status !== "paid" && (
+                        <button
+                          type="button"
+                          onClick={() => handleBookingAdminAction({ action: "verify_payment" })}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-2xs transition-colors"
+                          title="Verify payment and update status"
+                        >
+                          Verify Payment
+                        </button>
+                      )}
+                      {inspectedBooking.payment_status !== "paid" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const totalVal = inspectedBooking.total_price != null ? inspectedBooking.total_price : (inspectedBooking.package_base_price || 0);
+                            handleBookingAdminAction({
+                              action: "update_details",
+                              payment_status: "paid",
+                              amount_paid: totalVal,
+                              balance_amount: 0,
+                            });
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-white text-xs font-semibold shadow-2xs transition-colors"
+                          title="Mark total as fully paid"
+                        >
+                          Mark Paid in Full
+                        </button>
+                      )}
+                      {inspectedBooking.payment_status !== "rejected" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const reason = prompt("Enter payment rejection or dispute reason:", "Payment reference not found or invalid amount");
+                            if (reason) {
+                              handleBookingAdminAction({ action: "reject_payment", reason });
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-semibold transition-colors"
+                          title="Reject payment reference"
+                        >
+                          Reject
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9]">
+                      <span className="text-[10px] font-mono uppercase text-[#877D70] block">Payment Method</span>
+                      <span className="font-bold text-[#141210] uppercase font-mono mt-0.5 block">
+                        {inspectedBooking.payment_method || "cash"}
+                      </span>
+                      {inspectedBooking.is_partial_advance && (
+                        <span className="text-[10px] text-amber-700 font-semibold">Partial Advance Mode</span>
+                      )}
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9]">
+                      <span className="text-[10px] font-mono uppercase text-[#877D70] block">bKash TrxID / Ref</span>
+                      <span className="font-mono font-bold text-[#141210] mt-0.5 block truncate">
+                        {inspectedBooking.payment_reference || "— (None)"}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9]">
+                      <span className="text-[10px] font-mono uppercase text-[#877D70] block">Amount Paid / Advance</span>
+                      <span className="font-mono font-bold text-emerald-800 mt-0.5 block text-sm">
+                        ৳{(inspectedBooking.amount_paid || inspectedBooking.advance_amount || 0).toLocaleString()} BDT
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9]">
+                      <span className="text-[10px] font-mono uppercase text-[#877D70] block">Remaining Balance</span>
+                      <span className="font-mono font-bold text-[#A66D35] mt-0.5 block text-sm">
+                        ৳{(inspectedBooking.balance_amount != null
+                          ? inspectedBooking.balance_amount
+                          : inspectedBooking.payment_method === "cash"
+                          ? (inspectedBooking.total_price || inspectedBooking.package_base_price || 0)
+                          : 0).toLocaleString()} BDT
+                      </span>
+                    </div>
+                  </div>
+
+                  {inspectedBooking.payment_verified_at && (
+                    <div className="text-[11px] font-mono text-[#5C5449] flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                      <span>Verified: {formatDhakaDateTime(inspectedBooking.payment_verified_at)}</span>
+                      {inspectedBooking.payment_verified_by && (
+                        <span>by {inspectedBooking.payment_verified_by}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {inspectedBooking.payment_rejection_reason && (
+                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800">
+                      <strong>Rejection note:</strong> {inspectedBooking.payment_rejection_reason}
+                    </div>
+                  )}
                 </div>
 
                 {/* Session Duration, Package & Extra Frames Modifier */}

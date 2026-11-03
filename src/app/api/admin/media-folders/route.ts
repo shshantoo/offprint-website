@@ -50,7 +50,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Folder name is required." }, { status: 400 });
     }
 
-    const type: MediaFolderType = folder_type === "event-highlight" ? "event-highlight" : "event-archive";
+    const type: MediaFolderType =
+      folder_type === "event-highlight"
+        ? "event-highlight"
+        : folder_type === "portfolio"
+        ? "portfolio"
+        : folder_type === "product"
+        ? "product"
+        : "event-archive";
     const cleanSlug = (slug || name)
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, "-")

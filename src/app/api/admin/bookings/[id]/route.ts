@@ -234,6 +234,76 @@ export async function PATCH(
       return NextResponse.json({ success: true, data: updated });
     }
 
+    if (action === "verify_payment") {
+      const isPartial = Boolean(
+        existing.is_partial_advance &&
+        existing.advance_amount &&
+        existing.advance_amount < (existing.total_price || 0)
+      );
+      const newPaymentStatus = isPartial ? "partially_paid" : "paid";
+      const now = new Date().toISOString();
+
+      const { data: updated, error: updErr } = await supabase
+        .from("bookings")
+        .update({
+          payment_status: newPaymentStatus,
+          payment_verified_at: now,
+          payment_verified_by: auth.context.user.email || auth.context.user.id,
+          updated_at: now,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (updErr) throw parseDatabaseBookingError(updErr);
+
+      await supabase.from("booking_status_history").insert({
+        booking_id: id,
+        previous_status: existing.status,
+        new_status: updated.status,
+        action: `payment_verified_${newPaymentStatus}`,
+        previous_start_at: existing.start_at,
+        new_start_at: updated.start_at,
+        actor_id: auth.context.user.id,
+        actor_role: "admin",
+        reason: `Payment verified by administrator as ${newPaymentStatus}`,
+      });
+
+      return NextResponse.json({ success: true, data: updated });
+    }
+
+    if (action === "reject_payment") {
+      const reason = String(body.reason || "Payment reference verification failed");
+      const now = new Date().toISOString();
+
+      const { data: updated, error: updErr } = await supabase
+        .from("bookings")
+        .update({
+          payment_status: "rejected",
+          payment_rejection_reason: reason,
+          updated_at: now,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (updErr) throw parseDatabaseBookingError(updErr);
+
+      await supabase.from("booking_status_history").insert({
+        booking_id: id,
+        previous_status: existing.status,
+        new_status: updated.status,
+        action: "payment_rejected",
+        previous_start_at: existing.start_at,
+        new_start_at: updated.start_at,
+        actor_id: auth.context.user.id,
+        actor_role: "admin",
+        reason,
+      });
+
+      return NextResponse.json({ success: true, data: updated });
+    }
+
     if (action === "update_details" || action === "update_package_and_pricing") {
       const updates: Record<string, any> = {
         updated_at: new Date().toISOString(),
@@ -262,6 +332,16 @@ export async function PATCH(
       if (body.frame_total_price !== undefined) updates.frame_total_price = Number(body.frame_total_price) || 0;
       if (body.total_price !== undefined) updates.total_price = Number(body.total_price) || 0;
       if (body.pricing_snapshot !== undefined) updates.pricing_snapshot = body.pricing_snapshot;
+      if (body.payment_method !== undefined) updates.payment_method = body.payment_method;
+      if (body.payment_reference !== undefined) updates.payment_reference = body.payment_reference;
+      if (body.is_partial_advance !== undefined) updates.is_partial_advance = Boolean(body.is_partial_advance);
+      if (body.advance_amount !== undefined) updates.advance_amount = body.advance_amount != null ? Number(body.advance_amount) : null;
+      if (body.amount_paid !== undefined) updates.amount_paid = Number(body.amount_paid) || 0;
+      if (body.balance_amount !== undefined) updates.balance_amount = body.balance_amount != null ? Number(body.balance_amount) : null;
+      if (body.payment_status !== undefined) updates.payment_status = body.payment_status;
+      if (body.payment_verified_at !== undefined) updates.payment_verified_at = body.payment_verified_at;
+      if (body.payment_verified_by !== undefined) updates.payment_verified_by = body.payment_verified_by;
+      if (body.payment_rejection_reason !== undefined) updates.payment_rejection_reason = body.payment_rejection_reason;
 
       // Handle duration modification with conflict verification
       if (body.duration_mins !== undefined && Number(body.duration_mins) > 0) {

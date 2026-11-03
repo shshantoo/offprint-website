@@ -347,6 +347,10 @@ export const createBookingSchema = z
     frame_printing_selected: z.boolean().optional().default(false),
     frame_type_id: z.string().trim().optional().nullable(),
     frame_quantity: z.coerce.number().int().min(0).max(20).optional().default(0),
+    payment_method: z.string().trim().optional().default("cash"),
+    payment_reference: z.string().trim().optional().nullable(),
+    is_partial_advance: z.boolean().optional().default(false),
+    advance_amount: z.coerce.number().optional().nullable(),
   })
   .superRefine((val, ctx) => {
     if (!val.client_email && !val.client_phone) {
@@ -355,6 +359,23 @@ export const createBookingSchema = z
         path: ["client_email"],
         message: "Please provide at least one contact method (email or phone) for your booking confirmation",
       });
+    }
+
+    if (val.payment_method === "bkash") {
+      if (!val.payment_reference || val.payment_reference.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["payment_reference"],
+          message: "bKash Transaction ID / Payment Reference is required",
+        });
+      }
+      if (val.is_partial_advance && (val.advance_amount == null || val.advance_amount <= 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["advance_amount"],
+          message: "Advance amount must be greater than 0",
+        });
+      }
     }
 
     if (val.booking_type === "convocation" || val.booking_type === "special") {
@@ -430,6 +451,10 @@ export const createMultiBookingSchema = z
     frame_printing_selected: z.boolean().optional().default(false),
     frame_type_id: z.string().trim().optional().nullable(),
     frame_quantity: z.coerce.number().int().min(0).max(20).optional().default(0),
+    payment_method: z.string().trim().optional().default("cash"),
+    payment_reference: z.string().trim().optional().nullable(),
+    is_partial_advance: z.boolean().optional().default(false),
+    advance_amount: z.coerce.number().optional().nullable(),
   })
   .superRefine((val, ctx) => {
     if (!val.client_email && !val.client_phone) {
@@ -438,6 +463,23 @@ export const createMultiBookingSchema = z
         path: ["client_email"],
         message: "Please provide at least one contact method (email or phone) for your booking confirmation",
       });
+    }
+
+    if (val.payment_method === "bkash") {
+      if (!val.payment_reference || val.payment_reference.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["payment_reference"],
+          message: "bKash Transaction ID / Payment Reference is required",
+        });
+      }
+      if (val.is_partial_advance && (val.advance_amount == null || val.advance_amount <= 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["advance_amount"],
+          message: "Advance amount must be greater than 0",
+        });
+      }
     }
 
     val.items.forEach((item, index) => {
@@ -1004,5 +1046,86 @@ export function calculateAndVerifyMultiBookingPrice(params: {
     total_price: grandTotal,
     currency,
     pricing_snapshot: snapshot,
+  };
+}
+
+// =============================================================================
+// SERVER-TRUSTED PAYMENT & ADVANCE ACCOUNTING
+// =============================================================================
+
+export interface VerifiedPaymentAccounting {
+  payment_method: "cash" | "bkash";
+  payment_reference: string | null;
+  is_partial_advance: boolean;
+  advance_amount: number | null;
+  amount_paid: number;
+  balance_amount: number;
+  payment_status: "unpaid" | "pending_verification" | "advance_pending" | "partially_paid" | "paid";
+  payment_submitted_at: string;
+}
+
+export function calculateAndVerifyPaymentAccounting(params: {
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  isPartialAdvance?: boolean | null;
+  advanceAmount?: number | null;
+  authoritativeTotalPrice: number;
+}): VerifiedPaymentAccounting {
+  const method = (params.paymentMethod || "cash").toLowerCase() === "bkash" ? "bkash" : "cash";
+  const now = new Date().toISOString();
+  const total = Math.max(0, Number(params.authoritativeTotalPrice) || 0);
+
+  if (method === "cash") {
+    return {
+      payment_method: "cash",
+      payment_reference: null,
+      is_partial_advance: false,
+      advance_amount: null,
+      amount_paid: 0,
+      balance_amount: total,
+      payment_status: "unpaid",
+      payment_submitted_at: now,
+    };
+  }
+
+  // method === "bkash"
+  const ref = (params.paymentReference || "").trim();
+  if (!ref) {
+    throw new Error("bKash Transaction ID / Payment Reference is required.");
+  }
+
+  const isPartial = Boolean(params.isPartialAdvance);
+  if (isPartial) {
+    const adv = Number(params.advanceAmount);
+    if (isNaN(adv) || adv <= 0) {
+      throw new Error("Advance amount must be greater than 0.");
+    }
+    if (adv >= total) {
+      throw new Error(
+        `Advance amount must be less than the total booking amount (BDT ${total.toLocaleString()}). To pay in full, uncheck partial advance.`
+      );
+    }
+
+    return {
+      payment_method: "bkash",
+      payment_reference: ref,
+      is_partial_advance: true,
+      advance_amount: adv,
+      amount_paid: adv,
+      balance_amount: Math.max(0, total - adv),
+      payment_status: "advance_pending",
+      payment_submitted_at: now,
+    };
+  }
+
+  return {
+    payment_method: "bkash",
+    payment_reference: ref,
+    is_partial_advance: false,
+    advance_amount: null,
+    amount_paid: total,
+    balance_amount: 0,
+    payment_status: "pending_verification",
+    payment_submitted_at: now,
   };
 }

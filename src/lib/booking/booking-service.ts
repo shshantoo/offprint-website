@@ -18,6 +18,7 @@ import {
   validateCustomFieldsAgainstQuestions,
   calculateAndVerifyBookingPrice,
   calculateAndVerifyMultiBookingPrice,
+  calculateAndVerifyPaymentAccounting,
 } from "@/lib/validations";
 import { createSupabasePrivilegedClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMissingSchemaError } from "@/lib/supabase/auth-helpers";
@@ -745,6 +746,14 @@ export async function executeCreateBookingWorkflow(params: {
     frameQuantity: input.frame_quantity,
   });
 
+  const paymentAccounting = calculateAndVerifyPaymentAccounting({
+    paymentMethod: input.payment_method,
+    paymentReference: input.payment_reference,
+    isPartialAdvance: input.is_partial_advance,
+    advanceAmount: input.advance_amount,
+    authoritativeTotalPrice: verifiedPricing.total_price,
+  });
+
   const effectiveDuration = selectedPkg?.duration_mins || input.duration_mins || 30;
 
   // If a hold_id was provided, verify it has not expired and matches package prior to booking commitment
@@ -828,6 +837,27 @@ export async function executeCreateBookingWorkflow(params: {
   }
 
   const booking = createdRow as Booking;
+
+  // Persist authoritative payment details and advance accounting
+  try {
+    await supabase
+      .from("bookings")
+      .update({
+        payment_method: paymentAccounting.payment_method,
+        payment_reference: paymentAccounting.payment_reference,
+        is_partial_advance: paymentAccounting.is_partial_advance,
+        advance_amount: paymentAccounting.advance_amount,
+        amount_paid: paymentAccounting.amount_paid,
+        balance_amount: paymentAccounting.balance_amount,
+        payment_status: paymentAccounting.payment_status,
+        payment_submitted_at: paymentAccounting.payment_submitted_at,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", booking.id);
+    Object.assign(booking, paymentAccounting);
+  } catch (payErr) {
+    console.warn("Payment accounting update warning:", payErr);
+  }
 
   // Atomically mark any associated temporary slot hold as consumed
   if (input.hold_id) {
@@ -1062,13 +1092,22 @@ export async function executeCreateMultiBookingWorkflow(params: {
     frameQuantity: input.frame_quantity,
   });
 
-  // 6. Generate stable group identity
+  // 6. Calculate authoritative group payment accounting
+  const groupPaymentAccounting = calculateAndVerifyPaymentAccounting({
+    paymentMethod: input.payment_method,
+    paymentReference: input.payment_reference,
+    isPartialAdvance: input.is_partial_advance,
+    advanceAmount: input.advance_amount,
+    authoritativeTotalPrice: multiPricing.total_price,
+  });
+
+  // 7. Generate stable group identity
   const yearStr = new Date().getFullYear().toString();
   const randSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
   const groupRef = `OFP-${yearStr}-G${randSuffix}`;
   const groupId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `group_${Date.now()}`;
 
-  // 7. Atomically create all individual booking records
+  // 8. Atomically create all individual booking records
   const confirmedBookings: Booking[] = [];
   const holdsToConsume: string[] = [];
 
@@ -1132,7 +1171,29 @@ export async function executeCreateMultiBookingWorkflow(params: {
 
     const createdBooking = createdRow as Booking;
 
-    // Attach group metadata to the created booking record
+    const itemPaymentFields = isPrimary
+      ? {
+          payment_method: groupPaymentAccounting.payment_method,
+          payment_reference: groupPaymentAccounting.payment_reference,
+          is_partial_advance: groupPaymentAccounting.is_partial_advance,
+          advance_amount: groupPaymentAccounting.advance_amount,
+          amount_paid: groupPaymentAccounting.amount_paid,
+          balance_amount: groupPaymentAccounting.balance_amount,
+          payment_status: groupPaymentAccounting.payment_status,
+          payment_submitted_at: groupPaymentAccounting.payment_submitted_at,
+        }
+      : {
+          payment_method: groupPaymentAccounting.payment_method,
+          payment_reference: null,
+          is_partial_advance: false,
+          advance_amount: null,
+          amount_paid: 0,
+          balance_amount: 0,
+          payment_status: groupPaymentAccounting.payment_status,
+          payment_submitted_at: groupPaymentAccounting.payment_submitted_at,
+        };
+
+    // Attach group metadata & payment accounting to the created booking record
     await supabase
       .from("bookings")
       .update({
@@ -1140,6 +1201,7 @@ export async function executeCreateMultiBookingWorkflow(params: {
         booking_group_ref: groupRef,
         group_total_amount: multiPricing.total_price,
         is_primary_group_item: isPrimary,
+        ...itemPaymentFields,
         updated_at: new Date().toISOString(),
       })
       .eq("id", createdBooking.id);
@@ -1150,6 +1212,7 @@ export async function executeCreateMultiBookingWorkflow(params: {
       booking_group_ref: groupRef,
       group_total_amount: multiPricing.total_price,
       is_primary_group_item: isPrimary,
+      ...itemPaymentFields,
     });
 
     if (item.hold_id) {

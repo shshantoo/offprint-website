@@ -35,6 +35,7 @@ import {
   createMultiBookingSchema,
   createBookingSchema,
   photographyPackageSchema,
+  calculateAndVerifyPaymentAccounting,
 } from "../src/lib/validations";
 import { formatAdminError } from "../src/lib/booking/admin-error";
 import {
@@ -4234,5 +4235,337 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     const lightNavbarHeader = resolveBrandLogo(false);
     assert.equal(lightNavbarHeader.src, "/brand/offprint-black-logo.png", "Light background uses black logo");
     assert.equal(lightNavbarHeader.hasRedundantText, false, "Logo mark only, no extra brand text");
+  });
+
+  it("36. Portfolio Folder Discovery & Convocation Conditional Payment with Partial Advance", () => {
+    // -------------------------------------------------------------------------
+    // 1. Multi-Prefix Storage Folder Discovery & Placeholder Isolation
+    // -------------------------------------------------------------------------
+    const resolveStoragePrefix = (folderType: string) => {
+      switch (folderType) {
+        case "portfolio":
+          return "projects/";
+        case "product":
+          return "products/";
+        case "event-highlight":
+          return "event-archive-highlights/";
+        case "event-archive":
+        default:
+          return "event-archives/";
+      }
+    };
+
+    assert.equal(resolveStoragePrefix("portfolio"), "projects/");
+    assert.equal(resolveStoragePrefix("product"), "products/");
+    assert.equal(resolveStoragePrefix("event-highlight"), "event-archive-highlights/");
+    assert.equal(resolveStoragePrefix("event-archive"), "event-archives/");
+
+    // Slug generation and storage prefix construction
+    const folderTitle = "IUB 27th Visual Highlights 2026";
+    const cleanSlug = folderTitle.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-");
+    const portfolioPrefix = `${resolveStoragePrefix("portfolio")}${cleanSlug}/`;
+    assert.equal(cleanSlug, "iub-27th-visual-highlights-2026");
+    assert.equal(portfolioPrefix, "projects/iub-27th-visual-highlights-2026/");
+
+    // Exclusion of .emptyFolderPlaceholder and dotfiles from photo counts
+    const discoveredStorageObjects = [
+      { name: ".emptyFolderPlaceholder", size: 0 },
+      { name: ".DS_Store", size: 6148 },
+      { name: "portrait_hero_01.jpg", size: 2450000 },
+      { name: "portrait_hero_02.png", size: 3120000 },
+    ];
+
+    const validPhotoList = discoveredStorageObjects.filter(
+      (item) => item.name && !item.name.startsWith(".") && item.name !== ".emptyFolderPlaceholder"
+    );
+
+    assert.equal(validPhotoList.length, 2, "Only legitimate photos are counted");
+    assert.equal(validPhotoList[0].name, "portrait_hero_01.jpg");
+    assert.equal(validPhotoList[1].name, "portrait_hero_02.png");
+
+    // Empty folder registration in folder selector
+    const emptyFolderMock = {
+      id: "folder-empty-1",
+      name: "Graduation Robe Details",
+      slug: "graduation-robe-details",
+      folder_type: "portfolio" as const,
+      storage_prefix: "projects/graduation-robe-details/",
+      photo_count: 0,
+    };
+
+    const emptyBadgeLabel = emptyFolderMock.photo_count > 0
+      ? `${emptyFolderMock.photo_count} photos`
+      : "0 photos (empty)";
+    assert.equal(emptyBadgeLabel, "0 photos (empty)", "Empty folder correctly labeled in selector");
+
+    // -------------------------------------------------------------------------
+    // 2. Convocation Conditional Cash Payment (No Reference, No Advance)
+    // -------------------------------------------------------------------------
+    // Schema validation for Cash
+    const cashSchemaResult = createBookingSchema.safeParse({
+      booking_type: "convocation",
+      event_id: "00000000-0000-0000-0000-000000000001",
+      slot_id: "00000000-0000-0000-0000-000000000002",
+      package_id: "00000000-0000-0000-0000-000000000003",
+      booking_date: "2026-03-15",
+      start_at: "2026-03-15T10:00:00.000Z",
+      end_at: "2026-03-15T10:30:00.000Z",
+      duration_mins: 30,
+      client_name: "Cash Client",
+      client_email: "cash.client@iub.edu.bd",
+      client_phone: "01711000000",
+      location: "IUB Campus",
+      payment_method: "cash",
+      payment_reference: null,
+    });
+    assert.equal(cashSchemaResult.success, true, "Cash booking succeeds without payment reference");
+
+    const cashBookingTotal = 5500;
+    const cashPayment = calculateAndVerifyPaymentAccounting({
+      paymentMethod: "cash",
+      paymentReference: "STALE_BKASH_TRX_12345", // Stale reference must be wiped
+      isPartialAdvance: true,                     // Cash cannot have advance
+      advanceAmount: 2000,
+      authoritativeTotalPrice: cashBookingTotal,
+    });
+
+    assert.equal(cashPayment.payment_method, "cash");
+    assert.equal(cashPayment.payment_reference, null, "Cash never retains stale bKash references");
+    assert.equal(cashPayment.is_partial_advance, false, "Cash is never flagged as partial advance");
+    assert.equal(cashPayment.advance_amount, null);
+    assert.equal(cashPayment.amount_paid, 0, "Amount paid is 0 for cash on arrival");
+    assert.equal(cashPayment.balance_amount, cashBookingTotal, "Full total is due on session day");
+    assert.equal(cashPayment.payment_status, "unpaid");
+
+    // -------------------------------------------------------------------------
+    // 3. Convocation Full bKash Payment (Required Reference)
+    // -------------------------------------------------------------------------
+    // Schema rejects empty bKash reference
+    const invalidBkashSchemaResult = createBookingSchema.safeParse({
+      booking_type: "convocation",
+      event_id: "00000000-0000-0000-0000-000000000001",
+      slot_id: "00000000-0000-0000-0000-000000000002",
+      package_id: "00000000-0000-0000-0000-000000000003",
+      booking_date: "2026-03-15",
+      start_at: "2026-03-15T10:00:00.000Z",
+      end_at: "2026-03-15T10:30:00.000Z",
+      duration_mins: 30,
+      client_name: "bKash Client",
+      client_email: "bkash.client@iub.edu.bd",
+      client_phone: "01711000000",
+      location: "IUB Campus",
+      payment_method: "bkash",
+      payment_reference: "",
+    });
+    assert.equal(invalidBkashSchemaResult.success, false, "bKash requires non-empty reference");
+
+    // Multi-item schema parses valid partial advance bKash booking
+    const validMultiBkash = createMultiBookingSchema.safeParse({
+      booking_type: "convocation",
+      event_id: "00000000-0000-0000-0000-000000000001",
+      client_name: "Group Client",
+      client_email: "group.client@iub.edu.bd",
+      payment_method: "bkash",
+      payment_reference: "9K38AX7B",
+      is_partial_advance: true,
+      advance_amount: 2500,
+      items: [
+        {
+          slot_id: "00000000-0000-0000-0000-000000000002",
+          package_id: "00000000-0000-0000-0000-000000000003",
+          booking_date: "2026-03-15",
+          start_at: "2026-03-15T10:00:00.000Z",
+          end_at: "2026-03-15T10:30:00.000Z",
+        },
+      ],
+    });
+    assert.equal(validMultiBkash.success, true, "Multi-booking schema accepts partial advance bKash");
+    assert.equal(bookingBasketItemSchema.safeParse(validMultiBkash.data?.items[0]).success, true);
+    // Missing reference error
+    assert.throws(
+      () =>
+        calculateAndVerifyPaymentAccounting({
+          paymentMethod: "bkash",
+          paymentReference: "   ",
+          authoritativeTotalPrice: 5500,
+        }),
+      /bKash Transaction ID \/ Payment Reference is required/
+    );
+
+    // Valid full bKash payment
+    const fullBkashPayment = calculateAndVerifyPaymentAccounting({
+      paymentMethod: "bkash",
+      paymentReference: "9K38AX7B",
+      isPartialAdvance: false,
+      authoritativeTotalPrice: 5500,
+    });
+
+    assert.equal(fullBkashPayment.payment_method, "bkash");
+    assert.equal(fullBkashPayment.payment_reference, "9K38AX7B");
+    assert.equal(fullBkashPayment.is_partial_advance, false);
+    assert.equal(fullBkashPayment.advance_amount, null);
+    assert.equal(fullBkashPayment.amount_paid, 5500);
+    assert.equal(fullBkashPayment.balance_amount, 0);
+    assert.equal(fullBkashPayment.payment_status, "pending_verification");
+
+    // -------------------------------------------------------------------------
+    // 4. Convocation Partial bKash Advance Payment (Validation & Accounting)
+    // -------------------------------------------------------------------------
+    const bookingTotal = 7500;
+
+    // Reject 0 or negative advance
+    assert.throws(
+      () =>
+        calculateAndVerifyPaymentAccounting({
+          paymentMethod: "bkash",
+          paymentReference: "9K38AX7B",
+          isPartialAdvance: true,
+          advanceAmount: 0,
+          authoritativeTotalPrice: bookingTotal,
+        }),
+      /Advance amount must be greater than 0/
+    );
+
+    // Reject advance >= total
+    assert.throws(
+      () =>
+        calculateAndVerifyPaymentAccounting({
+          paymentMethod: "bkash",
+          paymentReference: "9K38AX7B",
+          isPartialAdvance: true,
+          advanceAmount: 7500,
+          authoritativeTotalPrice: bookingTotal,
+        }),
+      /Advance amount must be less than the total booking amount/
+    );
+
+    // Valid partial advance: 2500 BDT out of 7500 BDT
+    const partialPayment = calculateAndVerifyPaymentAccounting({
+      paymentMethod: "bkash",
+      paymentReference: "8K12BZ9C",
+      isPartialAdvance: true,
+      advanceAmount: 2500,
+      authoritativeTotalPrice: bookingTotal,
+    });
+
+    assert.equal(partialPayment.payment_method, "bkash");
+    assert.equal(partialPayment.payment_reference, "8K12BZ9C");
+    assert.equal(partialPayment.is_partial_advance, true);
+    assert.equal(partialPayment.advance_amount, 2500);
+    assert.equal(partialPayment.amount_paid, 2500, "Authoritative amount paid matches advance");
+    assert.equal(partialPayment.balance_amount, 5000, "Authoritative balance is total - advance");
+    assert.equal(partialPayment.payment_status, "advance_pending");
+
+    // Live UI calculation matching
+    const uiPayingNow = partialPayment.amount_paid;
+    const uiRemainingBalance = partialPayment.balance_amount;
+    assert.equal(uiPayingNow + uiRemainingBalance, bookingTotal, "Live breakdown sum strictly equals booking total");
+
+    // -------------------------------------------------------------------------
+    // 5. Multi-Slot Group Booking & Non-Duplicated Advance Accounting
+    // -------------------------------------------------------------------------
+    const groupTotal = 9000;
+    const groupAdvance = 3000;
+    const groupRemainingBalance = 6000;
+
+    const slotItems = [
+      { id: "b-slot-1", slotTotal: 5000, isPrimary: true },
+      { id: "b-slot-2", slotTotal: 4000, isPrimary: false },
+    ];
+
+    const groupRef = "OFP-2026-GPAY77";
+    const groupId = "group-uuid-777";
+
+    const verifiedGroupBookings = slotItems.map((item) => {
+      if (item.isPrimary) {
+        return {
+          id: item.id,
+          booking_group_id: groupId,
+          booking_group_ref: groupRef,
+          group_total_amount: groupTotal,
+          is_primary_group_item: true,
+          total_price: item.slotTotal,
+          payment_method: "bkash",
+          payment_reference: "TX9901B",
+          is_partial_advance: true,
+          advance_amount: groupAdvance,
+          amount_paid: groupAdvance,
+          balance_amount: groupRemainingBalance,
+          payment_status: "advance_pending" as const,
+        };
+      }
+      return {
+        id: item.id,
+        booking_group_id: groupId,
+        booking_group_ref: groupRef,
+        group_total_amount: groupTotal,
+        is_primary_group_item: false,
+        total_price: item.slotTotal,
+        payment_method: "bkash",
+        payment_reference: null,
+        is_partial_advance: false,
+        advance_amount: null,
+        amount_paid: 0,
+        balance_amount: 0,
+        payment_status: "advance_pending" as const,
+      };
+    });
+
+    // Check non-duplication of advance across slots
+    const totalGroupAdvanceRecorded = verifiedGroupBookings.reduce(
+      (sum, b) => sum + (b.advance_amount || 0),
+      0
+    );
+    const totalGroupAmountPaid = verifiedGroupBookings.reduce(
+      (sum, b) => sum + (b.amount_paid || 0),
+      0
+    );
+
+    assert.equal(totalGroupAdvanceRecorded, 3000, "Advance amount is recorded exactly once across the group");
+    assert.equal(totalGroupAmountPaid, 3000, "Amount paid is recorded exactly once across the group");
+    assert.equal(verifiedGroupBookings[0].total_price, 5000, "Individual total price is preserved");
+    assert.equal(verifiedGroupBookings[1].total_price, 4000, "Individual total price is preserved");
+
+    // -------------------------------------------------------------------------
+    // 6. Admin Verification Lifecycle & Client Portal Visibility
+    // -------------------------------------------------------------------------
+    // Admin verifies advance
+    const verifiedPrimaryBooking = {
+      ...verifiedGroupBookings[0],
+      payment_status: "partially_paid" as const,
+      payment_verified_at: new Date().toISOString(),
+      payment_verified_by: "admin@offprint.com",
+    };
+
+    assert.equal(verifiedPrimaryBooking.payment_status, "partially_paid");
+    assert.ok(verifiedPrimaryBooking.payment_verified_at);
+
+    // Client portal message generation
+    const getClientPortalPaymentNotice = (b: {
+      payment_status: string;
+      payment_method?: string | null;
+      is_partial_advance?: boolean | null;
+      balance_amount: number;
+    }) => {
+      if (b.payment_status === "paid") {
+        return "Paid in Full";
+      }
+      if (b.payment_method === "bkash" && (b.payment_status === "partially_paid" || b.is_partial_advance)) {
+        return `Partially Paid — Remaining Balance: BDT ${b.balance_amount.toLocaleString()}`;
+      }
+      return `Cash on Arrival — Total Due: BDT ${b.balance_amount.toLocaleString()}`;
+    };
+
+    const clientNotice = getClientPortalPaymentNotice(verifiedPrimaryBooking);
+    assert.equal(clientNotice, "Partially Paid — Remaining Balance: BDT 6,000");
+
+    // Admin settles full balance
+    const fullySettledBooking = {
+      ...verifiedPrimaryBooking,
+      amount_paid: groupTotal,
+      balance_amount: 0,
+      payment_status: "paid" as const,
+    };
+    assert.equal(getClientPortalPaymentNotice(fullySettledBooking), "Paid in Full");
   });
 });

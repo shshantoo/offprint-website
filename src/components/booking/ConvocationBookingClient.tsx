@@ -126,6 +126,13 @@ export default function ConvocationBookingClient({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Dedicated Payment Method & Advance State
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bkash">("cash");
+  const [bkashReference, setBkashReference] = useState<string>("");
+  const [isPartialAdvance, setIsPartialAdvance] = useState<boolean>(false);
+  const [advanceAmount, setAdvanceAmount] = useState<string>("");
+  const [copiedBkash, setCopiedBkash] = useState<boolean>(false);
+
   // Prefill authenticated profile if signed in
   useEffect(() => {
     let isMounted = true;
@@ -452,7 +459,24 @@ export default function ConvocationBookingClient({
         )
       : IUB_CONVOCATION_DEFAULT_QUESTIONS;
 
-  const visibleQuestions = customQuestions.filter((q) => q.is_visible !== false);
+  const isPaymentQuestion = (q: CustomBookingQuestion) => {
+    const k = (q.key || q.id || "").toLowerCase();
+    const l = (q.label || "").toLowerCase();
+    return (
+      k.includes("payment") ||
+      k.includes("bkash") ||
+      k.includes("reference") ||
+      l.includes("payment method") ||
+      l.includes("reference number") ||
+      l.includes("bkash") ||
+      l.includes("transaction id") ||
+      l.includes("trxid")
+    );
+  };
+
+  const visibleQuestions = customQuestions
+    .filter((q) => q.is_visible !== false)
+    .filter((q) => !isPaymentQuestion(q));
 
   const frameConfig = event?.frame_printing_config || null;
   const activeFrameTypes =
@@ -526,6 +550,21 @@ export default function ConvocationBookingClient({
       : 0;
 
   const totalEstimatedPrice = totalPackagePrice + frameTotalPrice;
+  const parsedAdvance = Number(advanceAmount) || 0;
+  const payingNow =
+    paymentMethod === "cash"
+      ? totalEstimatedPrice
+      : isPartialAdvance
+      ? parsedAdvance
+      : totalEstimatedPrice;
+
+  const remainingBalance =
+    paymentMethod === "cash"
+      ? totalEstimatedPrice
+      : isPartialAdvance
+      ? Math.max(0, totalEstimatedPrice - parsedAdvance)
+      : 0;
+
   const chosenDuration =
     selectedPackage?.duration_mins ||
     selectedSlot?.duration_mins ||
@@ -650,6 +689,26 @@ export default function ConvocationBookingClient({
       }
     }
 
+    // Payment Method & Advance Verification
+    if (paymentMethod === "bkash") {
+      if (!bkashReference.trim()) {
+        setSubmitError("Please enter your bKash Transaction ID / Payment Reference.");
+        return;
+      }
+      if (isPartialAdvance) {
+        if (!advanceAmount || isNaN(parsedAdvance) || parsedAdvance <= 0) {
+          setSubmitError("Advance amount must be greater than 0 BDT.");
+          return;
+        }
+        if (parsedAdvance >= totalEstimatedPrice) {
+          setSubmitError(
+            `Advance amount must be less than the total booking amount (BDT ${totalEstimatedPrice.toLocaleString()}). To pay in full, uncheck partial advance.`
+          );
+          return;
+        }
+      }
+    }
+
     try {
       setSubmitting(true);
 
@@ -695,6 +754,10 @@ export default function ConvocationBookingClient({
           frame_type_id:
             isFramePrintingAvailable && framePrintingSelected && selectedFrame ? selectedFrame.id : null,
           frame_quantity: isFramePrintingAvailable && framePrintingSelected ? frameQuantity : 0,
+          payment_method: paymentMethod,
+          payment_reference: paymentMethod === "bkash" ? bkashReference.trim() : null,
+          is_partial_advance: paymentMethod === "bkash" ? isPartialAdvance : false,
+          advance_amount: paymentMethod === "bkash" && isPartialAdvance ? parsedAdvance : null,
           client_name: resolvedName,
           client_email: resolvedEmail || null,
           client_phone: resolvedPhone || null,
@@ -715,6 +778,10 @@ export default function ConvocationBookingClient({
             client_name: resolvedName,
             client_email: resolvedEmail,
             client_phone: resolvedPhone,
+            payment_method: paymentMethod,
+            payment_reference: paymentMethod === "bkash" ? bkashReference.trim() : null,
+            is_partial_advance: paymentMethod === "bkash" ? isPartialAdvance : false,
+            advance_amount: paymentMethod === "bkash" && isPartialAdvance ? parsedAdvance : null,
           },
         }),
       });
@@ -1843,6 +1910,262 @@ export default function ConvocationBookingClient({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Dedicated Payment Method & Billing Section */}
+            <div className="pt-5 border-t border-[#E5DEC9] space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#141210]">
+                    Payment Method &amp; Billing
+                  </h4>
+                  <p className="text-[11px] text-[#5C5449] mt-0.5">
+                    Select your payment method to finalize your reservation.
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-[#FAF7F2] text-[#A66D35] border border-[#E5DEC9]">
+                  Required *
+                </span>
+              </div>
+
+              {/* Method Selection Cards: Cash vs bKash */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod("cash");
+                    setIsPartialAdvance(false);
+                    setAdvanceAmount("");
+                  }}
+                  className={`p-4 rounded-2xl border text-left flex items-start justify-between transition-all ${
+                    paymentMethod === "cash"
+                      ? "bg-[#FAF7F2] border-[#3A2008] ring-2 ring-[#3A2008]/15 shadow-2xs"
+                      : "bg-[#FFFFFF] border-[#E5DEC9] hover:border-[#A66D35]"
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-[#141210]">Cash on Arrival</span>
+                    </div>
+                    <p className="text-[11px] text-[#5C5449] leading-relaxed">
+                      Pay in cash directly at the convocation venue or studio on session day.
+                    </p>
+                    <span className="inline-block text-[10px] font-mono text-[#2E6B4E] font-semibold mt-1">
+                      No online advance needed
+                    </span>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                    paymentMethod === "cash"
+                      ? "border-[#3A2008] bg-[#3A2008]"
+                      : "border-[#D5CCB4]"
+                  }`}>
+                    {paymentMethod === "cash" && <div className="w-1.5 h-1.5 rounded-full bg-[#FFFFFF]" />}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("bkash")}
+                  className={`p-4 rounded-2xl border text-left flex items-start justify-between transition-all ${
+                    paymentMethod === "bkash"
+                      ? "bg-[#FAF7F2] border-[#3A2008] ring-2 ring-[#3A2008]/15 shadow-2xs"
+                      : "bg-[#FFFFFF] border-[#E5DEC9] hover:border-[#A66D35]"
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-[#141210]">bKash Payment</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#E2136E]/10 text-[#E2136E] border border-[#E2136E]/20">
+                        Digital
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#5C5449] leading-relaxed">
+                      Instant mobile transfer via bKash App or *247#. Full or partial advance.
+                    </p>
+                    <span className="inline-block text-[10px] font-mono text-[#E2136E] font-semibold mt-1">
+                      Requires TrxID verification
+                    </span>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                    paymentMethod === "bkash"
+                      ? "border-[#3A2008] bg-[#3A2008]"
+                      : "border-[#D5CCB4]"
+                  }`}>
+                    {paymentMethod === "bkash" && <div className="w-1.5 h-1.5 rounded-full bg-[#FFFFFF]" />}
+                  </div>
+                </button>
+              </div>
+
+              {/* Conditional Cash Details */}
+              {paymentMethod === "cash" && (
+                <div className="p-4 rounded-2xl bg-[#EEF7F2]/60 border border-[#2E6B4E]/20 text-xs text-[#2E6B4E] flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[#2E6B4E]" />
+                  <div>
+                    <span className="font-bold block">Cash Reservation Selected</span>
+                    <span className="text-[11px] text-[#2E6B4E]/90 mt-0.5 block leading-relaxed">
+                      No payment reference is needed now. The full total of{" "}
+                      <strong>৳{totalEstimatedPrice.toLocaleString()} BDT</strong> will be collected in cash at the registration booth or studio on your session date.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional bKash Details & Inputs */}
+              {paymentMethod === "bkash" && (
+                <div className="rounded-2xl border border-[#E5DEC9] bg-[#FAF7F2] p-4 space-y-4">
+                  {/* bKash Payment Instructions Banner */}
+                  <div className="p-3.5 rounded-xl bg-[#FFFFFF] border border-[#E2136E]/20 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#E2136E] animate-pulse" />
+                        <span className="text-xs font-bold text-[#E2136E]">OFFPRINT Official bKash Number</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText("01700000000");
+                          setCopiedBkash(true);
+                          setTimeout(() => setCopiedBkash(false), 2000);
+                        }}
+                        className="text-[10px] font-mono text-[#5C5449] hover:text-[#141210] inline-flex items-center gap-1"
+                      >
+                        {copiedBkash ? "✓ Copied" : "Copy Number"}
+                      </button>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div>
+                        <span className="font-mono font-bold text-base text-[#141210] tracking-wider block">
+                          01700-000000
+                        </span>
+                        <span className="text-[11px] text-[#877D70]">
+                          Account Type: Merchant / Send Money • Reference: OFP
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* bKash Transaction ID Field */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-[#141210] flex items-center justify-between">
+                      <span>
+                        bKash Transaction ID / Payment Reference <span className="text-red-600">*</span>
+                      </span>
+                      <span className="text-[11px] text-[#A66D35] font-normal">
+                        From bKash SMS
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 9K38AX7B"
+                      value={bkashReference}
+                      onChange={(e) => setBkashReference(e.target.value.toUpperCase())}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono tracking-wider text-[#141210] placeholder-[#877D70] focus:outline-none focus:border-[#3A2008]"
+                    />
+                  </div>
+
+                  {/* Optional Partial Advance Toggle */}
+                  <div className="pt-2 border-t border-[#E5DEC9] space-y-3">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-[#141210]">
+                      <input
+                        type="checkbox"
+                        checked={isPartialAdvance}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setIsPartialAdvance(checked);
+                          if (!checked) {
+                            setAdvanceAmount("");
+                          } else if (!advanceAmount) {
+                            const suggested = Math.min(1000, Math.floor(totalEstimatedPrice / 2));
+                            if (suggested > 0 && suggested < totalEstimatedPrice) {
+                              setAdvanceAmount(String(suggested));
+                            }
+                          }
+                        }}
+                        className="rounded text-[#3A2008] accent-[#3A2008] w-4 h-4"
+                      />
+                      <span>Pay a Partial Advance Amount (Remaining balance due later)</span>
+                    </label>
+
+                    {isPartialAdvance && (
+                      <div className="space-y-2 pl-6">
+                        <label className="text-xs font-semibold text-[#141210] block">
+                          Advance Amount (BDT) <span className="text-red-600">*</span>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono text-[#877D70]">
+                            ৳
+                          </span>
+                          <input
+                            type="number"
+                            min="1"
+                            max={Math.max(1, totalEstimatedPrice - 1)}
+                            step="50"
+                            placeholder="e.g. 1000"
+                            value={advanceAmount}
+                            onChange={(e) => setAdvanceAmount(e.target.value)}
+                            className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-[#FFFFFF] border border-[#E5DEC9] text-xs font-mono font-bold text-[#141210] placeholder-[#877D70] focus:outline-none focus:border-[#3A2008]"
+                          />
+                        </div>
+                        <p className="text-[11px] text-[#5C5449]">
+                          Enter the amount you are paying now via bKash. The remaining balance will be due on your session date.
+                        </p>
+
+                        {/* Validation hints */}
+                        {parsedAdvance > 0 && parsedAdvance >= totalEstimatedPrice && (
+                          <p className="text-[11px] text-amber-700 font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
+                            Advance amount must be less than the total booking amount (৳{totalEstimatedPrice.toLocaleString()} BDT). To pay in full, uncheck this option.
+                          </p>
+                        )}
+                        {advanceAmount && parsedAdvance <= 0 && (
+                          <p className="text-[11px] text-red-600 font-semibold">
+                            Advance amount must be greater than 0 BDT.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Payment Breakdown Summary */}
+              <div className="rounded-2xl border border-[#D5CCB4] bg-[#F4EFE6] p-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-[#D5CCB4]/60 font-semibold text-[#141210]">
+                  <span>Payment Breakdown Summary</span>
+                  <span className="font-mono uppercase text-[10px] text-[#877D70]">
+                    Method: {paymentMethod === "cash" ? "Cash" : "bKash"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[#5C5449]">
+                  <span>Total Booking Investment</span>
+                  <span className="font-mono font-bold text-[#141210]">
+                    ৳{totalEstimatedPrice.toLocaleString()} BDT
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[#141210] font-semibold">
+                  <span>
+                    {paymentMethod === "cash"
+                      ? "Payable at Venue (Cash)"
+                      : isPartialAdvance
+                      ? "Advance Being Paid Now (bKash)"
+                      : "Paying Now in Full (bKash)"}
+                  </span>
+                  <span className="font-mono text-emerald-800 font-bold">
+                    ৳{payingNow.toLocaleString()} BDT
+                  </span>
+                </div>
+
+                {paymentMethod === "bkash" && isPartialAdvance && (
+                  <div className="flex items-center justify-between text-amber-900 pt-1 border-t border-[#D5CCB4]/40 font-semibold">
+                    <span>Remaining Balance Due Later</span>
+                    <span className="font-mono font-bold text-[#A66D35]">
+                      ৳{remainingBalance.toLocaleString()} BDT
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <button

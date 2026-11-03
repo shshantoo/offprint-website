@@ -136,6 +136,51 @@ export default function BookingConfirmationClient() {
                 {booking.location || "OFFPRINT Studio, Dhaka"}
               </div>
             </div>
+
+            {/* Payment Summary Box */}
+            <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#E5DEC9] space-y-2 sm:col-span-2">
+              <div className="flex items-center justify-between text-xs font-mono uppercase text-[#877D70]">
+                <span>Payment &amp; Billing</span>
+                <span className="font-bold text-[#3A2008]">
+                  {booking.payment_method === "bkash" ? "bKash Digital Payment" : "Cash on Arrival"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs">
+                <div>
+                  <span className="text-[#877D70] block text-[11px]">Total Investment</span>
+                  <span className="font-mono font-bold text-[#141210]">
+                    ৳{((booking.total_price != null ? booking.total_price : booking.package_base_price) || 0).toLocaleString()} BDT
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#877D70] block text-[11px]">
+                    {booking.payment_method === "bkash"
+                      ? booking.is_partial_advance
+                        ? "Advance Submitted"
+                        : "Paid / Submitted"
+                      : "Pay on Arrival"}
+                  </span>
+                  <span className="font-mono font-bold text-emerald-800">
+                    ৳{(booking.amount_paid || (booking.payment_method === "bkash" ? booking.total_price : 0) || 0).toLocaleString()} BDT
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#877D70] block text-[11px]">Remaining Balance</span>
+                  <span className="font-mono font-bold text-[#A66D35]">
+                    ৳{(booking.balance_amount != null
+                      ? booking.balance_amount
+                      : booking.payment_method === "cash"
+                      ? (booking.total_price || booking.package_base_price || 0)
+                      : 0).toLocaleString()} BDT
+                  </span>
+                </div>
+              </div>
+              {booking.payment_reference && (
+                <div className="text-[11px] font-mono text-[#5C5449] pt-1 border-t border-[#E5DEC9]">
+                  bKash TrxID: <span className="font-bold text-[#141210]">{booking.payment_reference}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
