@@ -703,13 +703,15 @@ export default function AdminPortalClient() {
     if (createKind === "convocation") {
       const slot = eventsData.slots.find((s) => s.id === createSlotId);
       if (!slot) return alert("Please select an event time slot.");
+      const selectedPkg = eventsData.packages.find((p) => p.id === createPackageId);
+      const pkgDuration = selectedPkg?.duration_mins || slot.duration_mins || 30;
       body.event_id = createEventId;
       body.session_id = slot.session_id;
       body.slot_id = slot.id;
       body.booking_date = slot.slot_date || formatDhakaDateISO(slot.start_at);
       body.start_at = slot.start_at;
-      body.end_at = slot.end_at;
-      body.duration_mins = 30;
+      body.duration_mins = pkgDuration;
+      body.end_at = new Date(new Date(slot.start_at).getTime() + pkgDuration * 60000).toISOString();
     } else {
       if (!createStartAt) return alert("Please specify a start date/time.");
       const startIso = new Date(createStartAt).toISOString();

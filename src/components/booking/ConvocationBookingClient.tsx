@@ -562,8 +562,7 @@ export default function ConvocationBookingClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          booking_type:
-            event.slug === "iub-27th-convocation" ? "convocation" : "special",
+          booking_type: "convocation",
           event_id: event.id,
           session_id: selectedSlot.session_id || null,
           slot_id: selectedSlot.slot_id,

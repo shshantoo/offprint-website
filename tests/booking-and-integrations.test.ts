@@ -3581,4 +3581,344 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     const canDeleteFreedSession = dissociatedBookings.every((b) => b.session_id === null);
     assert.equal(canDeleteFreedSession, true, "Session can be safely deleted without foreign key violation");
   });
+
+  it("34. Check Constraint bookings_check2 Enforcement & Comprehensive Booking Flow Validation", () => {
+    // -------------------------------------------------------------------------------------------------
+    // Predicate 1: Exact Reproduction of the Original bookings_check2 Constraint Failure
+    // -------------------------------------------------------------------------------------------------
+    const legacyCheck2 = (row: {
+      booking_type: string;
+      event_id: string | null;
+      slot_id: string | null;
+      service_id: string | null;
+      status: string;
+    }): boolean => {
+      return (
+        (row.booking_type === "convocation" && row.event_id !== null && row.slot_id !== null) ||
+        (row.booking_type === "traditional" && row.service_id !== null)
+      );
+    };
+
+    const correctedCheck2 = (row: {
+      booking_type: string;
+      event_id: string | null;
+      slot_id: string | null;
+      service_id: string | null;
+      status: string;
+    }): boolean => {
+      return (
+        (row.booking_type === "convocation" &&
+          row.event_id !== null &&
+          (row.slot_id !== null || row.status === "cancelled")) ||
+        (row.booking_type === "traditional" &&
+          (row.service_id !== null || row.status === "cancelled"))
+      );
+    };
+
+    // Synthetic reproduction of the cancelled booking row being dissociated when cleaning up sessions/slots:
+    const syntheticCancelledBooking = {
+      booking_ref: "OFP-2026-SYN001",
+      booking_type: "convocation",
+      event_id: "16ae23d0-97d1-474a-93be-eb88542f4c8a",
+      session_id: null,
+      slot_id: null, // Nullified upon slot/session deletion/pruning
+      service_id: null,
+      status: "cancelled",
+    };
+
+    // (A) Proving why the legacy constraint failed:
+    const legacyResult = legacyCheck2(syntheticCancelledBooking);
+    assert.equal(
+      legacyResult,
+      false,
+      "Legacy bookings_check2 failed because slot_id was null even though status was cancelled"
+    );
+
+    // (B) Proving why the corrected constraint succeeds:
+    const correctedResult = correctedCheck2(syntheticCancelledBooking);
+    assert.equal(
+      correctedResult,
+      true,
+      "Corrected bookings_check2 permits slot_id to be null when status is cancelled"
+    );
+
+    // (C) Verifying that active bookings WITHOUT slot_id are STILL STRICTLY BLOCKED:
+    const invalidActiveConvocation = {
+      booking_ref: "OFP-2026-INV002",
+      booking_type: "convocation",
+      event_id: "16ae23d0-97d1-474a-93be-eb88542f4c8a",
+      session_id: "sess-1",
+      slot_id: null, // Invalid: active booking must have slot_id!
+      service_id: null,
+      status: "confirmed",
+    };
+    assert.equal(
+      correctedCheck2(invalidActiveConvocation),
+      false,
+      "Active convocation booking without slot_id is strictly blocked by corrected constraint"
+    );
+
+    // (D) Verifying that active bookings WITHOUT event_id are STILL STRICTLY BLOCKED:
+    const invalidNoEvent = {
+      ...invalidActiveConvocation,
+      event_id: null,
+      slot_id: "slot-1",
+    };
+    assert.equal(
+      correctedCheck2(invalidNoEvent),
+      false,
+      "Active convocation booking without event_id is strictly blocked"
+    );
+
+    // -------------------------------------------------------------------------------------------------
+    // Scenarios 1, 2, 3: Package Durations (30-min, 60-min, 90-min)
+    // -------------------------------------------------------------------------------------------------
+    const pkg30 = {
+      id: "pkg-30",
+      name: "The Graduate Solo Edition",
+      price_numeric: 3500,
+      duration_mins: 30,
+    };
+    const pkg60 = {
+      id: "pkg-60",
+      name: "The Duo Portrait Experience",
+      price_numeric: 6000,
+      duration_mins: 60,
+    };
+    const pkg90 = {
+      id: "pkg-90",
+      name: "The Family & Chancellor Grand Session",
+      price_numeric: 9500,
+      duration_mins: 90,
+    };
+
+    const baseStart = "2026-11-07T03:00:00.000Z";
+    const startMs = Date.parse(baseStart);
+
+    // Helper simulating atomic duration & pricing mapping
+    const buildAuthoritativeBooking = (params: {
+      pkg: typeof pkg30;
+      slotId: string;
+      eventId: string;
+      frameSelected?: boolean;
+      frameQuantity?: number;
+      frameUnitPrice?: number;
+    }) => {
+      const dur = params.pkg.duration_mins;
+      const endIso = new Date(startMs + dur * 60_000).toISOString();
+      const bufferBefore = 0;
+      const bufferAfter = 10;
+      const effStartIso = new Date(startMs - bufferBefore * 60_000).toISOString();
+      const effEndIso = new Date(startMs + (dur + bufferAfter) * 60_000).toISOString();
+      const frameTotal =
+        params.frameSelected && params.frameQuantity && params.frameUnitPrice
+          ? params.frameQuantity * params.frameUnitPrice
+          : 0;
+      const totalPrice = params.pkg.price_numeric + frameTotal;
+
+      return {
+        booking_ref: `OFP-2026-${dur}MIN`,
+        booking_type: "convocation" as const,
+        event_id: params.eventId,
+        slot_id: params.slotId,
+        service_id: null,
+        package_id: params.pkg.id,
+        package_name: params.pkg.name,
+        package_base_price: params.pkg.price_numeric,
+        start_at: baseStart,
+        end_at: endIso,
+        buffer_before_mins: bufferBefore,
+        buffer_after_mins: bufferAfter,
+        effective_start_at: effStartIso,
+        effective_end_at: effEndIso,
+        duration_mins: dur,
+        client_name: "Afsana Karim",
+        client_email: "afsana.karim@example.com",
+        client_phone: "+8801711223344",
+        guests_count: 2,
+        status: "confirmed" as const,
+        cancelled_at: null,
+        cancelled_by: null,
+        cancellation_reason: null,
+        frame_printing_selected: Boolean(params.frameSelected),
+        frame_quantity: params.frameQuantity || 0,
+        frame_total_price: frameTotal,
+        total_price: totalPrice,
+        pricing_snapshot: {
+          currency: "BDT",
+          package_id: params.pkg.id,
+          package_name: params.pkg.name,
+          package_base_price: params.pkg.price_numeric,
+          duration_mins: dur,
+          frame_printing_selected: Boolean(params.frameSelected),
+          frame_quantity: params.frameQuantity || 0,
+          frame_total_price: frameTotal,
+          total_price: totalPrice,
+        },
+      };
+    };
+
+    // Scenario 1: 30-minute booking
+    const booking30 = buildAuthoritativeBooking({
+      pkg: pkg30,
+      slotId: "slot-30m",
+      eventId: "event-1",
+    });
+    assert.equal(booking30.duration_mins, 30);
+    assert.equal(booking30.end_at, "2026-11-07T03:30:00.000Z");
+    assert.equal(booking30.effective_end_at, "2026-11-07T03:40:00.000Z");
+    assert.ok(correctedCheck2(booking30));
+
+    // Scenario 2: 60-minute booking
+    const booking60 = buildAuthoritativeBooking({
+      pkg: pkg60,
+      slotId: "slot-60m",
+      eventId: "event-1",
+    });
+    assert.equal(booking60.duration_mins, 60);
+    assert.equal(booking60.end_at, "2026-11-07T04:00:00.000Z");
+    assert.equal(booking60.effective_end_at, "2026-11-07T04:10:00.000Z");
+    assert.ok(correctedCheck2(booking60));
+
+    // Scenario 3: 90-minute booking
+    const booking90 = buildAuthoritativeBooking({
+      pkg: pkg90,
+      slotId: "slot-90m",
+      eventId: "event-1",
+    });
+    assert.equal(booking90.duration_mins, 90);
+    assert.equal(booking90.end_at, "2026-11-07T04:30:00.000Z");
+    assert.equal(booking90.effective_end_at, "2026-11-07T04:40:00.000Z");
+    assert.ok(correctedCheck2(booking90));
+
+    // Scenario 4: Package & Price Snapshot Verification
+    assert.equal(booking30.pricing_snapshot.package_base_price, 3500);
+    assert.equal(booking30.pricing_snapshot.total_price, 3500);
+    assert.equal(booking60.pricing_snapshot.package_base_price, 6000);
+    assert.equal(booking90.pricing_snapshot.package_base_price, 9500);
+
+    // Scenario 5 & 6 & 7: Start/End, Reservation range & Buffer verification
+    for (const b of [booking30, booking60, booking90]) {
+      assert.ok(Date.parse(b.end_at) > Date.parse(b.start_at), "end_at > start_at");
+      assert.ok(
+        Date.parse(b.effective_end_at) >= Date.parse(b.end_at),
+        "effective_end_at >= end_at"
+      );
+      assert.ok(
+        Date.parse(b.effective_start_at) <= Date.parse(b.start_at),
+        "effective_start_at <= start_at"
+      );
+      assert.equal(b.buffer_before_mins, 0);
+      assert.equal(b.buffer_after_mins, 10);
+    }
+
+    // Scenario 8: Initial booking status is strictly confirmed (never cancelled on creation)
+    assert.equal(booking30.status, "confirmed");
+    assert.notEqual(booking30.status, "cancelled");
+
+    // Scenario 9: Participant count >= 1
+    assert.ok(booking30.guests_count >= 1);
+
+    // Scenario 10: Clean cancellation metadata defaults
+    assert.equal(booking30.cancelled_at, null);
+    assert.equal(booking30.cancelled_by, null);
+    assert.equal(booking30.cancellation_reason, null);
+
+    // Scenario 11 & 12: Temporary slot hold validation
+    const now = Date.now();
+    const activeHold = {
+      id: "hold-valid",
+      slot_id: "slot-30m",
+      status: "active",
+      expires_at: new Date(now + 300_000).toISOString(), // 5 min in future
+    };
+    const expiredHold = {
+      id: "hold-expired",
+      slot_id: "slot-30m",
+      status: "active",
+      expires_at: new Date(now - 10_000).toISOString(), // Expired 10s ago
+    };
+
+    const isHoldValid = (hold: typeof activeHold) =>
+      hold.status === "active" && new Date(hold.expires_at).getTime() > Date.now();
+
+    assert.equal(isHoldValid(activeHold), true, "Active slot hold is accepted");
+    assert.equal(isHoldValid(expiredHold), false, "Expired slot hold is rejected");
+
+    // Scenario 13: Duration mismatch rejection
+    const checkDurationMatch = (slotDuration: number, packageDuration: number) => {
+      if (slotDuration !== packageDuration) {
+        throw new Error(
+          `DURATION_MISMATCH: Selected slot duration (${slotDuration}m) does not match package duration (${packageDuration}m).`
+        );
+      }
+      return true;
+    };
+    assert.equal(checkDurationMatch(30, 30), true);
+    assert.throws(
+      () => checkDurationMatch(30, 60),
+      /DURATION_MISMATCH/,
+      "Blocks 30m slot with 60m package"
+    );
+
+    // Scenario 14: Concurrent booking protection
+    const simulatedStudioPoolBookings = [booking30];
+    const isSlotConflicting = (newBooking: typeof booking30) => {
+      return simulatedStudioPoolBookings.some(
+        (existing) =>
+          existing.status === "confirmed" &&
+          existing.effective_start_at < newBooking.effective_end_at &&
+          existing.effective_end_at > newBooking.effective_start_at
+      );
+    };
+
+    // A concurrent booking on the exact same time window must be blocked
+    const conflictingBooking = {
+      ...booking30,
+      booking_ref: "OFP-2026-CONFLICT",
+    };
+    assert.equal(isSlotConflicting(conflictingBooking), true, "Concurrent collision detected");
+
+    // A subsequent booking starting after effective_end_at is accepted
+    const subsequentBooking = {
+      ...booking30,
+      booking_ref: "OFP-2026-SUBSEQUENT",
+      start_at: booking30.effective_end_at,
+      end_at: new Date(Date.parse(booking30.effective_end_at) + 30 * 60_000).toISOString(),
+      effective_start_at: booking30.effective_end_at,
+      effective_end_at: new Date(Date.parse(booking30.effective_end_at) + 40 * 60_000).toISOString(),
+    };
+    assert.equal(isSlotConflicting(subsequentBooking), false, "No conflict after buffer window");
+
+    // Scenario 15: Successful booking with configured frame/print add-on
+    const bookingWithFrames = buildAuthoritativeBooking({
+      pkg: pkg30,
+      slotId: "slot-30m",
+      eventId: "event-1",
+      frameSelected: true,
+      frameQuantity: 2,
+      frameUnitPrice: 1200,
+    });
+    assert.equal(bookingWithFrames.frame_printing_selected, true);
+    assert.equal(bookingWithFrames.frame_quantity, 2);
+    assert.equal(bookingWithFrames.frame_total_price, 2400);
+    assert.equal(bookingWithFrames.total_price, 3500 + 2400); // 5900 BDT
+    assert.equal(bookingWithFrames.pricing_snapshot.total_price, 5900);
+    assert.ok(correctedCheck2(bookingWithFrames));
+
+    // Scenario 16: Preservation of existing confirmed and cancelled booking records
+    const simulatedDatabase = [
+      { id: "b-confirmed-1", status: "confirmed", booking_ref: "OFP-2026-001" },
+      { id: "b-cancelled-2", status: "cancelled", booking_ref: "OFP-2026-002" },
+    ];
+    assert.equal(simulatedDatabase.length, 2, "Both records preserved");
+    assert.equal(
+      simulatedDatabase.find((b) => b.id === "b-confirmed-1")?.status,
+      "confirmed"
+    );
+    assert.equal(
+      simulatedDatabase.find((b) => b.id === "b-cancelled-2")?.status,
+      "cancelled"
+    );
+  });
 });

@@ -401,9 +401,16 @@ create table if not exists public.bookings (
   check (end_at > start_at),
   check (effective_end_at >= end_at and effective_start_at <= start_at),
   check (
-    (booking_type = 'convocation' and event_id is not null and slot_id is not null)
+    (
+      booking_type = 'convocation'
+      and event_id is not null
+      and (slot_id is not null or status = 'cancelled')
+    )
     or
-    (booking_type = 'traditional' and service_id is not null)
+    (
+      booking_type = 'traditional'
+      and (service_id is not null or status = 'cancelled')
+    )
   )
 );
 
