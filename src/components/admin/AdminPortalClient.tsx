@@ -1848,6 +1848,13 @@ export default function AdminPortalClient() {
                           <div className="font-mono font-bold text-[#3A2008]">
                             {b.booking_ref}
                           </div>
+                          {b.booking_group_ref && b.booking_group_ref !== b.booking_ref && (
+                            <div className="mt-0.5">
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F4EFE6] text-[#A66D35] border border-[#D5CCB4]">
+                                Grp: {b.booking_group_ref}
+                              </span>
+                            </div>
+                          )}
                           <span className="text-[10px] font-mono uppercase text-[#A66D35]">
                             {b.booking_type}
                           </span>

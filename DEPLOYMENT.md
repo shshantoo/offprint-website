@@ -545,5 +545,66 @@ The following migrations have been applied to Supabase project `qqklsbbysybzivif
 
 ---
 
+---
+
+## 17. Release 1.7.3 — Critical Production Fix: bookings_check2 Constraint Violation
+
+- **Root Cause Identification:**
+  - Evaluated exact definition of PostgreSQL CHECK constraint `public.bookings_check2`:
+    `CHECK ((booking_type = 'convocation' AND event_id IS NOT NULL AND (slot_id IS NOT NULL OR status = 'cancelled')) OR (booking_type = 'traditional' AND (service_id IS NOT NULL OR status = 'cancelled')))`
+  - Production bookings for Convocation require both `event_id` and `slot_id` to be non-null unless `status = 'cancelled'`.
+  - In cases where slots were unlinked or rebooked, nullifying `slot_id` on confirmed convocation records triggered `bookings_check2`.
+- **Resolution:**
+  - Guaranteed `event_id` and `slot_id` are strictly populated on all active convocation booking creations and updates.
+  - Ensured slot unlinking only applies to cancelled bookings or retains valid slot references with capacity release.
+  - Preserved all historical bookings without alteration.
+
+---
+
+## 18. Release 1.8.0 — Multi-Package & Multi-Slot Basket, Loading Animations & Automatic Storage Discovery
+
+### 18.1 Multi-Package & Multi-Slot Reservation Basket
+- **Basket Data Model & Migration `20261103000002_multi_slot_booking_group_and_folder_discovery.sql`:**
+  - Added `booking_group_id` UUID, `booking_group_ref` (`OFP-YYYY-GXXXXX`), `group_total_amount`, and `is_primary_group_item` to `public.bookings`.
+  - Created indexes `idx_bookings_group_id` and `idx_bookings_group_ref`.
+- **Multi-Slot Hold Coexistence:**
+  - Upgraded `acquire_slot_hold` RPC and `/api/bookings/hold` to allow sibling holds under the same `flow_token` to coexist in the basket without auto-releasing previous holds.
+  - Upgraded `release_slot_hold` RPC to release specific holds cleanly by `(slot_id, flow_token)` or `hold_id`.
+- **Schedule Coexistence for Differing Durations:**
+  - Updated schedule generator and `/api/admin/events` so 30-minute sessions (10:00–10:30) and 60-minute sessions (10:00–11:00) coexist on the same date without collision on unique `(event_id, start_at, end_at)`.
+  - Slots with identical duration merge `package_ids` cleanly.
+  - Targeted pruning prunes only unbooked slots belonging to the target package.
+- **Authoritative Server-Side Basket Pricing:**
+  - Calculates authoritative package subtotal ($\sum \text{Unit Price} \times \text{Slots}$), frame add-on pricing, and grand total in `calculateAndVerifyMultiBookingPrice`.
+  - Browser cannot submit or tamper with prices.
+- **Atomic Multi-Booking Confirmation (`executeCreateMultiBookingWorkflow`):**
+  - Group checkout creates $N$ individual booking rows (one for each package-slot) atomically.
+  - Every row strictly satisfies `bookings_check2` and is linked via `booking_group_id` and `booking_group_ref`.
+  - Dispatches a single consolidated calendar invitation and branded confirmation email.
+- **Client & Admin Portals:**
+  - Client Portal and Admin Portal display grouped badges (`Group: OFP-YYYY-GXXXXX`) linking related bookings.
+
+### 18.2 Site-Wide Lightweight Loading Animations
+- **Immediate Visual Pending Feedback on Convocation Slots:**
+  - Clicking any available time slot instantly updates the slot button state (`pendingSlotId === slot.slot_id`) showing an inline spinner, "Reserving slot...", `cursor-wait`, and disabling the button to prevent double-clicks.
+  - Smooth animation with zero unprompted page scrolling.
+- **Interactive Feedback Across Async Operations:**
+  - Loading spinners and disabled states on package save/delete, schedule generation, and booking submission.
+
+### 18.3 Automatic Supabase Storage Folder Discovery
+- **Physical Storage Source of Truth:**
+  - In `src/lib/data-service.ts`, implemented `discoverAndReconcileStorageFolders(type, customClient)` querying `portfolio-media` (`event-archives/*` and `event-archive-highlights/*`).
+  - Discovers folders directly from physical storage (e.g., `IUB 23rd Convocation`, `NSU 25th Convocation`) and reconciles them into `media_folders` without manual database inserts or synchronization scripts.
+  - Automatically filters `.emptyFolderPlaceholder` and dotfiles from photo counts and gallery listings.
+
+### 18.4 Brand Logo Display & Contrast Rules
+- **Logo Mark Exclusivity:**
+  - Rendered strictly as the standalone brand logo mark throughout the entire website (headers, footers, admin portal, and client portal) without any redundant text.
+- **Context-Aware Dynamic Contrast:**
+  - Dark scenes (transparent navigation over hero media) use `/brand/offprint-white-logo.png`.
+  - Light scenes (scrolled navbar, footers, admin portal, client portal) use `/brand/offprint-black-logo.png` (or `/brand/offprint-colour-logo.png`).
+
+---
+
 **OFFPRINT (অফপ্রিন্ট) Operations Team**  
-*Document Version: 1.7.0 (Package Creation/Deletion & Schedule Configuration Package Attachment Verified)*
+*Document Version: 1.8.0 (Multi-Package & Multi-Slot Basket, Loading Animations & Automatic Storage Discovery Verified)*

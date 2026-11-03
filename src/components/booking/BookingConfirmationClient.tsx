@@ -21,6 +21,7 @@ export default function BookingConfirmationClient() {
   const searchParams = useSearchParams();
   const bookingId = searchParams.get("id");
   const bookingRef = searchParams.get("ref") || "OFP-CONFIRMED";
+  const groupRefParam = searchParams.get("group_ref");
 
   const [booking, setBooking] = useState<Booking | null>(null);
   const [copied, setCopied] = useState(false);
@@ -40,8 +41,10 @@ export default function BookingConfirmationClient() {
       });
   }, [bookingId]);
 
+  const activeGroupRef = booking?.booking_group_ref || groupRefParam;
+
   const handleCopyRef = () => {
-    navigator.clipboard.writeText(booking?.booking_ref || bookingRef);
+    navigator.clipboard.writeText(activeGroupRef || booking?.booking_ref || bookingRef);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -69,11 +72,16 @@ export default function BookingConfirmationClient() {
         <div className="p-5 rounded-2xl bg-[#F4EFE6] border border-[#D5CCB4] flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
             <span className="text-[11px] font-mono uppercase tracking-wider text-[#5C4028] block">
-              Official Booking Reference
+              {activeGroupRef ? "Booking Group Reference" : "Official Booking Reference"}
             </span>
             <span className="text-2xl font-extrabold font-mono text-[#3A2008] tracking-wider">
-              {booking?.booking_ref || bookingRef}
+              {activeGroupRef || booking?.booking_ref || bookingRef}
             </span>
+            {activeGroupRef && booking?.booking_ref && activeGroupRef !== booking.booking_ref && (
+              <span className="text-xs font-mono text-[#877D70] block mt-0.5">
+                Primary Appointment: {booking.booking_ref}
+              </span>
+            )}
           </div>
 
           <button

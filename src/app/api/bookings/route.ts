@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createBookingSchema } from "@/lib/validations";
+import { createBookingSchema, createMultiBookingSchema } from "@/lib/validations";
 import {
   BookingSystemError,
   executeCreateBookingWorkflow,
+  executeCreateMultiBookingWorkflow,
   parseDatabaseBookingError,
 } from "@/lib/booking/booking-service";
 import {
@@ -115,6 +116,47 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const json = await request.json();
+    const authCtx = await getServerAuthContext();
+    const userId = authCtx?.user.id || null;
+
+    // Check if multi-item booking basket is submitted
+    if (Array.isArray(json.items) && json.items.length > 0) {
+      const parsedMulti = createMultiBookingSchema.safeParse(json);
+      if (!parsedMulti.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "VALIDATION_ERROR",
+            error: parsedMulti.error.issues[0]?.message || "Invalid booking details",
+            details: parsedMulti.error.format(),
+          },
+          { status: 400 }
+        );
+      }
+
+      const multiResult = await executeCreateMultiBookingWorkflow({
+        input: parsedMulti.data,
+        userId,
+        actorRole: "client",
+      });
+
+      const { internal_notes, ...publicPrimary } = multiResult.primaryBooking as any;
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: publicPrimary,
+          group_ref: multiResult.groupRef,
+          all_bookings: multiResult.allBookings.map((b: any) => {
+            const { internal_notes, ...pub } = b;
+            return pub;
+          }),
+        },
+        { status: 201 }
+      );
+    }
+
+    // Single item / traditional photography booking
     const parsed = createBookingSchema.safeParse(json);
 
     if (!parsed.success) {
@@ -129,11 +171,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const authCtx = await getServerAuthContext();
-
     const booking = await executeCreateBookingWorkflow({
       input: parsed.data,
-      userId: authCtx?.user.id || null,
+      userId,
       actorRole: "client",
     });
 

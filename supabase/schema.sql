@@ -350,6 +350,10 @@ create index if not exists idx_availability_blocks_range on public.availability_
 create table if not exists public.bookings (
   id uuid primary key default uuid_generate_v4(),
   booking_ref text unique not null,
+  booking_group_id uuid default uuid_generate_v4(),
+  booking_group_ref text,
+  group_total_amount numeric(12, 2),
+  is_primary_group_item boolean default true,
   idempotency_key text unique,
   user_id uuid references auth.users(id) on delete set null,
   booking_type text not null check (booking_type in ('convocation', 'traditional')),

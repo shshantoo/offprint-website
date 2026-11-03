@@ -13,9 +13,11 @@ import type {
 } from "@/types/database";
 import {
   type CreateBookingInput,
+  type CreateMultiBookingInput,
   type RescheduleBookingInput,
   validateCustomFieldsAgainstQuestions,
   calculateAndVerifyBookingPrice,
+  calculateAndVerifyMultiBookingPrice,
 } from "@/lib/validations";
 import { createSupabasePrivilegedClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMissingSchemaError } from "@/lib/supabase/auth-helpers";
@@ -873,6 +875,334 @@ export async function executeCreateBookingWorkflow(params: {
     calendar_sync_error: calRes.error || null,
     email_send_status: emailRes.status,
     email_send_error: emailRes.error || null,
+  };
+}
+
+/**
+ * Executes atomic multi-package & multi-slot booking confirmation (Release 1.8.0).
+ * Validates holds, package durations, cross-appointment overlaps, server-side basket pricing,
+ * and atomically creates all booking records grouped under a shared booking_group_id / booking_group_ref.
+ */
+export async function executeCreateMultiBookingWorkflow(params: {
+  input: CreateMultiBookingInput;
+  userId?: string | null;
+  actorRole?: "client" | "admin";
+}): Promise<{ primaryBooking: Booking; allBookings: Booking[]; groupRef: string }> {
+  const { input, userId = null, actorRole = "client" } = params;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) {
+    throw new BookingSystemError(
+      "SERVICE_UNAVAILABLE",
+      "Booking service is temporarily unavailable. Please try again shortly.",
+      503
+    );
+  }
+
+  // 1. Verify Event settings & questions
+  const { data: evRow } = await supabase
+    .from("booking_events")
+    .select("custom_questions, is_booking_enabled, status, booking_opens_at, booking_closes_at, frame_printing_config, title, location")
+    .eq("id", input.event_id)
+    .maybeSingle();
+
+  if (!evRow) {
+    throw new BookingSystemError("EVENT_NOT_FOUND", "Special event not found.", 404);
+  }
+
+  if (evRow.is_booking_enabled === false) {
+    throw new BookingSystemError("BOOKING_DISABLED", "Bookings are currently disabled for this special event.", 403);
+  }
+  if (evRow.status !== "published" && actorRole !== "admin") {
+    throw new BookingSystemError("EVENT_NOT_PUBLISHED", "This special event is not accepting public bookings.", 403);
+  }
+  if (evRow.booking_opens_at && new Date(evRow.booking_opens_at) > new Date() && actorRole !== "admin") {
+    throw new BookingSystemError("BOOKING_NOT_OPEN", "The booking window for this event has not opened yet.", 403);
+  }
+  if (evRow.booking_closes_at && new Date(evRow.booking_closes_at) < new Date() && actorRole !== "admin") {
+    throw new BookingSystemError("BOOKING_CLOSED", "The booking deadline for this event has passed.", 403);
+  }
+
+  // Sanitize custom fields
+  let sanitizedCustomFields: Record<string, string | string[]> = input.custom_fields || {};
+  let resolvedStudentId = input.student_id || null;
+  let resolvedDepartment = input.degree_or_department || null;
+
+  if (Array.isArray(evRow.custom_questions) && evRow.custom_questions.length > 0) {
+    const mergedRaw: Record<string, string | string[]> = { ...(input.custom_fields || {}) };
+    if (resolvedStudentId && !mergedRaw.student_id) mergedRaw.student_id = resolvedStudentId;
+    if (resolvedDepartment && !mergedRaw.degree_or_department) mergedRaw.degree_or_department = resolvedDepartment;
+
+    const check = validateCustomFieldsAgainstQuestions(evRow.custom_questions, mergedRaw);
+    if (!check.valid) {
+      const firstErr = Object.values(check.errors)[0] || "Please complete all required event questions.";
+      throw new BookingSystemError("CUSTOM_FIELDS_INVALID", firstErr, 400);
+    }
+    sanitizedCustomFields = check.sanitized;
+    if (!resolvedStudentId && typeof sanitizedCustomFields.student_id === "string") {
+      resolvedStudentId = sanitizedCustomFields.student_id;
+    }
+    if (!resolvedDepartment && typeof sanitizedCustomFields.degree_or_department === "string") {
+      resolvedDepartment = sanitizedCustomFields.degree_or_department;
+    }
+  }
+
+  // 2. Fetch all packages referenced in the basket
+  const uniquePkgIds = Array.from(new Set(input.items.map((it) => it.package_id)));
+  const { data: pkgRows } = await supabase
+    .from("photography_packages")
+    .select("*")
+    .in("id", uniquePkgIds);
+
+  const pkgMap = new Map<string, PhotographyPackage>();
+  (pkgRows || []).forEach((p) => pkgMap.set(p.id, p as PhotographyPackage));
+
+  for (const pkgId of uniquePkgIds) {
+    const pkg = pkgMap.get(pkgId);
+    if (!pkg) {
+      throw new BookingSystemError("PACKAGE_NOT_FOUND", `Package ${pkgId} was not found.`, 404);
+    }
+    if (pkg.is_active === false && actorRole !== "admin") {
+      throw new BookingSystemError("PACKAGE_INACTIVE", `Package "${pkg.name}" is no longer active.`, 400);
+    }
+  }
+
+  // 3. Verify all slots, holds, and durations
+  const uniqueSlotIds = Array.from(new Set(input.items.map((it) => it.slot_id)));
+  if (uniqueSlotIds.length !== input.items.length) {
+    throw new BookingSystemError(
+      "DUPLICATE_SLOT_SELECTION",
+      "Duplicate time slots were found in your booking basket. Each appointment must have a unique time slot.",
+      400
+    );
+  }
+
+  const { data: slotRows } = await supabase
+    .from("event_time_slots")
+    .select("*")
+    .in("id", uniqueSlotIds);
+
+  const slotMap = new Map<string, any>();
+  (slotRows || []).forEach((s) => slotMap.set(s.id, s));
+
+  for (const item of input.items) {
+    const slot = slotMap.get(item.slot_id);
+    if (!slot) {
+      throw new BookingSystemError("SLOT_NOT_FOUND", `Selected time slot ${item.slot_id} does not exist.`, 404);
+    }
+    if (slot.status !== "available") {
+      throw new BookingSystemError("SLOT_UNAVAILABLE", `Time slot (${slot.label || slot.start_at}) is not open for booking.`, 409);
+    }
+
+    const pkg = pkgMap.get(item.package_id)!;
+    const slotDur =
+      slot.duration_mins && slot.duration_mins > 0
+        ? slot.duration_mins
+        : Math.max(1, Math.round((Date.parse(slot.end_at) - Date.parse(slot.start_at)) / 60_000));
+
+    if (pkg.duration_mins && slotDur !== pkg.duration_mins) {
+      throw new BookingSystemError(
+        "DURATION_MISMATCH",
+        `Slot duration (${slotDur}m) does not match selected package duration (${pkg.duration_mins}m).`,
+        400
+      );
+    }
+
+    if (item.hold_id) {
+      const { data: holdRow } = await supabase
+        .from("booking_slot_holds")
+        .select("id, status, expires_at, slot_id, package_id")
+        .eq("id", item.hold_id)
+        .maybeSingle();
+
+      if (holdRow) {
+        if (holdRow.status !== "active" || new Date(holdRow.expires_at).getTime() < Date.now()) {
+          throw new BookingSystemError(
+            "SLOT_HOLD_EXPIRED",
+            `Your temporary hold on the ${slot.label || item.booking_date} appointment has expired. Please select a time slot again.`,
+            409
+          );
+        }
+      }
+    }
+  }
+
+  // 4. Overlap & shared capacity check among basket items themselves
+  for (let i = 0; i < input.items.length; i++) {
+    for (let j = i + 1; j < input.items.length; j++) {
+      const itA = input.items[i];
+      const itB = input.items[j];
+      const startA = Date.parse(itA.start_at);
+      const endA = Date.parse(itA.end_at);
+      const startB = Date.parse(itB.start_at);
+      const endB = Date.parse(itB.end_at);
+
+      if (startA < endB && endA > startB) {
+        const slotA = slotMap.get(itA.slot_id);
+        const slotB = slotMap.get(itB.slot_id);
+        if ((slotA?.capacity || 1) <= 1 || (slotB?.capacity || 1) <= 1) {
+          throw new BookingSystemError(
+            "OVERLAPPING_APPOINTMENTS",
+            `Selected appointments (${itA.booking_date} ${itA.start_at.slice(11, 16)} and ${itB.booking_date} ${itB.start_at.slice(11, 16)}) overlap with each other and exceed studio capacity.`,
+            409
+          );
+        }
+      }
+    }
+  }
+
+  // 5. Server-side authoritative price verification
+  const multiPricing = calculateAndVerifyMultiBookingPrice({
+    items: input.items.map((it) => ({
+      pkg: pkgMap.get(it.package_id),
+      duration_mins: it.duration_mins,
+    })),
+    frameConfig: evRow.frame_printing_config,
+    frameSelected: input.frame_printing_selected,
+    frameTypeId: input.frame_type_id,
+    frameQuantity: input.frame_quantity,
+  });
+
+  // 6. Generate stable group identity
+  const yearStr = new Date().getFullYear().toString();
+  const randSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const groupRef = `OFP-${yearStr}-G${randSuffix}`;
+  const groupId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `group_${Date.now()}`;
+
+  // 7. Atomically create all individual booking records
+  const confirmedBookings: Booking[] = [];
+  const holdsToConsume: string[] = [];
+
+  for (let i = 0; i < input.items.length; i++) {
+    const item = input.items[i];
+    const pkg = pkgMap.get(item.package_id)!;
+    const slot = slotMap.get(item.slot_id)!;
+    const isPrimary = i === 0;
+
+    const itemBasePrice = multiPricing.item_breakdown[i]?.package_base_price || 0;
+    const itemTotalPrice = isPrimary ? itemBasePrice + multiPricing.frame_total_price : itemBasePrice;
+
+    const { data: createdRow, error: rpcErr } = await supabase.rpc(
+      "create_booking_atomic",
+      {
+        p_idempotency_key: input.idempotency_key ? `${input.idempotency_key}:${i}` : null,
+        p_user_id: userId,
+        p_booking_type: "convocation",
+        p_event_id: input.event_id,
+        p_session_id: item.session_id || slot.session_id,
+        p_slot_id: item.slot_id,
+        p_service_id: null,
+        p_package_id: item.package_id,
+        p_booking_date: item.booking_date,
+        p_start_at: item.start_at,
+        p_end_at: item.end_at,
+        p_duration_mins: pkg.duration_mins || item.duration_mins || 30,
+        p_client_name: input.client_name,
+        p_client_email: input.client_email,
+        p_client_phone: input.client_phone,
+        p_company_or_institution: input.company_or_institution || null,
+        p_student_id: resolvedStudentId,
+        p_degree_or_department: resolvedDepartment,
+        p_guests_count: input.guests_count || 1,
+        p_location: input.location || evRow.location || "OFFPRINT Studio, Dhaka",
+        p_client_notes: input.client_notes || null,
+        p_actor_role: actorRole,
+        p_custom_fields: sanitizedCustomFields,
+        p_package_base_price: itemBasePrice,
+        p_frame_printing_selected: isPrimary ? multiPricing.frame_printing_selected : false,
+        p_frame_type_id: isPrimary ? multiPricing.frame_type_id : null,
+        p_frame_type_name: isPrimary ? multiPricing.frame_type_name : null,
+        p_frame_quantity: isPrimary ? multiPricing.frame_quantity : 0,
+        p_frame_unit_price: isPrimary ? multiPricing.frame_unit_price : 0,
+        p_frame_total_price: isPrimary ? multiPricing.frame_total_price : 0,
+        p_total_price: itemTotalPrice,
+        p_pricing_snapshot: isPrimary ? multiPricing.pricing_snapshot : {
+          currency: multiPricing.currency,
+          package_id: pkg.id,
+          package_name: pkg.name,
+          package_base_price: itemBasePrice,
+          total_price: itemBasePrice,
+          calculated_at: new Date().toISOString(),
+        },
+      }
+    );
+
+    if (rpcErr || !createdRow) {
+      throw parseDatabaseBookingError(rpcErr || new Error(`Failed to confirm booking item ${i + 1}`));
+    }
+
+    const createdBooking = createdRow as Booking;
+
+    // Attach group metadata to the created booking record
+    await supabase
+      .from("bookings")
+      .update({
+        booking_group_id: groupId,
+        booking_group_ref: groupRef,
+        group_total_amount: multiPricing.total_price,
+        is_primary_group_item: isPrimary,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", createdBooking.id);
+
+    confirmedBookings.push({
+      ...createdBooking,
+      booking_group_id: groupId,
+      booking_group_ref: groupRef,
+      group_total_amount: multiPricing.total_price,
+      is_primary_group_item: isPrimary,
+    });
+
+    if (item.hold_id) {
+      holdsToConsume.push(item.hold_id);
+    }
+  }
+
+  // 8. Consume all holds
+  for (const hId of holdsToConsume) {
+    try {
+      await supabase.rpc("consume_slot_hold", {
+        p_hold_id: hId,
+        p_flow_token: input.flow_token || "",
+        p_booking_id: confirmedBookings[0].id,
+        p_booking_ref: groupRef,
+      });
+    } catch {
+      await supabase
+        .from("booking_slot_holds")
+        .update({
+          status: "consumed",
+          consumed_booking_id: confirmedBookings[0].id,
+          consumed_booking_ref: groupRef,
+        })
+        .eq("id", hId);
+    }
+  }
+
+  const primary = confirmedBookings[0];
+
+  // 9. Dispatch a single combined Google Calendar event & confirmation email
+  const [calRes, emailRes] = await Promise.all([
+    syncBookingToGoogleCalendar({
+      booking: primary,
+      operation: "create",
+      idempotencyKey: `cal:${groupId}:create`,
+    }),
+    sendBookingNotificationEmail({
+      booking: primary,
+      notificationType: "booking_confirmed",
+      idempotencyKey: `email:${groupId}:booking_confirmed`,
+    }),
+  ]);
+
+  return {
+    primaryBooking: {
+      ...primary,
+      calendar_sync_status: calRes.status,
+      google_calendar_event_id: calRes.googleEventId || primary.google_calendar_event_id,
+      email_send_status: emailRes.status,
+    },
+    allBookings: confirmedBookings,
+    groupRef,
   };
 }
 

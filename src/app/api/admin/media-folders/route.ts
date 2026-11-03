@@ -3,6 +3,7 @@ import { requireAdminAuth } from "@/lib/supabase/auth-helpers";
 import { createSupabasePrivilegedClient } from "@/lib/supabase/server";
 import {
   fetchMediaFolders,
+  discoverAndReconcileStorageFolders,
   saveMediaFolder,
   deleteMediaFolder,
 } from "@/lib/data-service";
@@ -22,7 +23,8 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as MediaFolderType | null;
 
   try {
-    const folders = await fetchMediaFolders(type || undefined, client);
+    // Automatically discover newly created physical folders in Supabase Storage before returning
+    const folders = await discoverAndReconcileStorageFolders(type || undefined, client);
     return NextResponse.json({ success: true, data: folders });
   } catch (err: any) {
     console.error("GET /api/admin/media-folders error:", err);

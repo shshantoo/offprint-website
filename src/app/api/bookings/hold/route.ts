@@ -156,13 +156,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Release other slots held by this flow token (or holds for different packages)
-      await supabase
-        .from("booking_slot_holds")
-        .update({ status: "released" })
-        .eq("flow_token", flow_token)
-        .eq("status", "active")
-        .neq("slot_id", slot_id);
+      // NOTE: We intentionally do NOT release other slots held by this flow token.
+      // Sibling holds for different slots and packages now coexist in the user's booking basket.
 
       // Check if client already holds this slot -> extend it
       const { data: existingHold } = await supabase
@@ -239,60 +234,79 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "release") {
-      if (!hold_id && !flow_token) {
+      if (!hold_id && !flow_token && !slot_id) {
         return NextResponse.json(
-          { success: false, error: "hold_id or flow_token required for release." },
+          { success: false, error: "hold_id, slot_id, or flow_token required for release." },
           { status: 400 }
         );
       }
 
       try {
-        if (hold_id) {
-          await supabase.rpc("release_slot_hold", {
-            p_hold_id: hold_id,
-            p_flow_token: flow_token || "",
-          });
-        }
+        await supabase.rpc("release_slot_hold", {
+          p_hold_id: hold_id || null,
+          p_flow_token: flow_token || "",
+          p_slot_id: slot_id || null,
+        });
       } catch {
         // Fallback
       }
 
       let q = supabase.from("booking_slot_holds").update({ status: "released" }).eq("status", "active");
-      if (hold_id) q = q.eq("id", hold_id);
-      if (flow_token) q = q.eq("flow_token", flow_token);
+      if (hold_id) {
+        q = q.eq("id", hold_id);
+      } else if (slot_id && flow_token) {
+        q = q.eq("slot_id", slot_id).eq("flow_token", flow_token);
+      } else if (flow_token) {
+        q = q.eq("flow_token", flow_token);
+      }
       await q;
 
       return NextResponse.json({ success: true, released: true });
     }
 
     if (action === "status") {
-      if (!hold_id) {
+      const holdIds: string[] = Array.isArray(json.hold_ids)
+        ? json.hold_ids
+        : hold_id
+        ? [hold_id]
+        : [];
+
+      if (holdIds.length === 0) {
         return NextResponse.json(
-          { success: false, error: "hold_id required for status check." },
+          { success: false, error: "hold_id or hold_ids required for status check." },
           { status: 400 }
         );
       }
 
-      const { data: hold } = await supabase
+      const { data: holds } = await supabase
         .from("booking_slot_holds")
         .select("id, slot_id, status, expires_at, hold_duration_mins")
-        .eq("id", hold_id)
-        .maybeSingle();
-
-      if (!hold) {
-        return NextResponse.json({ active: false, remaining_seconds: 0 });
-      }
+        .in("id", holdIds);
 
       const now = Date.now();
-      const exp = new Date(hold.expires_at).getTime();
-      const remSeconds = Math.max(0, Math.floor((exp - now) / 1000));
-      const isActive = hold.status === "active" && remSeconds > 0;
+      const statusList = (holds || []).map((h) => {
+        const exp = new Date(h.expires_at).getTime();
+        const remSeconds = Math.max(0, Math.floor((exp - now) / 1000));
+        const isActive = h.status === "active" && remSeconds > 0;
+        return {
+          id: h.id,
+          slot_id: h.slot_id,
+          active: isActive,
+          status: isActive ? "active" : h.status,
+          expires_at: h.expires_at,
+          remaining_seconds: remSeconds,
+        };
+      });
+
+      // If single hold requested directly via hold_id, preserve backward compatibility
+      if (hold_id && !Array.isArray(json.hold_ids)) {
+        const single = statusList[0] || { active: false, remaining_seconds: 0 };
+        return NextResponse.json(single);
+      }
 
       return NextResponse.json({
-        active: isActive,
-        status: isActive ? "active" : hold.status,
-        expires_at: hold.expires_at,
-        remaining_seconds: remSeconds,
+        success: true,
+        holds: statusList,
       });
     }
 

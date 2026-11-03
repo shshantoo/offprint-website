@@ -1034,10 +1034,14 @@ export async function POST(request: NextRequest) {
       const activeBookings = activeBookingsRes.data || [];
 
       // 4. Upsert sessions
+      // When multiple packages are configured with different durations on the same date,
+      // match existing session by (session_date, slot_duration_mins) so each package retains its own session.
       const sessionMap = new Map<string, string>(); // session_date -> session_id
       for (const proposedSess of proposed.sessions) {
         const existingSess = existingSessions.find(
-          (s) => s.session_date === proposedSess.session_date
+          (s) =>
+            s.session_date === proposedSess.session_date &&
+            (!s.slot_duration_mins || s.slot_duration_mins === proposedSess.slot_duration_mins)
         );
         if (existingSess) {
           sessionMap.set(proposedSess.session_date, existingSess.id);
@@ -1060,7 +1064,7 @@ export async function POST(request: NextRequest) {
             .insert({
               event_id: eventId,
               session_date: proposedSess.session_date,
-              title: `${event.title} - ${proposedSess.session_date}`,
+              title: `${event.title} - ${proposedSess.session_date} (${proposedSess.slot_duration_mins}m)`,
               start_time: proposedSess.start_time,
               end_time: proposedSess.end_time,
               slot_duration_mins: proposedSess.slot_duration_mins,
@@ -1129,7 +1133,11 @@ export async function POST(request: NextRequest) {
             };
             if (supportsSlotDuration) {
               slotUpdate.duration_mins = ps.duration_mins;
-              slotUpdate.package_ids = ps.package_ids;
+              // Preserve package associations when multiple packages intentionally share the same slot duration & window
+              const mergedPkgIds = Array.from(
+                new Set([...(matchedExisting.package_ids || []), ...(ps.package_ids || [])])
+              );
+              slotUpdate.package_ids = mergedPkgIds;
             }
             await supabase
               .from("event_time_slots")
@@ -1161,14 +1169,38 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 6. Prune unbooked slots outside new schedule (strict preservation of booked slots)
+      // 6. Prune unbooked slots outside new schedule (strict preservation of booked slots & other packages)
       let prunedSlotsCount = 0;
       const slotIdsToPrune: string[] = [];
       for (const es of existingSlots) {
         const key = `${es.slot_date}_${es.start_at}_${es.end_at}`;
         if (!activeProposedKeys.has(key)) {
           if ((es.booked_count || 0) === 0) {
-            slotIdsToPrune.push(es.id);
+            const esPkgIds: string[] = Array.isArray(es.package_ids) ? es.package_ids : [];
+            const targetPkgIds: string[] = Array.isArray(packageIds) ? packageIds : [];
+
+            if (targetPkgIds.length > 0) {
+              // We are generating for specific package(s).
+              const intersects = esPkgIds.some((id) => targetPkgIds.includes(id));
+              if (intersects) {
+                // If the slot also belongs to other packages, preserve it and only detach target packages
+                const remainingPkgs = esPkgIds.filter((id) => !targetPkgIds.includes(id));
+                if (remainingPkgs.length > 0) {
+                  await supabase
+                    .from("event_time_slots")
+                    .update({ package_ids: remainingPkgs, updated_at: new Date().toISOString() })
+                    .eq("id", es.id);
+                } else {
+                  slotIdsToPrune.push(es.id);
+                }
+              }
+              // If it belongs to completely different packages, DO NOT PRUNE IT!
+            } else {
+              // Global regeneration without package filter: only prune if duration matches the generated schedule
+              if (!es.duration_mins || es.duration_mins === scheduleConfig.slot_duration_mins) {
+                slotIdsToPrune.push(es.id);
+              }
+            }
           }
         }
       }

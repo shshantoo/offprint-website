@@ -500,6 +500,130 @@ export async function fetchMediaFolders(
   }));
 }
 
+/**
+ * Automatically inspects physical folders in Supabase Storage ("portfolio-media"),
+ * reconciles newly created folders into "media_folders", counts valid photographs
+ * (excluding .emptyFolderPlaceholder and dotfiles), and returns the fresh list.
+ */
+export async function discoverAndReconcileStorageFolders(
+  type?: MediaFolderType,
+  customClient?: any
+): Promise<MediaFolderWithMeta[]> {
+  const client = customClient || supabase;
+  if (!isSupabaseConfigured() || !client) return [];
+
+  const bucket = "portfolio-media";
+  const typesToScan: Array<{ folderType: MediaFolderType; prefix: string }> = [];
+
+  if (!type || type === "event-archive") {
+    typesToScan.push({ folderType: "event-archive", prefix: "event-archives" });
+  }
+  if (!type || type === "event-highlight") {
+    typesToScan.push({ folderType: "event-highlight", prefix: "event-archive-highlights" });
+  }
+
+  try {
+    for (const scan of typesToScan) {
+      const { data: topItems, error: topErr } = await client.storage
+        .from(bucket)
+        .list(scan.prefix, { limit: 1000, sortBy: { column: "name", order: "asc" } });
+
+      if (topErr || !Array.isArray(topItems)) continue;
+
+      for (const item of topItems) {
+        // Skip hidden placeholder files at the root of the prefix directory
+        if (!item.name || item.name.startsWith(".")) continue;
+
+        const folderName = item.name;
+        const cleanSlug = folderName
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, "-")
+          .replace(/-+/g, "-");
+        const folderPrefix = `${scan.prefix}/${folderName}/`;
+
+        // Check objects inside this folder
+        const { data: folderFiles } = await client.storage
+          .from(bucket)
+          .list(`${scan.prefix}/${folderName}`, { limit: 1000 });
+
+        // Filter out .emptyFolderPlaceholder and dotfiles from photo count
+        const validPhotos = Array.isArray(folderFiles)
+          ? folderFiles.filter(
+              (f) =>
+                f.name &&
+                !f.name.startsWith(".") &&
+                f.name !== ".emptyFolderPlaceholder"
+            )
+          : [];
+
+        // Check if already registered in media_folders
+        const { data: existingFolder } = await client
+          .from("media_folders")
+          .select("id, name, slug, folder_type, storage_prefix")
+          .or(`slug.eq.${cleanSlug},storage_prefix.eq.${folderPrefix}`)
+          .maybeSingle();
+
+        let folderId: string;
+        if (existingFolder) {
+          folderId = existingFolder.id;
+          if (existingFolder.storage_prefix !== folderPrefix) {
+            await client
+              .from("media_folders")
+              .update({ storage_prefix: folderPrefix, updated_at: new Date().toISOString() })
+              .eq("id", folderId);
+          }
+        } else {
+          // Discovered new physical folder! Auto-register in media_folders
+          const { data: inserted, error: insErr } = await client
+            .from("media_folders")
+            .insert({
+              name: folderName,
+              slug: cleanSlug,
+              folder_type: scan.folderType,
+              storage_prefix: folderPrefix,
+              description: `Discovered from Supabase Storage: ${folderName}`,
+            })
+            .select("id")
+            .single();
+
+          if (insErr || !inserted) continue;
+          folderId = inserted.id;
+        }
+
+        // Reconcile photographs for discovered or existing folder
+        if (validPhotos.length > 0) {
+          let order = 1;
+          for (const file of validPhotos) {
+            const storagePath = `${scan.prefix}/${folderName}/${file.name}`;
+            const publicUrl = `https://qqklsbbysybzivifnykd.supabase.co/storage/v1/object/public/${bucket}/${encodeURI(storagePath)}`;
+
+            await client.from("media_folder_photos").upsert(
+              {
+                folder_id: folderId,
+                storage_path: storagePath,
+                public_url: publicUrl,
+                file_name: file.name,
+                size_bytes: file.metadata?.size || 0,
+                mime_type: file.metadata?.mimetype || "image/jpeg",
+                alt_text: `${folderName} - ${file.name}`,
+                sort_order: order,
+                is_cover: order === 1,
+              },
+              { onConflict: "storage_path" }
+            );
+            order++;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("discoverAndReconcileStorageFolders warning:", err);
+  }
+
+  // Return the fresh reconciled folder list
+  return fetchMediaFolders(type, client);
+}
+
 export async function saveMediaFolder(
   folder: {
     id?: string;
@@ -570,6 +694,8 @@ export async function fetchFolderPhotos(
     .from("media_folder_photos")
     .select("*")
     .eq("folder_id", folderId)
+    .not("file_name", "like", ".%")
+    .neq("file_name", ".emptyFolderPlaceholder")
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
 

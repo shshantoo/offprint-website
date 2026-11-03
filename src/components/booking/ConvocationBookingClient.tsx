@@ -24,8 +24,28 @@ import {
   RefreshCw,
   Info,
   Sparkles,
+  ShoppingBag,
+  X,
+  Loader2,
 } from "lucide-react";
 import { IUB_CONVOCATION_DEFAULT_QUESTIONS } from "@/lib/booking/default-event-fields";
+
+export interface BasketItem {
+  slot_id: string;
+  slot_label: string;
+  start_at: string;
+  end_at: string;
+  booking_date: string;
+  duration_mins: number;
+  session_id: string | null;
+  package_id: string;
+  package_name: string;
+  package_price_numeric: number;
+  package_price_label: string;
+  hold_id: string | null;
+  expires_at: string;
+  remaining_seconds: number;
+}
 
 interface ConvocationAvailabilityPayload {
   success?: boolean;
@@ -75,6 +95,10 @@ export default function ConvocationBookingClient({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<ComputedTimeSlot | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
+
+  // Multi-Selection Booking Basket State
+  const [basket, setBasket] = useState<BasketItem[]>([]);
+  const [pendingSlotId, setPendingSlotId] = useState<string | null>(null);
 
   // Temporary Slot Hold State
   const [holdId, setHoldId] = useState<string | null>(null);
@@ -236,71 +260,98 @@ export default function ConvocationBookingClient({
     });
   }, [data]);
 
-  // Hold Countdown Timer Effect
+  // Decrement remaining seconds on all basket items every second
   useEffect(() => {
-    if (!holdId || holdRemainingSeconds <= 0) return;
+    if (basket.length === 0) {
+      setHoldRemainingSeconds(0);
+      return;
+    }
 
     const timer = setInterval(() => {
-      setHoldRemainingSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setSelectedSlot(null);
-          setHoldId(null);
-          setHoldError("Your temporary time-slot reservation has expired. Please select a time slot again.");
+      setBasket((prev) => {
+        let hasExpired = false;
+        const updated = prev
+          .map((item) => {
+            const rem = item.remaining_seconds - 1;
+            if (rem <= 0) hasExpired = true;
+            return { ...item, remaining_seconds: Math.max(0, rem) };
+          })
+          .filter((item) => item.remaining_seconds > 0);
+
+        if (hasExpired) {
+          setHoldError(
+            "One or more temporary time-slot reservations in your basket have expired. Please select available replacement slots."
+          );
           loadAvailability(currentMonth, selectedDate);
-          return 0;
         }
-        return prev - 1;
+        return updated;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [holdId, holdRemainingSeconds, currentMonth, selectedDate, loadAvailability]);
+  }, [basket.length, currentMonth, selectedDate, loadAvailability]);
 
-  const handleSelectPackage = async (pkgId: string) => {
-    if (pkgId === selectedPackageId) return;
-
-    // Release any previous slot hold before changing package
-    if (holdId) {
-      try {
-        const flowToken = getOrCreateFlowToken();
-        await fetch("/api/bookings/hold", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "release",
-            hold_id: holdId,
-            flow_token: flowToken,
-          }),
-        });
-      } catch (err) {
-        console.warn("Failed to release hold on package switch:", err);
-      }
+  // Synchronize holdRemainingSeconds with the minimum timer in the basket
+  useEffect(() => {
+    if (basket.length === 0) {
+      setHoldRemainingSeconds(0);
+      return;
     }
+    const minSeconds = Math.min(...basket.map((b) => b.remaining_seconds));
+    setHoldRemainingSeconds(minSeconds > 0 ? minSeconds : 0);
+  }, [basket]);
 
-    setHoldId(null);
-    setHoldRemainingSeconds(0);
-    setHoldError(null);
-    setSelectedSlot(null);
+  const handleSelectPackage = (pkgId: string) => {
+    if (pkgId === selectedPackageId) return;
+    // CRITICAL: Switching package preserves the client's current basket selections!
     setSelectedPackageId(pkgId);
     loadAvailability(currentMonth, selectedDate, pkgId);
   };
 
   const handleSelectDate = (dateStr: string) => {
+    // CRITICAL: Changing calendar dates preserves existing selections in the basket!
     setSelectedDate(dateStr);
-    setSelectedSlot(null);
-    setHoldId(null);
-    setHoldRemainingSeconds(0);
-    setHoldError(null);
+    loadAvailability(currentMonth, dateStr);
+  };
+
+  const handleRemoveBasketItem = async (slotId: string) => {
+    const item = basket.find((b) => b.slot_id === slotId);
+    if (!item) return;
+
+    // Release only this specific appointment's hold
+    try {
+      const flowToken = getOrCreateFlowToken();
+      await fetch("/api/bookings/hold", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "release",
+          hold_id: item.hold_id || undefined,
+          slot_id: item.slot_id,
+          flow_token: flowToken,
+        }),
+      });
+    } catch (err) {
+      console.warn("Failed to release hold for slot:", slotId, err);
+    }
+
+    setBasket((prev) => prev.filter((b) => b.slot_id !== slotId));
+    loadAvailability(currentMonth, selectedDate);
   };
 
   const handleSelectSlot = async (slot: ComputedTimeSlot) => {
     if (!slot || !slot.slot_id) return;
-    if (selectedSlot?.slot_id === slot.slot_id && holdId && holdRemainingSeconds > 0) {
+
+    // If slot is already in basket, clicking it removes it
+    const existing = basket.find((b) => b.slot_id === slot.slot_id);
+    if (existing) {
+      await handleRemoveBasketItem(slot.slot_id);
       return;
     }
 
     setHoldError(null);
+    // 1. HIGHEST PRIORITY: Provide IMMEDIATE visual pending feedback on the clicked slot!
+    setPendingSlotId(slot.slot_id);
     const flowToken = getOrCreateFlowToken();
 
     try {
@@ -325,26 +376,40 @@ export default function ConvocationBookingClient({
             "This time slot is temporarily held or fully booked by another visitor. Please select a different slot."
         );
         loadAvailability(currentMonth, selectedDate);
+        setPendingSlotId(null);
         return;
       }
 
-      setSelectedSlot(slot);
-      setHoldId(json.hold_id || null);
-      setHoldRemainingSeconds(
-        json.remaining_seconds || (event?.slot_hold_duration_mins || 5) * 60
-      );
+      const pkgPrice =
+        selectedPackage?.price_numeric ||
+        (selectedPackage?.price_label
+          ? Number(selectedPackage.price_label.replace(/[^0-9]/g, "")) || 0
+          : 0);
 
-      // Smooth scroll to reservation details on mobile upon successful slot hold
-      if (typeof window !== "undefined" && window.innerWidth < 1024) {
-        setTimeout(() => {
-          const target = document.getElementById("booking-reservation-details");
-          if (target) {
-            target.scrollIntoView({ behavior: "smooth", block: "start" });
-          }
-        }, 150);
-      }
-    } catch {
+      const newItem: BasketItem = {
+        slot_id: slot.slot_id,
+        slot_label: `${slot.start_time_label} – ${slot.end_time_label}`,
+        start_at: slot.start_at,
+        end_at: slot.end_at,
+        booking_date: slot.date,
+        duration_mins: slot.duration_mins,
+        session_id: slot.session_id || null,
+        package_id: selectedPackage?.id || "",
+        package_name: selectedPackage?.name || "Standard Session",
+        package_price_numeric: pkgPrice,
+        package_price_label:
+          selectedPackage?.price_label || `BDT ${pkgPrice.toLocaleString()}`,
+        hold_id: json.hold_id || null,
+        expires_at: json.expires_at,
+        remaining_seconds: json.remaining_seconds || (event?.slot_hold_duration_mins || 5) * 60,
+      };
+
+      setBasket((prev) => [...prev.filter((b) => b.slot_id !== slot.slot_id), newItem]);
       setSelectedSlot(slot);
+    } catch {
+      setHoldError("Network error while reserving time slot. Please try again.");
+    } finally {
+      setPendingSlotId(null);
     }
   };
 
@@ -394,12 +459,13 @@ export default function ConvocationBookingClient({
     event?.frame_printing_config?.frame_types?.filter(
       (f) => f.is_active !== false
     ) || [];
+  const firstActiveFrameId = activeFrameTypes[0]?.id;
 
   useEffect(() => {
-    if (activeFrameTypes.length > 0 && !selectedFrameId) {
-      setSelectedFrameId(activeFrameTypes[0].id);
+    if (firstActiveFrameId && !selectedFrameId) {
+      setSelectedFrameId(firstActiveFrameId);
     }
-  }, [activeFrameTypes.length, selectedFrameId]);
+  }, [firstActiveFrameId, selectedFrameId]);
 
   const isFramePrintingAvailable = Boolean(
     frameConfig?.enabled &&
@@ -415,18 +481,51 @@ export default function ConvocationBookingClient({
     activeFrameTypes[0] ||
     null;
 
-  const packagePriceNumeric =
+  const fallbackPackagePrice =
     selectedPackage?.price_numeric ||
     (selectedPackage?.price_label
       ? Number(selectedPackage.price_label.replace(/[^0-9]/g, "")) || 0
       : 0);
+
+  const totalPackagePrice =
+    basket.length > 0
+      ? basket.reduce((sum, item) => sum + item.package_price_numeric, 0)
+      : fallbackPackagePrice;
+
+  const packageCountBreakdown = useMemo(() => {
+    const map = new Map<
+      string,
+      { id: string; name: string; count: number; unitPrice: number; subtotal: number }
+    >();
+    for (const item of basket) {
+      const existing = map.get(item.package_id) || {
+        id: item.package_id,
+        name: item.package_name,
+        count: 0,
+        unitPrice: item.package_price_numeric,
+        subtotal: 0,
+      };
+      existing.count += 1;
+      existing.subtotal += item.package_price_numeric;
+      map.set(item.package_id, existing);
+    }
+    return Array.from(map.values());
+  }, [basket]);
+
+  const datesWithBasketItems = useMemo(() => {
+    return Array.from(new Set(basket.map((b) => b.booking_date)));
+  }, [basket]);
+
+  const selectedSlotIds = useMemo(() => {
+    return basket.map((b) => b.slot_id);
+  }, [basket]);
 
   const frameTotalPrice =
     framePrintingSelected && selectedFrame
       ? Number(selectedFrame.price) * frameQuantity
       : 0;
 
-  const totalEstimatedPrice = packagePriceNumeric + frameTotalPrice;
+  const totalEstimatedPrice = totalPackagePrice + frameTotalPrice;
   const chosenDuration =
     selectedPackage?.duration_mins ||
     selectedSlot?.duration_mins ||
@@ -444,9 +543,9 @@ export default function ConvocationBookingClient({
       return;
     }
 
-    if (!selectedSlot || !selectedSlot.slot_id) {
+    if (basket.length === 0 && (!selectedSlot || !selectedSlot.slot_id)) {
       setSubmitError(
-        "Please select an available date and time slot before confirming."
+        "Please select at least one available date and time slot before confirming."
       );
       return;
     }
@@ -553,10 +652,36 @@ export default function ConvocationBookingClient({
 
     try {
       setSubmitting(true);
-      const slotStartMs = Date.parse(selectedSlot.start_at);
-      const computedEndAt = new Date(
-        slotStartMs + chosenDuration * 60_000
-      ).toISOString();
+
+      const itemsPayload =
+        basket.length > 0
+          ? basket.map((item) => {
+              const startMs = Date.parse(item.start_at);
+              const computedEnd =
+                item.end_at || new Date(startMs + item.duration_mins * 60_000).toISOString();
+              return {
+                slot_id: item.slot_id,
+                package_id: item.package_id,
+                session_id: item.session_id || null,
+                hold_id: item.hold_id || null,
+                booking_date: item.booking_date,
+                start_at: item.start_at,
+                end_at: computedEnd,
+                duration_mins: item.duration_mins,
+              };
+            })
+          : [
+              {
+                slot_id: selectedSlot!.slot_id!,
+                package_id: selectedPackage?.id || "",
+                session_id: selectedSlot!.session_id || null,
+                hold_id: holdId || null,
+                booking_date: selectedSlot!.date,
+                start_at: selectedSlot!.start_at,
+                end_at: new Date(Date.parse(selectedSlot!.start_at) + chosenDuration * 60_000).toISOString(),
+                duration_mins: chosenDuration,
+              },
+            ];
 
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -564,15 +689,8 @@ export default function ConvocationBookingClient({
         body: JSON.stringify({
           booking_type: "convocation",
           event_id: event.id,
-          session_id: selectedSlot.session_id || null,
-          slot_id: selectedSlot.slot_id,
-          hold_id: holdId || null,
           flow_token: getOrCreateFlowToken(),
-          package_id: selectedPackage?.id || null,
-          booking_date: selectedSlot.date,
-          start_at: selectedSlot.start_at,
-          end_at: computedEndAt,
-          duration_mins: chosenDuration,
+          items: itemsPayload,
           frame_printing_selected: isFramePrintingAvailable && framePrintingSelected && Boolean(selectedFrame),
           frame_type_id:
             isFramePrintingAvailable && framePrintingSelected && selectedFrame ? selectedFrame.id : null,
@@ -611,14 +729,18 @@ export default function ConvocationBookingClient({
         return;
       }
 
+      setBasket([]);
       setHoldId(null);
       setHoldRemainingSeconds(0);
 
       const booking = result.data || result.booking;
+      const groupRef = result.group_ref || booking?.booking_group_ref || "";
       router.push(
         `/booking/confirmation?id=${encodeURIComponent(
           booking.id
-        )}&ref=${encodeURIComponent(booking.booking_ref)}`
+        )}&ref=${encodeURIComponent(booking.booking_ref)}${
+          groupRef ? `&group_ref=${encodeURIComponent(groupRef)}` : ""
+        }`
       );
     } catch (err: any) {
       setSubmitError(err?.message || "Network error while creating reservation.");
@@ -1233,7 +1355,7 @@ export default function ConvocationBookingClient({
           </div>
 
           {/* Temporary Slot Reservation Countdown Banner */}
-          {selectedSlot && holdRemainingSeconds > 0 && (
+          {(basket.length > 0 || (selectedSlot && holdRemainingSeconds > 0)) && holdRemainingSeconds > 0 && (
             <div className="p-4 rounded-2xl bg-[#3A2008] text-[#FAF7F2] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm border border-[#5C4028] animate-fadeIn">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-[#5C4028] flex items-center justify-center shrink-0">
@@ -1241,17 +1363,23 @@ export default function ConvocationBookingClient({
                 </div>
                 <div>
                   <div className="text-xs sm:text-sm font-bold flex items-center gap-2">
-                    <span>Time Slot Temporarily Reserved</span>
+                    <span>
+                      {basket.length > 1
+                        ? `${basket.length} Time Slots Temporarily Reserved`
+                        : "Time Slot Temporarily Reserved"}
+                    </span>
                     <span className="inline-block w-2 h-2 rounded-full bg-[#34D399] animate-ping" />
                   </div>
                   <p className="text-[11px] text-[#E5DEC9]">
-                    Reserved for you ({selectedSlot.start_time_label} – {selectedSlot.end_time_label}). Please complete your details before the timer runs out.
+                    {basket.length > 1
+                      ? `Your selected appointments across ${datesWithBasketItems.length} date(s) are locked for you. Complete your details before the timer runs out.`
+                      : `Reserved for you (${basket[0]?.slot_label || selectedSlot?.start_time_label}). Please complete your details before the timer runs out.`}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 bg-[#141210]/60 px-3.5 py-2 rounded-xl border border-[#D9A673]/30 shrink-0 self-start sm:self-auto">
                 <span className="text-[10px] uppercase font-mono text-[#D9A673] font-semibold tracking-wider">
-                  Time Left:
+                  Hold Timer:
                 </span>
                 <span className="font-mono text-base font-extrabold text-[#FAF7F2]">
                   {String(Math.floor(holdRemainingSeconds / 60)).padStart(2, "0")}:
@@ -1279,21 +1407,24 @@ export default function ConvocationBookingClient({
             monthSummary={data?.monthSummary || []}
             slotsForSelectedDate={slotsForSelectedDate}
             selectedSlot={selectedSlot}
+            selectedSlotIds={selectedSlotIds}
+            pendingSlotId={pendingSlotId}
+            datesWithBasketItems={datesWithBasketItems}
             onSelectSlot={handleSelectSlot}
             loading={loading}
           />
         </div>
 
         <div id="booking-reservation-details" className="lg:col-span-5 space-y-6 scroll-mt-24 lg:scroll-mt-8">
-          {/* Selected Slot Compact Mobile Banner */}
-          {selectedSlot && (
+          {/* Selected Slots Compact Mobile Banner */}
+          {basket.length > 0 && (
             <div className="lg:hidden p-3.5 rounded-2xl bg-[#3A2008] text-[#FAF7F2] flex items-center justify-between gap-3 shadow-md border border-[#5C4028]">
-              <div className="text-xs space-y-0.5">
+              <div className="text-xs space-y-0.5 min-w-0">
                 <span className="text-[10px] uppercase font-mono tracking-wider text-[#D9A673] block">
-                  Selected Time Slot
+                  Booking Basket ({basket.length})
                 </span>
-                <span className="font-bold font-mono">
-                  {selectedSlot.date} • {selectedSlot.start_time_label} – {selectedSlot.end_time_label}
+                <span className="font-bold font-mono truncate block">
+                  {basket.length} {basket.length === 1 ? "slot" : "slots"} • Total: BDT {totalEstimatedPrice.toLocaleString()}
                 </span>
               </div>
               <button
@@ -1304,7 +1435,7 @@ export default function ConvocationBookingClient({
                 }}
                 className="px-3 py-1.5 rounded-xl bg-[#FAF7F2] text-[#3A2008] text-xs font-semibold shrink-0"
               >
-                Change slot
+                Add more slots
               </button>
             </div>
           )}
@@ -1321,17 +1452,23 @@ export default function ConvocationBookingClient({
           </div>
 
           {/* Booking Summary Card */}
-          <div className="rounded-3xl bg-[#F4EFE6] border border-[#D5CCB4] p-6 space-y-4">
+          <div className="rounded-3xl bg-[#F4EFE6] border border-[#D5CCB4] p-6 space-y-4 shadow-xs">
             <div className="flex items-center justify-between border-b border-[#D5CCB4] pb-3">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-[#3A2008] font-mono">
-                Reservation Summary
+              <h3 className="text-sm font-bold uppercase tracking-wider text-[#3A2008] font-mono flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-[#A66D35]" />
+                <span>Reservation Basket</span>
+                {basket.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-[#3A2008] text-[#FAF7F2] text-[10px] font-mono font-bold">
+                    {basket.length}
+                  </span>
+                )}
               </h3>
               <span className="text-[11px] font-mono text-[#5C5449]">
                 {event?.timezone || "Asia/Dhaka"}
               </span>
             </div>
 
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-3 text-xs">
               <div className="flex justify-between gap-4">
                 <span className="text-[#5C5449]">Event:</span>
                 <span className="font-semibold text-[#141210] text-right">
@@ -1339,44 +1476,90 @@ export default function ConvocationBookingClient({
                 </span>
               </div>
 
-              <div className="flex justify-between gap-4">
-                <span className="text-[#5C5449]">Selected Package:</span>
-                <span className="font-semibold text-[#141210] text-right">
-                  {selectedPackage
-                    ? `${selectedPackage.name} (${selectedPackage.price_label})`
-                    : "Standard Event Session"}
-                </span>
-              </div>
+              {/* Selected Appointments Basket List */}
+              {basket.length > 0 ? (
+                <div className="space-y-2 pt-1 border-t border-[#D5CCB4]/60">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-[#877D70]">
+                    <span>Selected Appointments:</span>
+                    <span>Click X to remove</span>
+                  </div>
 
-              <div className="flex justify-between gap-4">
-                <span className="text-[#5C5449]">Date &amp; Slot (BST):</span>
-                <span className="font-mono font-semibold text-[#3A2008] text-right">
-                  {selectedSlot
-                    ? `${selectedSlot.date} • ${selectedSlot.start_time_label} – ${selectedSlot.end_time_label}`
-                    : "Select a slot on the calendar"}
-                </span>
-              </div>
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                    {basket.map((item) => (
+                      <div
+                        key={item.slot_id}
+                        className="p-3 rounded-2xl bg-[#FFFFFF] border border-[#D5CCB4] flex items-center justify-between gap-3 text-xs shadow-2xs hover:border-[#A66D35] transition-all"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-bold text-[#141210] truncate flex items-center gap-1.5">
+                            <span>{item.package_name}</span>
+                            <span className="text-[10px] font-mono text-[#877D70] px-1 py-0.2 bg-[#FAF7F2] rounded border border-[#E5DEC9]">
+                              {item.duration_mins}m
+                            </span>
+                          </div>
+                          <div className="font-mono text-[#5C4028] text-[11px]">
+                            {item.booking_date} • {item.slot_label}
+                          </div>
+                          {item.remaining_seconds > 0 && (
+                            <div className="text-[10px] font-mono text-[#2E6B4E] flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5" />
+                              <span>
+                                Hold: {String(Math.floor(item.remaining_seconds / 60)).padStart(2, "0")}:
+                                {String(item.remaining_seconds % 60).padStart(2, "0")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
 
-              {selectedSlot && (
-                <div className="flex justify-between gap-4">
-                  <span className="text-[#5C5449]">Duration &amp; Capacity:</span>
-                  <span className="font-mono text-[#141210] text-right">
-                    {chosenDuration}m (
-                    {selectedSlot.remaining_capacity} spot
-                    {selectedSlot.remaining_capacity === 1 ? "" : "s"} remaining)
-                  </span>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span className="font-mono font-bold text-[#141210]">
+                            BDT {item.package_price_numeric.toLocaleString()}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBasketItem(item.slot_id)}
+                            className="w-6 h-6 rounded-full bg-[#FAF7F2] hover:bg-red-50 text-[#877D70] hover:text-red-600 border border-[#E5DEC9] hover:border-red-200 flex items-center justify-center transition-colors"
+                            title="Remove this appointment"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-4 text-center text-xs text-[#877D70] bg-[#FAF7F2] rounded-2xl border border-dashed border-[#D5CCB4]">
+                  No appointments selected yet. Click any available time slot on the calendar to add it to your booking basket.
+                </div>
+              )}
+
+              {/* Package Breakdown */}
+              {packageCountBreakdown.length > 0 && (
+                <div className="pt-2 border-t border-[#D5CCB4] space-y-1">
+                  {packageCountBreakdown.map((pkg) => (
+                    <div key={pkg.id} className="flex justify-between text-xs text-[#5C5449]">
+                      <span>
+                        {pkg.count}× {pkg.name}:
+                      </span>
+                      <span className="font-mono font-medium text-[#141210]">
+                        BDT {pkg.subtotal.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  {basket.length > 1 && (
+                    <div className="flex justify-between text-xs font-semibold text-[#141210] pt-1">
+                      <span>Package Subtotal ({basket.length} slots):</span>
+                      <span className="font-mono">
+                        BDT {totalPackagePrice.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Dynamic Live Price Breakdown */}
-              <div className="pt-2.5 border-t border-[#D5CCB4] space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-[#5C5449]">Package Base Price:</span>
-                  <span className="font-mono font-bold text-[#141210]">
-                    BDT {packagePriceNumeric.toLocaleString()}
-                  </span>
-                </div>
-
+              <div className="pt-2 border-t border-[#D5CCB4] space-y-1.5">
                 {framePrintingSelected && selectedFrame && (
                   <div className="flex justify-between text-xs text-[#A66D35]">
                     <span>
@@ -1664,23 +1847,56 @@ export default function ConvocationBookingClient({
 
             <button
               type="submit"
-              disabled={submitting || !isEventBookable || !selectedSlot}
+              disabled={submitting || !isEventBookable || (basket.length === 0 && !selectedSlot)}
               className="w-full inline-flex items-center justify-center gap-2 py-4 rounded-xl text-xs font-semibold uppercase tracking-widest bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>
-                {submitting
-                  ? "Reserving Slot..."
-                  : !isEventBookable
-                  ? "Bookings Not Open for This Event"
-                  : !selectedSlot
-                  ? "Select an Available Time Slot Above"
-                  : "Confirm Event Reservation"}
-              </span>
-              <ArrowRight className="w-4 h-4" />
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#D9A673]" />
+                  <span>Confirming Reservation...</span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {!isEventBookable
+                      ? "Bookings Not Open for This Event"
+                      : basket.length === 0 && !selectedSlot
+                      ? "Select Time Slot(s) Above"
+                      : basket.length > 1
+                      ? `Confirm Group Reservation (${basket.length} appointments)`
+                      : "Confirm Event Reservation"}
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
         </div>
       </div>
+
+      {/* Sticky Mobile Basket Bar */}
+      {basket.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden p-3.5 bg-[#3A2008] text-[#FAF7F2] border-t border-[#5C4028] shadow-2xl flex items-center justify-between gap-3 animate-slideUp">
+          <div className="text-xs space-y-0.5 min-w-0">
+            <div className="font-bold font-mono truncate text-[#D9A673]">
+              {basket.length} {basket.length === 1 ? "Appointment" : "Appointments"} Selected
+            </div>
+            <div className="text-[11px] font-mono text-[#FAF7F2]">
+              Total: BDT {totalEstimatedPrice.toLocaleString()}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById("booking-reservation-details");
+              if (el) el.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="px-4 py-2 rounded-xl bg-[#D9A673] hover:bg-[#FAF7F2] text-[#141210] text-xs font-bold shrink-0 transition-colors shadow-xs"
+          >
+            Review &amp; Confirm
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -427,6 +427,10 @@ export type EmailSendStatus =
 export interface Booking {
   id: string;
   booking_ref: string;
+  booking_group_id?: string | null;
+  booking_group_ref?: string | null;
+  group_total_amount?: number | null;
+  is_primary_group_item?: boolean | null;
   idempotency_key?: string | null;
   user_id?: string | null;
   booking_type: BookingType;

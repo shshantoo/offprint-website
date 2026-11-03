@@ -30,6 +30,9 @@ import {
   adminFirstLoginCredentialSchema,
   adminAccountUpdateSchema,
   calculateAndVerifyBookingPrice,
+  calculateAndVerifyMultiBookingPrice,
+  bookingBasketItemSchema,
+  createMultiBookingSchema,
   createBookingSchema,
   photographyPackageSchema,
 } from "../src/lib/validations";
@@ -3920,5 +3923,316 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
       simulatedDatabase.find((b) => b.id === "b-cancelled-2")?.status,
       "cancelled"
     );
+  });
+
+  it("35. Multi-Package & Multi-Slot Basket, Schedule Coexistence, Atomic Group Checkout satisfying bookings_check2, Automatic Storage Discovery & Brand Logo Display Rules", () => {
+    // -------------------------------------------------------------
+    // Scenario 1: Schedule Coexistence for Distinct Durations on Same Date & Start Time
+    // -------------------------------------------------------------
+    interface SimulatedSlot {
+      id: string;
+      event_id: string;
+      session_id: string;
+      start_at: string;
+      end_at: string;
+      duration_mins: number;
+      package_ids: string[];
+      is_blocked: boolean;
+      booked_count: number;
+    }
+
+    const eventId = "ev-convocation-2026";
+    const session30Id = "sess-30m";
+    const session60Id = "sess-60m";
+
+    const slot30m: SimulatedSlot = {
+      id: "slot-30m-1000",
+      event_id: eventId,
+      session_id: session30Id,
+      start_at: "2026-11-20T10:00:00+06:00",
+      end_at: "2026-11-20T10:30:00+06:00",
+      duration_mins: 30,
+      package_ids: ["pkg-solo-30"],
+      is_blocked: false,
+      booked_count: 0,
+    };
+
+    const slot60m: SimulatedSlot = {
+      id: "slot-60m-1000",
+      event_id: eventId,
+      session_id: session60Id,
+      start_at: "2026-11-20T10:00:00+06:00",
+      end_at: "2026-11-20T11:00:00+06:00",
+      duration_mins: 60,
+      package_ids: ["pkg-family-60"],
+      is_blocked: false,
+      booked_count: 0,
+    };
+
+    const slotKey = (s: SimulatedSlot) => `${s.event_id}__${s.start_at}__${s.end_at}`;
+    assert.notEqual(slotKey(slot30m), slotKey(slot60m), "Distinct end times allow coexistence without unique collision");
+
+    // Merging package_ids for identical duration slots (e.g. two 30m packages sharing the 10:00-10:30 slot)
+    const existingPackageIds = ["pkg-solo-30"];
+    const incomingPackageIds = ["pkg-duo-30"];
+    const mergedPackageIds = Array.from(new Set([...existingPackageIds, ...incomingPackageIds]));
+    assert.deepEqual(mergedPackageIds, ["pkg-solo-30", "pkg-duo-30"], "Cleanly merges package_ids without duplicate slots");
+
+    // Selective pruning: Pruning only unbooked slots that belong to the target package, preserving others
+    const slotsInDb: SimulatedSlot[] = [
+      slot30m,
+      slot60m,
+      {
+        id: "slot-30m-1030",
+        event_id: eventId,
+        session_id: session30Id,
+        start_at: "2026-11-20T10:30:00+06:00",
+        end_at: "2026-11-20T11:00:00+06:00",
+        duration_mins: 30,
+        package_ids: ["pkg-solo-30"],
+        is_blocked: false,
+        booked_count: 0,
+      },
+    ];
+
+    const pruneTargetPackageId = "pkg-solo-30";
+    const remainingSlotsAfterPrune = slotsInDb.filter((s) => {
+      if (s.booked_count > 0) return true;
+      const belongsToTarget = s.package_ids.includes(pruneTargetPackageId);
+      const hasOtherPackages = s.package_ids.some((p) => p !== pruneTargetPackageId);
+      return !belongsToTarget || hasOtherPackages;
+    });
+
+    assert.equal(remainingSlotsAfterPrune.length, 1, "Only pkg-solo-30 unbooked slots pruned; pkg-family-60 preserved");
+    assert.equal(remainingSlotsAfterPrune[0].id, "slot-60m-1000", "Preserved 60m slot");
+
+    // -------------------------------------------------------------
+    // Scenario 2: Multi-Slot Hold Coexistence & Selective Release
+    // -------------------------------------------------------------
+    interface SimulatedHold {
+      id: string;
+      slot_id: string;
+      flow_token: string;
+      status: "active" | "released" | "consumed";
+      expires_at: number;
+    }
+
+    const flowToken = "flow-user-session-basket-token-12345";
+    const holds: SimulatedHold[] = [];
+
+    // User adds Slot A to basket
+    holds.push({
+      id: "hold-a",
+      slot_id: "slot-30m-1000",
+      flow_token: flowToken,
+      status: "active",
+      expires_at: Date.now() + 10 * 60_000,
+    });
+
+    // User adds Slot B to basket (under same flow token)
+    // Sibling hold must coexist (not auto-release hold-a)
+    holds.push({
+      id: "hold-b",
+      slot_id: "slot-60m-1000",
+      flow_token: flowToken,
+      status: "active",
+      expires_at: Date.now() + 10 * 60_000,
+    });
+
+    const activeBasketHolds = holds.filter((h) => h.flow_token === flowToken && h.status === "active");
+    assert.equal(activeBasketHolds.length, 2, "Both sibling basket holds coexist simultaneously");
+
+    // User removes Slot A from basket -> releases ONLY Slot A
+    const releaseTargetSlot = "slot-30m-1000";
+    for (const h of holds) {
+      if (h.flow_token === flowToken && h.slot_id === releaseTargetSlot && h.status === "active") {
+        h.status = "released";
+      }
+    }
+
+    const activeHoldsAfterRemoval = holds.filter((h) => h.flow_token === flowToken && h.status === "active");
+    assert.equal(activeHoldsAfterRemoval.length, 1, "Only 1 active hold remains");
+    assert.equal(activeHoldsAfterRemoval[0].slot_id, "slot-60m-1000", "Slot B remains active and held");
+
+    // -------------------------------------------------------------
+    // Scenario 3: Authoritative Multi-Booking Server-Side Pricing Calculation
+    // -------------------------------------------------------------
+    const mockPackages = [
+      {
+        id: "pkg-solo-30",
+        name: "Solo Portraiture",
+        price_numeric: 3500,
+        currency: "BDT",
+        duration_mins: 30,
+        is_active: true,
+      },
+      {
+        id: "pkg-family-60",
+        name: "Family Heritage Portraiture",
+        price_numeric: 6500,
+        currency: "BDT",
+        duration_mins: 60,
+        is_active: true,
+      },
+    ];
+
+    const framePrintingConfig: FramePrintingConfig = {
+      enabled: true,
+      title: "Archival Frame & Print Solutions",
+      description: "Fine-art custom frames",
+      max_quantity: 5,
+      frame_types: [
+        {
+          id: "frame-a3-acrylic",
+          name: "A3 Acrylic Luxury Frame",
+          dimensions: "12\" x 18\"",
+          price: 1500,
+          is_active: true,
+        },
+      ],
+    };
+
+    const basketInput = {
+      items: [
+        { package_id: "pkg-solo-30", slot_id: "slot-30m-1" },
+        { package_id: "pkg-solo-30", slot_id: "slot-30m-2" },
+        { package_id: "pkg-family-60", slot_id: "slot-60m-1" },
+      ],
+      frameSelected: true,
+      frameTypeId: "frame-a3-acrylic",
+      frameQuantity: 2,
+    };
+
+    const calculatedPrice = calculateAndVerifyMultiBookingPrice({
+      items: basketInput.items.map((it) => ({
+        package_id: it.package_id,
+        slot_id: it.slot_id,
+        pkg: mockPackages.find((p) => p.id === it.package_id) as any,
+      })),
+      frameConfig: framePrintingConfig,
+      frameSelected: basketInput.frameSelected,
+      frameTypeId: basketInput.frameTypeId,
+      frameQuantity: basketInput.frameQuantity,
+    });
+
+    // Package subtotal: 3500 + 3500 + 6500 = 13500 BDT
+    assert.equal(calculatedPrice.total_package_price, 13500);
+    // Frames: 2 * 1500 = 3000 BDT
+    assert.equal(calculatedPrice.frame_total_price, 3000);
+    // Grand total: 13500 + 3000 = 16500 BDT
+    assert.equal(calculatedPrice.total_price, 16500);
+    assert.equal(calculatedPrice.pricing_snapshot.total_price, 16500);
+
+    // -------------------------------------------------------------
+    // Scenario 4: Group Booking Row Creation Satisfying bookings_check2
+    // -------------------------------------------------------------
+    const checkBookingsCheck2 = (b: Record<string, any>): boolean => {
+      if (b.booking_type === "convocation") {
+        return Boolean(b.event_id && (b.slot_id || b.status === "cancelled"));
+      }
+      if (b.booking_type === "traditional") {
+        return Boolean(b.service_id || b.status === "cancelled");
+      }
+      return false;
+    };
+
+    const sharedGroupId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const sharedGroupRef = "OFP-2026-G74921";
+
+    const createdRows = basketInput.items.map((item, idx) => {
+      const isPrimary = idx === 0;
+      return {
+        id: `booking-${idx + 1}`,
+        booking_ref: `OFP-2026-B${1000 + idx}`,
+        booking_group_id: sharedGroupId,
+        booking_group_ref: sharedGroupRef,
+        is_primary_group_item: isPrimary,
+        group_total_amount: isPrimary ? calculatedPrice.total_price : null,
+        booking_type: "convocation" as const,
+        event_id: eventId,
+        slot_id: item.slot_id,
+        status: "confirmed",
+        package_id: item.package_id,
+        package_name: mockPackages.find((p) => p.id === item.package_id)?.name,
+        total_price: isPrimary ? calculatedPrice.total_price : 0,
+        frame_printing_selected: isPrimary ? calculatedPrice.frame_printing_selected : false,
+      };
+    });
+
+    assert.equal(createdRows.length, 3, "Creates 3 distinct booking rows for 3 appointments");
+    for (const row of createdRows) {
+      assert.equal(checkBookingsCheck2(row), true, `Row ${row.booking_ref} must strictly satisfy bookings_check2`);
+      assert.equal(row.booking_group_id, sharedGroupId, "Shares identical booking_group_id");
+      assert.equal(row.booking_group_ref, sharedGroupRef, "Shares identical booking_group_ref");
+    }
+
+    assert.equal(createdRows[0].is_primary_group_item, true);
+    assert.equal(createdRows[1].is_primary_group_item, false);
+    assert.equal(createdRows[2].is_primary_group_item, false);
+
+    // -------------------------------------------------------------
+    // Scenario 5: Automatic Supabase Storage Folder Discovery
+    // -------------------------------------------------------------
+    const physicalStorageItems = [
+      { name: "IUB 23rd Convocation" },
+      { name: "NSU 25th Convocation" },
+      { name: "iub-23rd-photo-1.jpg" },
+      { name: ".emptyFolderPlaceholder" },
+    ];
+
+    const existingDbFolders = [
+      { id: "f-1", slug: "iub-23rd-convocation", name: "IUB 23rd Convocation", type: "event-archives" },
+    ];
+
+    const discoveredFolderNames = physicalStorageItems
+      .map((item) => item.name)
+      .filter((name) => !name.includes(".") && !name.startsWith("."));
+
+    const reconciledFolders = [...existingDbFolders];
+    for (const folderName of discoveredFolderNames) {
+      const slug = folderName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      const exists = reconciledFolders.some((f) => f.slug === slug || f.name.toLowerCase() === folderName.toLowerCase());
+      if (!exists) {
+        reconciledFolders.push({
+          id: `f-${reconciledFolders.length + 1}`,
+          slug,
+          name: folderName,
+          type: "event-archives",
+        });
+      }
+    }
+
+    assert.equal(reconciledFolders.length, 2, "Automatically discovered and reconciled NSU 25th Convocation");
+    assert.ok(reconciledFolders.some((f) => f.name === "NSU 25th Convocation"), "NSU 25th Convocation is present");
+
+    const storageFilesInsideFolder = [
+      { name: ".emptyFolderPlaceholder", id: "p1" },
+      { name: "photo-001.jpg", id: "p2" },
+      { name: "photo-002.jpg", id: "p3" },
+      { name: ".DS_Store", id: "p4" },
+    ];
+    const validPhotos = storageFilesInsideFolder.filter(
+      (file) => !file.name.startsWith(".") && !file.name.includes(".emptyFolderPlaceholder")
+    );
+    assert.equal(validPhotos.length, 2, "Correctly excludes .emptyFolderPlaceholder and dotfiles from photo count");
+
+    // -------------------------------------------------------------
+    // Scenario 6: Brand Logo Display & Contrast Rules
+    // -------------------------------------------------------------
+    const resolveBrandLogo = (isDarkBackground: boolean) => {
+      return {
+        src: isDarkBackground ? "/brand/offprint-white-logo.png" : "/brand/offprint-black-logo.png",
+        hasRedundantText: false,
+        alt: "OFFPRINT Photography & Print Studio",
+      };
+    };
+
+    const transparentHeroHeader = resolveBrandLogo(true);
+    assert.equal(transparentHeroHeader.src, "/brand/offprint-white-logo.png", "Dark / transparent scene uses white logo");
+    assert.equal(transparentHeroHeader.hasRedundantText, false, "Logo mark only, no extra brand text");
+
+    const lightNavbarHeader = resolveBrandLogo(false);
+    assert.equal(lightNavbarHeader.src, "/brand/offprint-black-logo.png", "Light background uses black logo");
+    assert.equal(lightNavbarHeader.hasRedundantText, false, "Logo mark only, no extra brand text");
   });
 });

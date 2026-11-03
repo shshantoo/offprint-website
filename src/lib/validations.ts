@@ -394,6 +394,67 @@ export const createBookingSchema = z
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 
+export const bookingBasketItemSchema = z.object({
+  slot_id: z.string().uuid("Valid slot ID is required"),
+  package_id: z.string().uuid("Valid package ID is required"),
+  session_id: z.string().uuid().optional().nullable(),
+  hold_id: z.string().uuid().optional().nullable(),
+  booking_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Valid YYYY-MM-DD date is required"),
+  start_at: z.string().min(10, "Valid start timestamp is required"),
+  end_at: z.string().min(10, "Valid end timestamp is required"),
+  duration_mins: z.coerce.number().int().min(10).max(720).optional(),
+});
+
+export type BookingBasketItemInput = z.infer<typeof bookingBasketItemSchema>;
+
+export const createMultiBookingSchema = z
+  .object({
+    idempotency_key: z.string().max(128).optional(),
+    booking_type: z.enum(["convocation", "special"]).default("convocation"),
+    event_id: z.string().uuid("Valid event ID is required"),
+    flow_token: z.string().optional().nullable(),
+    items: z.array(bookingBasketItemSchema).min(1, "Please select at least one time slot appointment"),
+    client_name: z.string().trim().min(1, "Please enter your name").default("Client"),
+    client_email: z.string().trim().email("Please enter a valid email address").optional().nullable().or(z.literal("")),
+    client_phone: z.string().trim().min(3, "Please enter a valid contact phone number").optional().nullable().or(z.literal("")),
+    company_or_institution: z.string().trim().max(160).optional().nullable(),
+    student_id: z.string().trim().max(64).optional().nullable(),
+    degree_or_department: z.string().trim().max(160).optional().nullable(),
+    guests_count: z.coerce.number().int().min(1).max(100).default(1),
+    location: z.string().trim().min(1, "Please specify the venue or session location").default("OFFPRINT Studio, Dhaka"),
+    client_notes: z.string().trim().max(2000).optional().nullable(),
+    custom_fields: z
+      .record(z.string(), z.union([z.string(), z.array(z.string())]))
+      .optional()
+      .default({}),
+    frame_printing_selected: z.boolean().optional().default(false),
+    frame_type_id: z.string().trim().optional().nullable(),
+    frame_quantity: z.coerce.number().int().min(0).max(20).optional().default(0),
+  })
+  .superRefine((val, ctx) => {
+    if (!val.client_email && !val.client_phone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["client_email"],
+        message: "Please provide at least one contact method (email or phone) for your booking confirmation",
+      });
+    }
+
+    val.items.forEach((item, index) => {
+      const s = Date.parse(item.start_at);
+      const e = Date.parse(item.end_at);
+      if (Number.isNaN(s) || Number.isNaN(e) || e <= s) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", index, "end_at"],
+          message: "Appointment end time must be after start time",
+        });
+      }
+    });
+  });
+
+export type CreateMultiBookingInput = z.infer<typeof createMultiBookingSchema>;
+
 export const rescheduleBookingSchema = z.object({
   new_slot_id: z.string().uuid().optional().nullable(),
   new_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Valid YYYY-MM-DD date is required"),
@@ -825,6 +886,122 @@ export function calculateAndVerifyBookingPrice(params: {
     frame_unit_price: finalFrameUnitPrice,
     frame_total_price: finalFrameTotalPrice,
     total_price: totalPrice,
+    currency,
+    pricing_snapshot: snapshot,
+  };
+}
+
+export function calculateAndVerifyMultiBookingPrice(params: {
+  items: Array<{ pkg?: PhotographyPackage | null; duration_mins?: number }>;
+  frameConfig?: FramePrintingConfig | null;
+  frameSelected?: boolean;
+  frameTypeId?: string | null;
+  frameQuantity?: number;
+}): {
+  item_breakdown: Array<{
+    package_id: string;
+    package_name: string;
+    package_base_price: number;
+    duration_mins: number;
+  }>;
+  total_package_price: number;
+  frame_printing_selected: boolean;
+  frame_type_id: string | null;
+  frame_type_name: string | null;
+  frame_dimensions: string | null;
+  frame_quantity: number;
+  frame_unit_price: number;
+  frame_total_price: number;
+  total_price: number;
+  currency: string;
+  pricing_snapshot: BookingPricingSnapshot;
+} {
+  const {
+    items,
+    frameConfig,
+    frameSelected = false,
+    frameTypeId = null,
+    frameQuantity = 0,
+  } = params;
+
+  let totalPackagePrice = 0;
+  const itemBreakdown = items.map((item) => {
+    let basePrice = 0;
+    const pkg = item.pkg;
+    if (pkg) {
+      if (typeof pkg.price_numeric === "number" && pkg.price_numeric > 0) {
+        basePrice = pkg.price_numeric;
+      } else {
+        const match = (pkg.price_label || "").replace(/,/g, "").match(/\d+/);
+        if (match) {
+          basePrice = Number(match[0]) || 0;
+        }
+      }
+    }
+    totalPackagePrice += basePrice;
+    return {
+      package_id: pkg?.id || "",
+      package_name: pkg?.name || "Standard Session",
+      package_base_price: basePrice,
+      duration_mins: pkg?.duration_mins || item.duration_mins || 30,
+    };
+  });
+
+  const currency = items[0]?.pkg?.currency || "BDT";
+  const isFrameEligible = Boolean(frameConfig?.enabled);
+
+  let finalFrameSelected = false;
+  let finalFrameTypeId: string | null = null;
+  let finalFrameTypeName: string | null = null;
+  let finalFrameDimensions: string | null = null;
+  let finalFrameQuantity = 0;
+  let finalFrameUnitPrice = 0;
+  let finalFrameTotalPrice = 0;
+
+  if (frameSelected && isFrameEligible && frameTypeId && frameConfig?.frame_types) {
+    const chosenFrame = frameConfig.frame_types.find((f) => f.id === frameTypeId);
+    if (chosenFrame && chosenFrame.is_active !== false) {
+      finalFrameSelected = true;
+      finalFrameTypeId = chosenFrame.id;
+      finalFrameTypeName = chosenFrame.name;
+      finalFrameDimensions = chosenFrame.dimensions ?? null;
+      finalFrameUnitPrice = Number(chosenFrame.price) || Number((chosenFrame as any).price_numeric) || 0;
+      const maxAllowed = frameConfig.max_quantity || 5;
+      finalFrameQuantity = Math.min(Math.max(1, Number(frameQuantity) || 1), maxAllowed);
+      finalFrameTotalPrice = finalFrameUnitPrice * finalFrameQuantity;
+    }
+  }
+
+  const grandTotal = totalPackagePrice + finalFrameTotalPrice;
+
+  const snapshot: BookingPricingSnapshot = {
+    package_id: items[0]?.pkg?.id || null,
+    package_name: items.map((i) => i.pkg?.name).filter(Boolean).join(", ") || null,
+    package_base_price: totalPackagePrice,
+    currency,
+    duration_mins: items[0]?.pkg?.duration_mins || 30,
+    frame_printing_selected: finalFrameSelected,
+    frame_type_id: finalFrameTypeId,
+    frame_type_name: finalFrameTypeName,
+    frame_dimensions: finalFrameDimensions,
+    frame_quantity: finalFrameQuantity,
+    frame_unit_price: finalFrameUnitPrice,
+    frame_total_price: finalFrameTotalPrice,
+    total_price: grandTotal,
+    calculated_at: new Date().toISOString(),
+  };
+
+  return {
+    item_breakdown: itemBreakdown,
+    total_package_price: totalPackagePrice,
+    frame_printing_selected: finalFrameSelected,
+    frame_type_id: finalFrameTypeId,
+    frame_type_name: finalFrameTypeName,
+    frame_dimensions: finalFrameDimensions,
+    frame_quantity: finalFrameQuantity,
+    frame_unit_price: finalFrameUnitPrice,
+    frame_total_price: finalFrameTotalPrice,
+    total_price: grandTotal,
     currency,
     pricing_snapshot: snapshot,
   };

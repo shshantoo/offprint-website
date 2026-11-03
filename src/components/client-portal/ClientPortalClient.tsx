@@ -654,10 +654,17 @@ export default function ClientPortalClient() {
                 className="rounded-3xl bg-[#FFFFFF] border border-[#E5DEC9] hover:border-[#A66D35] p-6 flex flex-col justify-between gap-5 shadow-2xs transition-all"
               >
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] text-[#3A2008]">
-                      {b.booking_ref}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-[#FAF7F2] border border-[#E5DEC9] text-[#3A2008]">
+                        {b.booking_ref}
+                      </span>
+                      {b.booking_group_ref && b.booking_group_ref !== b.booking_ref && (
+                        <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#F4EFE6] text-[#A66D35] border border-[#D5CCB4]">
+                          Group: {b.booking_group_ref}
+                        </span>
+                      )}
+                    </div>
 
                     <span
                       className={`px-3 py-1 rounded-full text-[11px] font-mono uppercase font-semibold ${

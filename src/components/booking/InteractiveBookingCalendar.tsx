@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar as CalendarIcon,
+  Loader2,
 } from "lucide-react";
 
 interface InteractiveBookingCalendarProps {
@@ -19,7 +20,10 @@ interface InteractiveBookingCalendarProps {
   onSelectDate: (dateStr: string) => void;
   monthSummary: DayAvailabilitySummary[] | Record<string, DayAvailabilitySummary>;
   slotsForSelectedDate: ComputedTimeSlot[];
-  selectedSlot: ComputedTimeSlot | null;
+  selectedSlot?: ComputedTimeSlot | null;
+  selectedSlotIds?: string[];
+  pendingSlotId?: string | null;
+  datesWithBasketItems?: string[];
   onSelectSlot: (slot: ComputedTimeSlot) => void;
   loading?: boolean;
 }
@@ -49,6 +53,9 @@ export default function InteractiveBookingCalendar({
   monthSummary,
   slotsForSelectedDate,
   selectedSlot,
+  selectedSlotIds = [],
+  pendingSlotId = null,
+  datesWithBasketItems = [],
   onSelectSlot,
   loading = false,
 }: InteractiveBookingCalendarProps) {
@@ -166,7 +173,8 @@ export default function InteractiveBookingCalendar({
             const summary = summaryMap[cell.dateStr];
             const state = summary?.status || "unavailable";
             const isSelected = selectedDate === cell.dateStr;
-            const isInteractive = state === "available" || state === "full";
+            const hasBasketItems = datesWithBasketItems.includes(cell.dateStr);
+            const isInteractive = state === "available" || state === "full" || hasBasketItems;
 
             return (
               <button
@@ -174,7 +182,7 @@ export default function InteractiveBookingCalendar({
                 type="button"
                 disabled={!isInteractive || loading}
                 onClick={() => onSelectDate(cell.dateStr)}
-                className={`h-14 sm:h-20 rounded-2xl p-1.5 sm:p-2.5 flex flex-col items-center sm:items-start justify-between border text-left transition-all ${
+                className={`h-14 sm:h-20 rounded-2xl p-1.5 sm:p-2.5 flex flex-col items-center sm:items-start justify-between border text-left transition-all relative ${
                   isSelected
                     ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-sm"
                     : state === "available"
@@ -184,9 +192,17 @@ export default function InteractiveBookingCalendar({
                     : "bg-[#FAF7F2]/30 text-[#B8AFA0] border-transparent cursor-not-allowed opacity-60"
                 }`}
               >
-                <span className="text-xs sm:text-sm font-bold font-mono">
-                  {cell.day}
-                </span>
+                <div className="w-full flex items-center justify-between">
+                  <span className="text-xs sm:text-sm font-bold font-mono">
+                    {cell.day}
+                  </span>
+                  {hasBasketItems && (
+                    <span
+                      title="Appointments selected in your basket for this date"
+                      className="inline-flex items-center justify-center w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full bg-[#D9A673] ring-2 ring-white/50"
+                    />
+                  )}
+                </div>
 
                 {/* Bottom availability pill */}
                 <div className="w-full flex items-center justify-center sm:justify-between">
@@ -269,23 +285,28 @@ export default function InteractiveBookingCalendar({
           <div className="max-h-[360px] sm:max-h-[420px] lg:max-h-none overflow-y-auto pr-1.5 touch-pan-y scrollbar-thin">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {slotsForSelectedDate.map((slot) => {
-              const isSelected =
-                selectedSlot?.start_at === slot.start_at &&
-                (selectedSlot?.slot_id === slot.slot_id || !slot.slot_id);
-              const isAvailable = slot.state === "available" && slot.remaining_capacity > 0;
+              const isPending = pendingSlotId === slot.slot_id;
+              const isSelected = selectedSlotIds && selectedSlotIds.length > 0
+                ? Boolean(slot.slot_id && selectedSlotIds.includes(slot.slot_id))
+                : selectedSlot?.start_at === slot.start_at &&
+                  (selectedSlot?.slot_id === slot.slot_id || !slot.slot_id);
+              const isAvailable = (slot.state === "available" && slot.remaining_capacity > 0) || isSelected;
               const slotLabel = `${slot.start_time_label} – ${slot.end_time_label}`;
 
               return (
                 <button
                   key={`${slot.slot_id || slot.start_at}`}
                   type="button"
-                  disabled={!isAvailable}
-                  onClick={() => isAvailable && onSelectSlot(slot)}
-                  className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 ${
-                    isSelected
-                      ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-sm"
+                  aria-busy={isPending}
+                  disabled={isPending || (!isAvailable && !isSelected)}
+                  onClick={() => !isPending && (isAvailable || isSelected) && onSelectSlot(slot)}
+                  className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 relative ${
+                    isPending
+                      ? "bg-[#3A2008]/90 text-[#FAF7F2] border-[#D9A673] shadow-md ring-2 ring-[#D9A673]/30 cursor-wait"
+                      : isSelected
+                      ? "bg-[#3A2008] text-[#FAF7F2] border-[#3A2008] shadow-sm hover:border-[#D9A673]"
                       : isAvailable
-                      ? "bg-[#FAF7F2] hover:bg-[#F4EFE6] text-[#141210] border-[#D5CCB4] hover:border-[#3A2008]"
+                      ? "bg-[#FAF7F2] hover:bg-[#F4EFE6] text-[#141210] border-[#D5CCB4] hover:border-[#3A2008] cursor-pointer"
                       : "bg-[#FAF7F2]/50 text-[#877D70] border-[#E5DEC9] cursor-not-allowed opacity-65"
                   }`}
                 >
@@ -293,14 +314,20 @@ export default function InteractiveBookingCalendar({
                     <span className="text-xs sm:text-sm font-bold font-mono">
                       {slotLabel}
                     </span>
-                    {isSelected ? (
+                    {isPending ? (
+                      <Loader2 className="w-4 h-4 text-[#D9A673] animate-spin shrink-0" />
+                    ) : isSelected ? (
                       <CheckCircle2 className="w-4 h-4 text-[#D9A673] shrink-0" />
                     ) : !isAvailable ? (
                       <AlertCircle className="w-4 h-4 text-[#B86B19] shrink-0" />
                     ) : null}
                   </div>
 
-                  {slot.session_title && (
+                  {isPending ? (
+                    <div className="text-[11px] font-medium text-[#D9A673] flex items-center gap-1.5 animate-pulse">
+                      <span>Reserving slot...</span>
+                    </div>
+                  ) : slot.session_title ? (
                     <div
                       className={`text-[11px] font-medium truncate ${
                         isSelected ? "text-[#E5DEC9]" : "text-[#5C5449]"
@@ -308,7 +335,7 @@ export default function InteractiveBookingCalendar({
                     >
                       {slot.session_title}
                     </div>
-                  )}
+                  ) : null}
 
                   <div className="flex items-center justify-between text-[11px] pt-1 border-t border-current/10">
                     <span className="font-mono">
@@ -316,7 +343,7 @@ export default function InteractiveBookingCalendar({
                     </span>
                     <span
                       className={`inline-flex items-center gap-1 font-semibold ${
-                        isSelected
+                        isPending || isSelected
                           ? "text-[#D9A673]"
                           : isAvailable
                           ? "text-[#2E6B4E]"
@@ -324,7 +351,11 @@ export default function InteractiveBookingCalendar({
                       }`}
                     >
                       <Users className="w-3 h-3" />
-                      {slot.state === "full" || slot.remaining_capacity <= 0
+                      {isPending
+                        ? "Locking hold..."
+                        : isSelected
+                        ? "In Basket"
+                        : slot.state === "full" || slot.remaining_capacity <= 0
                         ? "Fully Booked"
                         : slot.state === "unavailable"
                         ? slot.unavailable_reason || "Unavailable"

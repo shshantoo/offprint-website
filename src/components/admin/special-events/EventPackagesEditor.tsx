@@ -15,6 +15,7 @@ import {
   Save,
   X,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 interface EventPackagesEditorProps {
@@ -652,7 +653,11 @@ export default function EventPackagesEditor({
                   disabled={saving}
                   className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#3A2008] hover:bg-[#5C4028] text-[#FAF7F2] font-semibold uppercase tracking-wider disabled:opacity-50"
                 >
-                  <Save className="w-3.5 h-3.5" />
+                  {saving ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#D9A673]" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
                   <span>{saving ? "Saving..." : "Save Package"}</span>
                 </button>
               </div>
@@ -708,8 +713,12 @@ export default function EventPackagesEditor({
                 onClick={confirmDeletePackage}
                 className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold uppercase tracking-wider text-xs shadow-xs disabled:opacity-50"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{deletingLoading ? "Processing..." : "Confirm Delete / Archive"}</span>
+                {deletingLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{deletingLoading ? "Deleting..." : "Confirm Delete / Archive"}</span>
               </button>
             </div>
           </div>
