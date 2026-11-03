@@ -9,7 +9,7 @@ import {
   photographyServiceSchema,
 } from "@/lib/validations";
 import { isMissingSchemaError, requireAdminAuth } from "@/lib/supabase/auth-helpers";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient, createSupabasePrivilegedClient } from "@/lib/supabase/server";
 import { addMinutesToISO, dhakaDateTimeToISO } from "@/lib/booking/timezone";
 import {
   calculateProposedSchedule,
@@ -27,7 +27,7 @@ export async function GET() {
     );
   }
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = (await createSupabasePrivilegedClient()) || (await createSupabaseServerClient());
   if (!supabase) {
     return NextResponse.json(
       { success: false, error: "Supabase is not configured." },
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = (await createSupabasePrivilegedClient()) || (await createSupabaseServerClient());
   if (!supabase) {
     return NextResponse.json(
       { success: false, error: "Supabase is not configured." },
@@ -646,11 +646,25 @@ export async function POST(request: NextRequest) {
 
           if (slotsToInsert.length > 0) {
             // Remove unbooked slots on this session before re-generating
-            await supabase
+            const { data: unbookedSlots } = await supabase
               .from("event_time_slots")
-              .delete()
+              .select("id")
               .eq("session_id", savedSession.id)
               .eq("booked_count", 0);
+
+            if (unbookedSlots && unbookedSlots.length > 0) {
+              const unbookedIds = unbookedSlots.map((s: any) => s.id);
+              // Safely nullify slot_id on any historical/cancelled bookings referencing these slots
+              await supabase
+                .from("bookings")
+                .update({ slot_id: null, updated_at: new Date().toISOString() })
+                .in("slot_id", unbookedIds);
+
+              await supabase
+                .from("event_time_slots")
+                .delete()
+                .in("id", unbookedIds);
+            }
 
             const { data: insData } = await supabase
               .from("event_time_slots")
@@ -1149,14 +1163,27 @@ export async function POST(request: NextRequest) {
 
       // 6. Prune unbooked slots outside new schedule (strict preservation of booked slots)
       let prunedSlotsCount = 0;
+      const slotIdsToPrune: string[] = [];
       for (const es of existingSlots) {
         const key = `${es.slot_date}_${es.start_at}_${es.end_at}`;
         if (!activeProposedKeys.has(key)) {
           if ((es.booked_count || 0) === 0) {
-            await supabase.from("event_time_slots").delete().eq("id", es.id);
-            prunedSlotsCount++;
+            slotIdsToPrune.push(es.id);
           }
         }
+      }
+
+      if (slotIdsToPrune.length > 0) {
+        await supabase
+          .from("bookings")
+          .update({ slot_id: null, updated_at: new Date().toISOString() })
+          .in("slot_id", slotIdsToPrune);
+
+        await supabase
+          .from("event_time_slots")
+          .delete()
+          .in("id", slotIdsToPrune);
+        prunedSlotsCount = slotIdsToPrune.length;
       }
 
       return NextResponse.json({
@@ -1263,6 +1290,12 @@ export async function POST(request: NextRequest) {
         }
 
         if (safeIdsToDelete.length > 0) {
+          // Nullify slot_id on any historical/cancelled bookings referencing these slots
+          await supabase
+            .from("bookings")
+            .update({ slot_id: null, updated_at: new Date().toISOString() })
+            .in("slot_id", safeIdsToDelete);
+
           const { error } = await supabase
             .from("event_time_slots")
             .delete()
@@ -1609,7 +1642,7 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = (await createSupabasePrivilegedClient()) || (await createSupabaseServerClient());
   if (!supabase) {
     return NextResponse.json(
       { success: false, error: "Supabase is not configured." },
@@ -1630,71 +1663,159 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (entity === "event") {
-      const { data: activeBookings } = await supabase
+      const { data: allEventBookings, error: bErr } = await supabase
         .from("bookings")
-        .select(
-          "id, booking_ref, client_name, booking_date, start_at, status"
-        )
-        .eq("event_id", id)
-        .in("status", ["pending", "confirmed", "rescheduled"]);
+        .select("id, booking_ref, client_name, booking_date, start_at, status")
+        .eq("event_id", id);
 
-      if (activeBookings && activeBookings.length > 0) {
+      if (bErr) throw formatAdminError(bErr);
+
+      const activeBookings = (allEventBookings || []).filter((b: any) =>
+        ["pending", "confirmed", "rescheduled"].includes(b.status)
+      );
+
+      if (activeBookings.length > 0) {
+        const refs = activeBookings.map((b: any) => b.booking_ref).filter(Boolean).join(", ");
         return NextResponse.json(
           {
             success: false,
             code: "CONFLICTING_ACTIVE_BOOKINGS",
-            error: `Cannot delete this special booking event while ${activeBookings.length} active reservation(s) exist. Set the event status to "Archived" or "Closed", or cancel/reschedule the bookings first.`,
+            error: `Cannot delete this special booking event while ${activeBookings.length} active reservation(s) exist${refs ? ` (${refs})` : ""}. Set the event status to "Archived" or "Closed", or cancel/reschedule the bookings first.`,
             conflicts: activeBookings,
           },
           { status: 409 }
         );
       }
+
+      // Safely nullify references on any inactive/cancelled bookings before cascade delete
+      await supabase
+        .from("bookings")
+        .update({
+          event_id: null,
+          session_id: null,
+          slot_id: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("event_id", id);
+
+      // Clean up junction rows for sessions of this event
+      try {
+        const { data: eventSessions } = await supabase
+          .from("event_sessions")
+          .select("id")
+          .eq("event_id", id);
+        if (eventSessions && eventSessions.length > 0) {
+          const sessIds = eventSessions.map((s: any) => s.id);
+          await supabase.from("event_session_packages").delete().in("session_id", sessIds);
+        }
+      } catch {
+        // ignore junction table errors
+      }
+
+      // Clean up child tables cleanly in order
+      await supabase.from("event_time_slots").delete().eq("event_id", id);
+      await supabase.from("event_sessions").delete().eq("event_id", id);
+      await supabase.from("photography_packages").delete().eq("event_id", id);
 
       const { error } = await supabase
         .from("booking_events")
         .delete()
         .eq("id", id);
+
       if (error) throw formatAdminError(error);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, message: "Special booking event deleted successfully." });
     }
 
     if (entity === "session") {
-      const { data: activeBookings } = await supabase
+      // 1. Fetch all bookings referencing this session
+      const { data: sessionBookings, error: bErr } = await supabase
         .from("bookings")
-        .select(
-          "id, booking_ref, client_name, booking_date, start_at, status"
-        )
-        .eq("session_id", id)
-        .in("status", ["pending", "confirmed", "rescheduled"]);
+        .select("id, booking_ref, client_name, booking_date, start_at, status")
+        .eq("session_id", id);
 
-      if (activeBookings && activeBookings.length > 0) {
+      if (bErr) throw formatAdminError(bErr);
+
+      const activeBookings = (sessionBookings || []).filter((b: any) =>
+        ["pending", "confirmed", "rescheduled"].includes(b.status)
+      );
+
+      // Strictly forbid deleting session if active confirmed bookings exist
+      if (activeBookings.length > 0) {
+        const refs = activeBookings.map((b: any) => b.booking_ref).filter(Boolean).join(", ");
         return NextResponse.json(
           {
             success: false,
             code: "CONFLICTING_ACTIVE_BOOKINGS",
-            error: `Cannot delete this session date because ${activeBookings.length} active booking(s) are scheduled on it.`,
+            error: `Cannot delete this scheduled session date because ${activeBookings.length} active confirmed booking(s) are scheduled on it${refs ? ` (${refs})` : ""}. Please reschedule or cancel those bookings before removing the session.`,
             conflicts: activeBookings,
           },
           { status: 409 }
         );
       }
 
+      // 2. Safely nullify session_id and slot_id on any historical/cancelled bookings referencing this session
+      await supabase
+        .from("bookings")
+        .update({
+          session_id: null,
+          slot_id: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("session_id", id);
+
+      // Also nullify slot_id for any bookings that pointed to slots on this session
+      const { data: sessionSlots } = await supabase
+        .from("event_time_slots")
+        .select("id")
+        .eq("session_id", id);
+      if (sessionSlots && sessionSlots.length > 0) {
+        const slotIds = sessionSlots.map((s: any) => s.id);
+        await supabase
+          .from("bookings")
+          .update({
+            slot_id: null,
+            updated_at: new Date().toISOString(),
+          })
+          .in("slot_id", slotIds);
+      }
+
+      // 3. Clean up junction table event_session_packages if it exists
+      try {
+        await supabase
+          .from("event_session_packages")
+          .delete()
+          .eq("session_id", id);
+      } catch {
+        // junction table might not exist
+      }
+
+      // 4. Delete slots belonging to this session
+      await supabase
+        .from("event_time_slots")
+        .delete()
+        .eq("session_id", id);
+
+      // 5. Finally delete the session record
       const { error } = await supabase
         .from("event_sessions")
         .delete()
         .eq("id", id);
+
       if (error) throw formatAdminError(error);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, message: "Session date removed successfully." });
     }
 
     if (entity === "slot") {
-      const { data: slot } = await supabase
-        .from("event_time_slots")
-        .select("booked_count")
-        .eq("id", id)
-        .maybeSingle();
+      const { data: slotBookings } = await supabase
+        .from("bookings")
+        .select("id, booking_ref, status")
+        .eq("slot_id", id);
 
-      if (slot && slot.booked_count > 0) {
+      const activeBookings = (slotBookings || []).filter((b: any) =>
+        ["pending", "confirmed", "rescheduled"].includes(b.status)
+      );
+
+      if (activeBookings.length > 0) {
         return NextResponse.json(
           {
             success: false,
@@ -1706,12 +1827,22 @@ export async function DELETE(request: NextRequest) {
         );
       }
 
+      // Safely nullify slot_id on any cancelled/historical bookings
+      await supabase
+        .from("bookings")
+        .update({
+          slot_id: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("slot_id", id);
+
       const { error } = await supabase
         .from("event_time_slots")
         .delete()
         .eq("id", id);
+
       if (error) throw formatAdminError(error);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, message: "Time slot deleted successfully." });
     }
 
     if (entity === "package") {

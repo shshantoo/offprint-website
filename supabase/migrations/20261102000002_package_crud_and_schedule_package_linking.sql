@@ -266,6 +266,45 @@ CREATE POLICY "Admins manage session packages"
   USING (public.is_admin() OR true)
   WITH CHECK (public.is_admin() OR true);
 
+-- 8. Foreign key constraints on bookings: upgrade to ON DELETE SET NULL
+-- Prevents "Key is still referenced from table bookings" foreign key violations
+-- when scheduled sessions, time slots, or events are deleted or pruned.
+DO $$
+BEGIN
+  -- 8a. bookings_session_id_fkey
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'bookings_session_id_fkey' AND table_name = 'bookings'
+  ) THEN
+    ALTER TABLE public.bookings DROP CONSTRAINT bookings_session_id_fkey;
+  END IF;
+  ALTER TABLE public.bookings
+    ADD CONSTRAINT bookings_session_id_fkey
+    FOREIGN KEY (session_id) REFERENCES public.event_sessions(id) ON DELETE SET NULL;
+
+  -- 8b. bookings_slot_id_fkey
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'bookings_slot_id_fkey' AND table_name = 'bookings'
+  ) THEN
+    ALTER TABLE public.bookings DROP CONSTRAINT bookings_slot_id_fkey;
+  END IF;
+  ALTER TABLE public.bookings
+    ADD CONSTRAINT bookings_slot_id_fkey
+    FOREIGN KEY (slot_id) REFERENCES public.event_time_slots(id) ON DELETE SET NULL;
+
+  -- 8c. bookings_event_id_fkey
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'bookings_event_id_fkey' AND table_name = 'bookings'
+  ) THEN
+    ALTER TABLE public.bookings DROP CONSTRAINT bookings_event_id_fkey;
+  END IF;
+  ALTER TABLE public.bookings
+    ADD CONSTRAINT bookings_event_id_fkey
+    FOREIGN KEY (event_id) REFERENCES public.booking_events(id) ON DELETE SET NULL;
+END $$;
+
 -- Notify PostgREST to reload schema cache
 NOTIFY pgrst, 'reload schema';
 

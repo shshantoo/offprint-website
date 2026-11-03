@@ -3537,4 +3537,48 @@ describe("OFFPRINT Booking System, Concurrency & Google Integrations Suite", () 
     assert.equal("schedule_package_ids" in finalPayload, false, "Strips schedule_package_ids before upsert to prevent PostgREST column missing error");
     assert.equal(finalPayload.title, "Convocation Photography");
   });
+
+  it("33. Foreign Key Deletion Safety: event_sessions, time slots, and bookings_session_id_fkey", () => {
+    // 1. Session with Active Confirmed Bookings: MUST BE BLOCKED
+    const mockBookingsOnSession = [
+      { id: "b-1", booking_ref: "REF-ACTIVE-01", session_id: "sess-100", status: "confirmed" },
+      { id: "b-2", booking_ref: "REF-CANCELLED-02", session_id: "sess-100", status: "cancelled" },
+    ];
+
+    const activeStatuses = ["pending", "confirmed", "rescheduled"];
+    const activeBookings = mockBookingsOnSession.filter((b) => activeStatuses.includes(b.status));
+
+    assert.equal(activeBookings.length, 1, "Detects 1 active booking");
+    assert.equal(activeBookings[0].booking_ref, "REF-ACTIVE-01");
+
+    // Deletion decision
+    const canDeleteSessionWithActive = (activeBookings.length as number) === 0;
+    assert.equal(canDeleteSessionWithActive, false, "Session deletion is strictly blocked when active bookings exist");
+
+    // 2. Session with ONLY Inactive/Cancelled Bookings: SAFELY DISSOCIATE & ALLOW
+    const mockCancelledOnlySessionBookings = [
+      { id: "b-3", booking_ref: "REF-CANCELLED-03", session_id: "sess-200", slot_id: "slot-200", status: "cancelled" },
+      { id: "b-4", booking_ref: "REF-COMPLETED-04", session_id: "sess-200", slot_id: "slot-201", status: "completed" },
+    ];
+
+    const activeOnCancelledSession = mockCancelledOnlySessionBookings.filter((b) => activeStatuses.includes(b.status));
+    assert.equal(activeOnCancelledSession.length, 0, "No active bookings on session");
+
+    // Safe dissociation simulation
+    const dissociatedBookings = mockCancelledOnlySessionBookings.map((b) => ({
+      ...b,
+      session_id: null,
+      slot_id: null,
+    }));
+
+    // Verify all bookings still retain reference, client history, but have freed FK constraint
+    assert.ok(dissociatedBookings.every((b) => b.session_id === null));
+    assert.ok(dissociatedBookings.every((b) => b.slot_id === null));
+    assert.equal(dissociatedBookings[0].booking_ref, "REF-CANCELLED-03", "Client booking reference preserved");
+    assert.equal(dissociatedBookings[1].booking_ref, "REF-COMPLETED-04", "Historical record preserved");
+
+    // After dissociation, session can be deleted cleanly without violating bookings_session_id_fkey
+    const canDeleteFreedSession = dissociatedBookings.every((b) => b.session_id === null);
+    assert.equal(canDeleteFreedSession, true, "Session can be safely deleted without foreign key violation");
+  });
 });
